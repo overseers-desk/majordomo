@@ -2,7 +2,7 @@
 
 This is script was made with the idea of creating an efficiency report, using the Tasks status and asignee to create a
 complete report that includes the amount of tasks received, amount of tasks completed and completion rate. You can
-create the reports using a time range.
+create the reports using a time range. The final report is saved to a ``.csv`` file.
 
 ## How to Use
 
