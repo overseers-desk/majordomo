@@ -17,7 +17,7 @@ SCOPES = [
     'https://www.googleapis.com/auth/chat.messages.readonly'
 ]
 TOKEN_FILE = 'token.json'
-CREDENTIALS_FILE = 'credentials.json'
+CREDENTIALS_FILE = 'client_secret.json'
 
 
 def setup_logging():
