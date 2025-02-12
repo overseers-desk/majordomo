@@ -37,7 +37,8 @@ def get_credentials() -> Credentials:
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            creds = flow.run_local_server(port=7276)
+            creds = flow.run_local_server(port=7276, access_type="offline", prompt='consent')
+            print(creds)
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
 
@@ -133,8 +134,8 @@ def generate_report(report: pd.DataFrame, month: str, year: int):
     """Generate and save the task report as a CSV file."""
     file_name = f'task_report_{year}_{month}.csv'
     report.to_csv(file_name)
-    logging.info(f"Report for {month}/{year} saved as {file_name}")
     logging.info(report)
+    logging.info(f"Report for {month}/{year} saved as {file_name}")
 
 
 def main():
