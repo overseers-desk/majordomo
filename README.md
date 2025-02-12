@@ -13,6 +13,4 @@ The script was tested and coded under Python 3.12. To start using the script, fo
 - Download the .json file from the created credential, rename it to ``client_secret.json`` and paste it in the root project folder.
 - Install all the requirements, using pip. Reference command:
 ```pip install -r requirements.txt```
-  Or, for Ubuntu users:
-```sudo apt-get install python3-googleapi python3-google-auth-oauthlib python3-pandas python3-google-auth```
 - Run ``scrapper.py`` once. It'll prompt you to login through your Google Account. Select the account that has access to the spaces you want to analyze. At the moment, it'll analyze *all* spaces available to the account. Reference command: ```python scrapper.py```. Once you log in, it'll save your account tokens under ``token.json`` file and proceed to create the report. Since your refresh token is also stored, future runs will not ask your login again.
