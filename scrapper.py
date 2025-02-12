@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import List, Dict
 import calendar
@@ -9,6 +10,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.errors import HttpError
 
 # Constants
 SCOPES = [
@@ -152,9 +154,19 @@ def main():
 
     all_tasks = []
     for space in spaces:
-        logging.info(f"Getting tasks from space '{space['name']}'")
-        tasks = get_tasks(service, space['name'], start_date, end_date)
-        all_tasks.extend(tasks)
+        success = False
+        while success is False:
+            logging.info(f"Getting tasks from space '{space['name']}'")
+            try:
+                tasks = get_tasks(service, space['name'], start_date, end_date)
+                all_tasks.extend(tasks)
+                success = True
+            except HttpError as error:
+                success = False
+                logging.error(f"Error getting tasks from space '{space['name']}'.")
+                logging.error(error)
+                logging.info("Retrying in 30 seconds...")
+                time.sleep(30)
 
     report = analyze_tasks(all_tasks)
 
