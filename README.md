@@ -16,7 +16,8 @@ The script was tested and coded under Python 3.12. To start using the script, fo
 ## How to use
 The first run, will ask for login and generate the required user credentials, under the file ``tokens.json``.
 
-```Google Tasks Scrapper
+```
+Google Tasks Scrapper
 
 positional arguments:
   {spaces,people,tasks}
@@ -28,14 +29,16 @@ options:
   -h, --help            show this help message and exit
 ```
 
-```usage: scrapper.py spaces [-h] [--save]
+```
+usage: scrapper.py spaces [-h] [--save]
 
 options:
   -h, --help  show this help message and exit
   --save      Save the list of spaces to a JSON file
 ```
 
-```usage: scrapper.py people [-h] [--date-start DATE_START] [--date-end DATE_END] [--save]
+```
+usage: scrapper.py people [-h] [--date-start DATE_START] [--date-end DATE_END] [--save]
 
 options:
   -h, --help            show this help message and exit
@@ -45,7 +48,8 @@ options:
   --save                Save the list of people to a JSON file
 ```
 
-```usage: scrapper.py tasks [-h] [--date-start DATE_START] [--date-end DATE_END] [--save]
+```
+usage: scrapper.py tasks [-h] [--date-start DATE_START] [--date-end DATE_END] [--save]
 
 options:
   -h, --help            show this help message and exit
