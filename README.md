@@ -4,8 +4,7 @@ This is script was made with the idea of creating an efficiency report, using th
 complete report that includes the amount of tasks received, amount of tasks completed and completion rate. You can
 create the reports using a time range. The final report is saved to a ``.csv`` file.
 
-## How to Use
-
+## Installing
 The script was tested and coded under Python 3.12. To start using the script, follow this steps:
 - Create a Project on [Google Cloud Console](https://console.cloud.google.com/) if you don't have one yet.
 - Enable Google Tasks API in your project. You can find it in APIs & Services section.
@@ -13,4 +12,47 @@ The script was tested and coded under Python 3.12. To start using the script, fo
 - Download the .json file from the created credential, rename it to ``client_secret.json`` and paste it in the root project folder.
 - Install all the requirements, using pip. Reference command:
 ```pip install -r requirements.txt```
-- Run ``scrapper.py`` once. It'll prompt you to login through your Google Account. Select the account that has access to the spaces you want to analyze. At the moment, it'll analyze *all* spaces available to the account. Reference command: ```python scrapper.py```. Once you log in, it'll save your account tokens under ``token.json`` file and proceed to create the report. Since your refresh token is also stored, future runs will not ask your login again.
+
+## How to use
+The first run, will ask for login and generate the required user credentials, under the file ``tokens.json``.
+
+```Google Tasks Scrapper
+
+positional arguments:
+  {spaces,people,tasks}
+    spaces              Retrieve a list of spaces
+    people              Retrieve a list of people
+    tasks               Retrieve a list of tasks
+
+options:
+  -h, --help            show this help message and exit
+```
+
+```usage: scrapper.py spaces [-h] [--save]
+
+options:
+  -h, --help  show this help message and exit
+  --save      Save the list of spaces to a JSON file
+```
+
+```usage: scrapper.py people [-h] [--date-start DATE_START] [--date-end DATE_END] [--save]
+
+options:
+  -h, --help            show this help message and exit
+  --date-start DATE_START
+                        Start date in ISO format (e.g., 2022-01-15)
+  --date-end DATE_END   End date in ISO format (e.g., 2022-01-15)
+  --save                Save the list of people to a JSON file
+```
+
+```usage: scrapper.py tasks [-h] [--date-start DATE_START] [--date-end DATE_END] [--save]
+
+options:
+  -h, --help            show this help message and exit
+  --date-start DATE_START
+                        Start date in ISO format (e.g., 2022-01-15)
+  --date-end DATE_END   End date in ISO format (e.g., 2022-01-15)
+  --save                Save the list of tasks to a CSV file
+```
+
+

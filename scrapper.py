@@ -1,11 +1,12 @@
 import os
 import logging
-import time
+import json
+import argparse
 from datetime import datetime, timedelta
 from typing import List, Dict
-import calendar
-
+import unicodedata
 import pandas as pd
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
@@ -16,15 +17,13 @@ from googleapiclient.errors import HttpError
 SCOPES = [
     'https://www.googleapis.com/auth/chat.spaces',
     'https://www.googleapis.com/auth/chat.messages',
-    'https://www.googleapis.com/auth/chat.messages.readonly'
+    'https://www.googleapis.com/auth/chat.messages.readonly',
 ]
 TOKEN_FILE = 'token.json'
 CREDENTIALS_FILE = 'client_secret.json'
 
-
 def setup_logging():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 
 def get_credentials() -> Credentials:
     """Fetch or refresh Google API credentials."""
@@ -38,51 +37,146 @@ def get_credentials() -> Credentials:
         else:
             flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
             creds = flow.run_local_server(port=7276, access_type="offline", prompt='consent')
-            print(creds)
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
 
     return creds
 
-
 def get_spaces(service) -> List[Dict]:
-    """Retrieve all spaces from Google Chat."""
+    """Retrieve all spaces from Google Chat, excluding DIRECT_MESSAGE spaces."""
     spaces = []
     page_token = None
     while True:
         response = service.spaces().list(pageToken=page_token).execute()
-        spaces.extend(response.get('spaces', []))
+        for space in response.get('spaces', []):
+            if space.get('spaceType') != 'SPACE':  # Exclude DIRECT_MESSAGE spaces
+                continue
+
+            spaces.append(space)
         page_token = response.get('nextPageToken')
         if not page_token:
             break
     return spaces
 
+def normalize_name(name: str) -> str:
+    """Normalize a name by removing accents and special characters."""
+    # Normalize the name to NFKD form (decompose accents)
+    normalized = unicodedata.normalize('NFKD', name)
+    # Remove non-ASCII characters (e.g., accents)
+    normalized = normalized.encode('ascii', 'ignore').decode('ascii')
+    # Convert to lowercase and strip whitespace
+    normalized = normalized.lower().strip()
+    return normalized
+
+def save_to_json(data: List[Dict], filename: str):
+    """Save data to a JSON file with UTF-8 encoding."""
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)  # Ensure non-ASCII characters are preserved
+    logging.info(f"Data saved to {filename}")
+
+def load_from_json(filename: str) -> List[Dict]:
+    """Load data from a JSON file."""
+    if os.path.exists(filename):
+        with open(filename, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return None
+
+def get_people(service, spaces: List[Dict], start_date: str = None, end_date: str = None) -> List[str]:
+    """Retrieve a list of unique people from SPACE type spaces by scraping messages."""
+    people = set()
+    for space in spaces:
+        # Only process spaces where spaceType is SPACE
+        if space.get('spaceType') != 'SPACE':
+            continue
+
+        logging.info(f"Processing space: {space['name']}")
+
+        # Fetch messages from the space within the specified date range
+        try:
+            page_token = None
+            while True:
+                response = service.spaces().messages().list(
+                    parent=space['name'],
+                    pageToken=page_token,
+                    filter=f'createTime > "{start_date}" AND createTime < "{end_date}"'
+                ).execute()
+
+                for message in response.get('messages', []):
+                    # Extract the sender's display name
+                    if 'sender' in message and 'displayName' in message['sender']:
+                        people.add(message['sender']['displayName'])
+
+                    # Extract assignee names from task-related messages
+                    if 'text' in message and 'via Tasks' in message['text']:
+                        text = message['text']
+                        if "@" in text:
+                            # Extract the assignee's name (e.g., "Assigned to @username" or "Reassigned to @username")
+                            assignee = text.split("@")[1].split("(")[0].strip()
+                            # Remove any trailing words like "to"
+                            assignee = assignee.split(" to")[0].strip()
+                            people.add(assignee)
+
+                page_token = response.get('nextPageToken')
+                if not page_token:
+                    break
+        except HttpError as error:
+            logging.error(f"Error fetching messages for space {space['name']}: {error}")
+            continue
+
+    return list(people)
+
+def get_user_display_name(creds: Credentials, user_resource_name: str) -> str:
+    """Fetch the display name of a user using the Google People API."""
+    try:
+        # Convert 'users/{id}' to 'people/{id}' for the People API
+        if user_resource_name.startswith('users/'):
+            user_resource_name = user_resource_name.replace('users/', 'people/')
+
+        # Use the Google People API to fetch the user's profile
+        people_service = build('people', 'v1', credentials=creds)
+        profile = people_service.people().get(
+            resourceName=user_resource_name,
+            personFields='names'
+        ).execute()
+
+        # Extract the display name from the profile
+        if 'names' in profile:
+            for name in profile['names']:
+                if 'displayName' in name:
+                    return name['displayName']
+    except HttpError as error:
+        logging.error(f"Error fetching profile for user {user_resource_name}: {error}")
+    return None
 
 def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[Dict]:
-    """Retrieve tasks from a specific space within a date range."""
+    """Retrieve tasks from a specific space within a date range using a valid filter query."""
     tasks = []
     completed_tasks, reopened_tasks, deleted_tasks, assigned_tasks = set(), set(), set(), set()
     page_token = None
+
+    # Construct the filter query
+    filter_query = f'createTime > "{start_date}" AND createTime < "{end_date}"'
 
     while True:
         response = service.spaces().messages().list(
             parent=space_name,
             pageToken=page_token,
-            filter=f'createTime > "{start_date}" AND createTime < "{end_date}"'
+            filter=filter_query
         ).execute()
 
         for message in response.get('messages', []):
             if 'via Tasks' in message.get('text', []):
                 task_id = message['thread']['name'].split("/")[3]
                 text = message['text']
-                assignee = text.split("@")[1].split("(")[0] if "@" in text else "Unassigned"
+                assignee = text.split("@")[1].split("(")[0].strip() if "@" in text else "Unassigned"
 
                 if "Created" in text:
                     tasks.append({
                         'id': task_id,
                         'assignee': assignee,
                         'status': 'OPEN',
-                        'created_time': message['createTime']
+                        'created_time': message['createTime'],
+                        'space_name': space_name  # Add space name to each task
                     })
                 elif "Assigned" in text:
                     assigned_tasks.add(task_id + "@" + assignee)
@@ -121,63 +215,149 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[
 
 
 def analyze_tasks(tasks: List[Dict]) -> pd.DataFrame:
-    """Analyze tasks and generate a report."""
+    """Analyze tasks and generate a report with tasks received, completed, and completion rate."""
+    if not tasks:
+        logging.warning("No tasks found to analyze.")
+        return pd.DataFrame(columns=['assignee', 'tasks_received', 'tasks_completed', 'completion_rate'])
+
     df = pd.DataFrame(tasks)
-    total_tasks = df.groupby('assignee').size().rename('total_tasks')
-    completed_tasks = df[df['status'] == 'COMPLETED'].groupby('assignee').size().rename('completed_tasks')
+
+    # Group by assignee and calculate tasks received and completed
+    total_tasks = df.groupby('assignee').size().rename('tasks_received')
+    completed_tasks = df[df['status'] == 'COMPLETED'].groupby('assignee').size().rename('tasks_completed')
+
+    # Merge the results into a single DataFrame
     report = pd.concat([total_tasks, completed_tasks], axis=1).fillna(0)
-    report['completion_rate'] = report['completed_tasks'] / report['total_tasks']
+
+    # Calculate completion rate
+    report['completion_rate'] = report['tasks_completed'] / report['tasks_received']
+
+    # Reset index to make 'assignee' a column
+    report.reset_index(inplace=True)
+    report.rename(columns={'index': 'assignee'}, inplace=True)
+
     return report
 
+def filter_tasks(tasks: List[Dict], people: List[str], spaces: List[str]) -> List[Dict]:
+    """Filter tasks to only include people and spaces listed in people.json and spaces.json."""
+    # Normalize the list of people
+    normalized_people = {normalize_name(person) for person in people}
+    normalized_spaces = {space for space in spaces}
+
+    filtered_tasks = []
+    for task in tasks:
+        # Normalize the assignee name
+        normalized_assignee = normalize_name(task['assignee'])
+        if normalized_assignee in normalized_people and task['space_name'] in normalized_spaces:
+            filtered_tasks.append(task)
+    return filtered_tasks
 
 def generate_report(report: pd.DataFrame, month: str, year: int):
     """Generate and save the task report as a CSV file."""
     file_name = f'task_report_{year}_{month}.csv'
-    report.to_csv(file_name)
+    report.to_csv(file_name, index=False)
     logging.info(report)
     logging.info(f"Report for {month}/{year} saved as {file_name}")
 
+def get_default_dates():
+    """Get the default date range for the previous calendar month in RFC 3339 format."""
+    today = datetime.today()
+    first_day_of_month = today.replace(day=1)
+    last_day_of_previous_month = first_day_of_month - timedelta(days=1)
+    first_day_of_previous_month = last_day_of_previous_month.replace(day=1)
+    return (
+        first_day_of_previous_month.isoformat() + "Z",  # Start date
+        last_day_of_previous_month.isoformat() + "Z"    # End date
+    )
+
+def convert_to_rfc3339(date_str: str) -> str:
+    """Convert an ISO format date (e.g., 2022-01-15) to RFC 3339 format (e.g., 2022-01-15T00:00:00Z)."""
+    try:
+        # Parse the input date string
+        date_obj = datetime.fromisoformat(date_str)
+        # Convert to RFC 3339 format
+        return date_obj.isoformat() + "Z"
+    except ValueError:
+        raise ValueError(f"Invalid date format: {date_str}. Expected format: YYYY-MM-DD")
 
 def main():
     setup_logging()
 
+    parser = argparse.ArgumentParser(description="Google Tasks Scrapper")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # Spaces command
+    spaces_parser = subparsers.add_parser("spaces", help="Retrieve a list of spaces")
+    spaces_parser.add_argument("--save", action="store_true", help="Save the list of spaces to a JSON file")
+
+    # People command
+    people_parser = subparsers.add_parser("people", help="Retrieve a list of people")
+    people_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
+    people_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    people_parser.add_argument("--save", action="store_true", help="Save the list of people to a JSON file")
+
+    # Tasks command
+    tasks_parser = subparsers.add_parser("tasks", help="Retrieve a list of tasks")
+    tasks_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
+    tasks_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    tasks_parser.add_argument("--save", action="store_true", help="Save the list of tasks to a CSV file")
+
+    args = parser.parse_args()
+
     creds = get_credentials()
     service = build('chat', 'v1', credentials=creds)
 
-    spaces = get_spaces(service)
+    if args.command == "spaces":
+        spaces = get_spaces(service)
+        if args.save:
+            save_to_json(spaces, "spaces.json")
+        else:
+            print(json.dumps(spaces, indent=4, ensure_ascii=False))
 
-    year = int(input("Enter the year for the report: "))
-    init_month = int(input("Enter the initial month for the report (1-12): "))
-    end_month = int(input("Enter the final month for the report (1-12): "))
+    elif args.command == "people":
+        # Use the default date range (previous calendar month) if no dates are provided
+        try:
+            date_start = convert_to_rfc3339(args.date_start) if args.date_start else get_default_dates()[0]
+            date_end = convert_to_rfc3339(args.date_end) if args.date_end else get_default_dates()[1]
+        except ValueError as e:
+            logging.error(e)
+            return
 
-    start_date = datetime(year, init_month, 1).isoformat() + "-04:00"
-    end_date = (datetime(year, end_month + 1, 1) - timedelta(days=1)).isoformat() + "-04:00"
+        spaces = load_from_json("spaces.json") or get_spaces(service)
+        people = get_people(service, spaces, date_start, date_end)
+        if args.save:
+            save_to_json(people, "people.json")
+        else:
+            print(json.dumps(people, indent=4, ensure_ascii=False))
 
-    all_tasks = []
-    for space in spaces:
-        success = False
-        while success is False:
-            logging.info(f"Getting tasks from space '{space['name']}'")
-            try:
-                tasks = get_tasks(service, space['name'], start_date, end_date)
-                all_tasks.extend(tasks)
-                success = True
-            except HttpError as error:
-                success = False
-                logging.error(f"Error getting tasks from space '{space['name']}'.")
-                logging.error(error)
-                logging.info("Retrying in 30 seconds...")
-                time.sleep(30)
+    elif args.command == "tasks":
+        # Use the default date range (previous calendar month) if no dates are provided
+        try:
+            date_start = convert_to_rfc3339(args.date_start) if args.date_start else get_default_dates()[0]
+            date_end = convert_to_rfc3339(args.date_end) if args.date_end else get_default_dates()[1]
+        except ValueError as e:
+            logging.error(e)
+            return
 
-    report = analyze_tasks(all_tasks)
+        spaces = load_from_json("spaces.json") or get_spaces(service)
+        people = load_from_json("people.json") or None
 
-    # Get short month names
-    init_month_name = calendar.month_abbr[init_month]
-    end_month_name = calendar.month_abbr[end_month]
-    month_range = f"{init_month_name}-{end_month_name}" if init_month != end_month else init_month_name
+        # Fetch all tasks
+        all_tasks = []
+        for space in spaces:
+            tasks = get_tasks(service, space['name'], date_start, date_end)
+            all_tasks.extend(tasks)
 
-    generate_report(report, month_range, year)
+        # Filter tasks if people.json exists
+        if people:
+            all_tasks = filter_tasks(all_tasks, people, [space['name'] for space in spaces])
 
+        # Generate the report
+        report = analyze_tasks(all_tasks)
+        if args.save:
+            generate_report(report, datetime.now().strftime("%b"), datetime.now().year)
+        else:
+            print(report.to_string(index=False))
 
 if __name__ == '__main__':
     main()
