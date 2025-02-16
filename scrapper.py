@@ -23,9 +23,9 @@ TOKEN_FILE = 'token.json'
 CREDENTIALS_FILE = 'client_secret.json'
 
 def setup_logging():
-    """Setup logging with debug level for development."""
+    """Setup logging configuration."""
     logging.basicConfig(
-        level=logging.DEBUG,  # Changed from INFO to DEBUG
+        level=logging.INFO,  # Changed back to INFO from DEBUG
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
 
@@ -170,10 +170,6 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[
 
         for message in response.get('messages', []):
             if 'via Tasks' in message.get('text', ''):
-                # Debug prints to inspect message structure
-                logging.debug("Found task message:")
-                logging.debug(f"Full message structure: {json.dumps(message, indent=2)}")
-                
                 task_id = message['thread']['name'].split("/")[3]
                 text = message['text']
                 assignee = text.split("@")[1].split("(")[0].strip() if "@" in text else "Unassigned"
@@ -185,9 +181,7 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[
                         'status': 'OPEN',
                         'created_time': message['createTime'],
                         'space_name': space_name,
-                        'raw_message': message  # Temporarily store full message for debugging
                     }
-                    logging.debug(f"Created new task entry: {json.dumps(task_data, indent=2)}")
                     tasks.append(task_data)
                 elif "Assigned" in text:
                     assigned_tasks.add(task_id + "@" + assignee)
@@ -221,13 +215,8 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[
             task['status'] = 'COMPLETED'
         elif task_id in reopened_tasks:
             task['status'] = 'OPEN'
-            
-        # Remove raw message data before returning
-        if 'raw_message' in task:
-            del task['raw_message']
 
     return tasks
-
 
 def analyze_tasks(tasks: List[Dict]) -> pd.DataFrame:
     """Analyze tasks and generate a report with tasks received, completed, and completion rate."""
