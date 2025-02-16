@@ -267,12 +267,19 @@ def filter_tasks(tasks: List[Dict], people: List[str], spaces: List[str]) -> Lis
             filtered_tasks.append(task)
     return filtered_tasks
 
-def generate_report(report: pd.DataFrame, month: str, year: int):
+def generate_report(report: pd.DataFrame, start_date: str, end_date: str):
     """Generate and save the task report as a CSV file."""
-    file_name = f'task_report_{year}_{month}.csv'
+    # Convert dates to ISO format for filename (assuming they're in RFC3339 format)
+    start_iso = datetime.fromisoformat(start_date.replace('Z', '')).strftime('%Y-%m-%d')
+    end_iso = datetime.fromisoformat(end_date.replace('Z', '')).strftime('%Y-%m-%d')
+    
+    file_name = f'task_report_{start_iso}_{end_iso}.csv'
     report.to_csv(file_name, index=False)
+    
+    # Print date range and report
+    logging.info(f"\nTask Report for period: {start_iso} to {end_iso}")
     logging.info(report)
-    logging.info(f"Report for {month}/{year} saved as {file_name}")
+    logging.info(f"\nReport saved as {file_name}")
 
 def get_default_dates():
     """Get the default date range for the previous calendar month in RFC 3339 format."""
@@ -382,7 +389,6 @@ def main():
             print(json.dumps(people, indent=4, ensure_ascii=False))
 
     elif args.command == "report":
-        # Use the default date range (previous calendar month) if no dates are provided
         try:
             date_start = convert_to_rfc3339(args.date_start) if args.date_start else get_default_dates()[0]
             date_end = convert_to_rfc3339(args.date_end) if args.date_end else get_default_dates()[1]
@@ -406,8 +412,12 @@ def main():
         # Generate the report
         report = analyze_tasks(all_tasks)
         if args.save:
-            generate_report(report, datetime.now().strftime("%b"), datetime.now().year)
+            generate_report(report, date_start, date_end)
         else:
+            # Convert dates to ISO format for display
+            start_iso = datetime.fromisoformat(date_start.replace('Z', '')).strftime('%Y-%m-%d')
+            end_iso = datetime.fromisoformat(date_end.replace('Z', '')).strftime('%Y-%m-%d')
+            print(f"\nTask Report for period: {start_iso} to {end_iso}")
             print(report.to_string(index=False))
 
     elif args.command == "tasks":
