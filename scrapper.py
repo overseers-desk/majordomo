@@ -23,7 +23,11 @@ TOKEN_FILE = 'token.json'
 CREDENTIALS_FILE = 'client_secret.json'
 
 def setup_logging():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    """Setup logging with debug level for development."""
+    logging.basicConfig(
+        level=logging.DEBUG,  # Changed from INFO to DEBUG
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
 
 def get_credentials() -> Credentials:
     """Fetch or refresh Google API credentials."""
@@ -165,19 +169,26 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[
         ).execute()
 
         for message in response.get('messages', []):
-            if 'via Tasks' in message.get('text', []):
+            if 'via Tasks' in message.get('text', ''):
+                # Debug prints to inspect message structure
+                logging.debug("Found task message:")
+                logging.debug(f"Full message structure: {json.dumps(message, indent=2)}")
+                
                 task_id = message['thread']['name'].split("/")[3]
                 text = message['text']
                 assignee = text.split("@")[1].split("(")[0].strip() if "@" in text else "Unassigned"
 
                 if "Created" in text:
-                    tasks.append({
+                    task_data = {
                         'id': task_id,
                         'assignee': assignee,
                         'status': 'OPEN',
                         'created_time': message['createTime'],
-                        'space_name': space_name  # Add space name to each task
-                    })
+                        'space_name': space_name,
+                        'raw_message': message  # Temporarily store full message for debugging
+                    }
+                    logging.debug(f"Created new task entry: {json.dumps(task_data, indent=2)}")
+                    tasks.append(task_data)
                 elif "Assigned" in text:
                     assigned_tasks.add(task_id + "@" + assignee)
                 elif "Completed" in text:
@@ -210,6 +221,10 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[
             task['status'] = 'COMPLETED'
         elif task_id in reopened_tasks:
             task['status'] = 'OPEN'
+            
+        # Remove raw message data before returning
+        if 'raw_message' in task:
+            del task['raw_message']
 
     return tasks
 
@@ -280,6 +295,36 @@ def convert_to_rfc3339(date_str: str) -> str:
     except ValueError:
         raise ValueError(f"Invalid date format: {date_str}. Expected format: YYYY-MM-DD")
 
+def format_task_info(task: Dict, space_name: str) -> Dict:
+    """Format task information in a human-friendly way."""
+    return {
+        'id': task['id'],
+        'assignee': task.get('assignee', 'Unassigned'),
+        'status': task.get('status', 'UNKNOWN'),
+        'space': space_name,
+        'created_at': task.get('created_time'),
+        'last_updated': task.get('last_update_time', task.get('created_time')),
+    }
+
+def get_formatted_tasks(service, spaces: List[Dict], start_date: str = None, end_date: str = None) -> List[Dict]:
+    """Retrieve formatted task information from specified spaces."""
+    formatted_tasks = []
+    
+    for space in spaces:
+        space_name = space.get('displayName', space['name'])
+        logging.info(f"Fetching tasks from space: {space_name}")
+        
+        try:
+            tasks = get_tasks(service, space['name'], start_date, end_date)
+            for task in tasks:
+                formatted_task = format_task_info(task, space_name)
+                formatted_tasks.append(formatted_task)
+        except Exception as e:
+            logging.error(f"Error fetching tasks from space {space_name}: {e}")
+            continue
+            
+    return formatted_tasks
+
 def main():
     setup_logging()
 
@@ -296,11 +341,17 @@ def main():
     people_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     people_parser.add_argument("--save", action="store_true", help="Save the list of people to a JSON file")
 
-    # Tasks command
-    tasks_parser = subparsers.add_parser("tasks", help="Retrieve a list of tasks")
+    # Report command (previously Tasks)
+    report_parser = subparsers.add_parser("report", help="Generate a tasks report")
+    report_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
+    report_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    report_parser.add_argument("--save", action="store_true", help="Save the report to a CSV file")
+
+    # New Tasks command
+    tasks_parser = subparsers.add_parser("tasks", help="Retrieve task information from spaces")
     tasks_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
     tasks_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
-    tasks_parser.add_argument("--save", action="store_true", help="Save the list of tasks to a CSV file")
+    tasks_parser.add_argument("--save", action="store_true", help="Save tasks to tasks.json file")
 
     args = parser.parse_args()
 
@@ -330,7 +381,7 @@ def main():
         else:
             print(json.dumps(people, indent=4, ensure_ascii=False))
 
-    elif args.command == "tasks":
+    elif args.command == "report":
         # Use the default date range (previous calendar month) if no dates are provided
         try:
             date_start = convert_to_rfc3339(args.date_start) if args.date_start else get_default_dates()[0]
@@ -358,6 +409,27 @@ def main():
             generate_report(report, datetime.now().strftime("%b"), datetime.now().year)
         else:
             print(report.to_string(index=False))
+
+    elif args.command == "tasks":
+        try:
+            date_start = convert_to_rfc3339(args.date_start) if args.date_start else get_default_dates()[0]
+            date_end = convert_to_rfc3339(args.date_end) if args.date_end else get_default_dates()[1]
+        except ValueError as e:
+            logging.error(e)
+            return
+
+        # Load spaces from file or fetch all spaces
+        spaces = load_from_json("spaces.json") or get_spaces(service)
+        
+        # Get formatted tasks
+        formatted_tasks = get_formatted_tasks(service, spaces, date_start, date_end)
+        
+        if args.save:
+            save_to_json(formatted_tasks, "tasks.json")
+            logging.info(f"Saved {len(formatted_tasks)} tasks to tasks.json")
+        else:
+            print(json.dumps(formatted_tasks, indent=4, ensure_ascii=False))
+            logging.info(f"Found {len(formatted_tasks)} tasks")
 
 if __name__ == '__main__':
     main()
