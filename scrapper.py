@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict
 import unicodedata
 import pandas as pd
+import time
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -46,6 +47,32 @@ def get_credentials() -> Credentials:
 
     return creds
 
+def retry_on_error(max_retries=3, delay=30):
+    """
+    Decorator that retries a function on failure with a delay.
+    
+    Args:
+        max_retries (int): Maximum number of retry attempts
+        delay (int): Delay in seconds between retries
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            retries = 0
+            while retries < max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    retries += 1
+                    if retries == max_retries:
+                        logging.error(f"Failed after {max_retries} attempts: {str(e)}")
+                        raise
+                    logging.warning(f"Attempt {retries} failed: {str(e)}. Retrying in {delay} seconds...")
+                    time.sleep(delay)
+            return None
+        return wrapper
+    return decorator
+
+@retry_on_error()
 def get_spaces(service) -> List[Dict]:
     """Retrieve all spaces from Google Chat, excluding DIRECT_MESSAGE spaces."""
     spaces = []
@@ -55,7 +82,6 @@ def get_spaces(service) -> List[Dict]:
         for space in response.get('spaces', []):
             if space.get('spaceType') != 'SPACE':  # Exclude DIRECT_MESSAGE spaces
                 continue
-
             spaces.append(space)
         page_token = response.get('nextPageToken')
         if not page_token:
@@ -85,90 +111,81 @@ def load_from_json(filename: str) -> List[Dict]:
             return json.load(f)
     return None
 
-def get_people(service, spaces: List[Dict], start_date: str = None, end_date: str = None) -> List[str]:
-    """Retrieve a list of unique people from SPACE type spaces by scraping messages."""
-    people = set()
-    for space in spaces:
-        # Only process spaces where spaceType is SPACE
-        if space.get('spaceType') != 'SPACE':
-            continue
-
-        logging.info(f"Processing space: {space['name']}")
-
-        # Fetch messages from the space within the specified date range
-        try:
-            page_token = None
-            while True:
-                response = service.spaces().messages().list(
-                    parent=space['name'],
-                    pageToken=page_token,
-                    filter=f'createTime > "{start_date}" AND createTime < "{end_date}"'
-                ).execute()
-
-                for message in response.get('messages', []):
-                    # Extract the sender's display name
-                    if 'sender' in message and 'displayName' in message['sender']:
-                        people.add(message['sender']['displayName'])
-
-                    # Extract assignee names from task-related messages
-                    if 'text' in message and 'via Tasks' in message['text']:
-                        text = message['text']
-                        if "@" in text:
-                            # Extract the assignee's name (e.g., "Assigned to @username" or "Reassigned to @username")
-                            assignee = text.split("@")[1].split("(")[0].strip()
-                            # Remove any trailing words like "to"
-                            assignee = assignee.split(" to")[0].strip()
-                            people.add(assignee)
-
-                page_token = response.get('nextPageToken')
-                if not page_token:
-                    break
-        except HttpError as error:
-            logging.error(f"Error fetching messages for space {space['name']}: {error}")
-            continue
-
-    return list(people)
-
+@retry_on_error()
 def get_user_display_name(creds: Credentials, user_resource_name: str) -> str:
     """Fetch the display name of a user using the Google People API."""
     try:
-        # Convert 'users/{id}' to 'people/{id}' for the People API
         if user_resource_name.startswith('users/'):
             user_resource_name = user_resource_name.replace('users/', 'people/')
 
-        # Use the Google People API to fetch the user's profile
         people_service = build('people', 'v1', credentials=creds)
         profile = people_service.people().get(
             resourceName=user_resource_name,
             personFields='names'
         ).execute()
 
-        # Extract the display name from the profile
         if 'names' in profile:
             for name in profile['names']:
                 if 'displayName' in name:
                     return name['displayName']
-    except HttpError as error:
-        logging.error(f"Error fetching profile for user {user_resource_name}: {error}")
+    except Exception as e:
+        logging.error(f"Error fetching profile for user {user_resource_name}: {e}")
+        raise
     return None
+
+@retry_on_error()
+def get_messages_for_space(service, space_name: str, date_start: str, date_end: str):
+    """Helper function to get messages from a space with retry logic."""
+    page_token = None
+    messages = []
+    while True:
+        response = service.spaces().messages().list(
+            parent=space_name,
+            pageToken=page_token,
+            filter=f'createTime > "{date_start}" AND createTime < "{date_end}"'
+        ).execute()
+        messages.extend(response.get('messages', []))
+        page_token = response.get('nextPageToken')
+        if not page_token:
+            break
+    return messages
+
+def get_people(service, spaces: List[Dict], start_date: str = None, end_date: str = None) -> List[str]:
+    """Retrieve a list of unique people from SPACE type spaces by scraping messages."""
+    people = set()
+    for space in spaces:
+        if space.get('spaceType') != 'SPACE':
+            continue
+
+        logging.info(f"Processing space: {space['name']}")
+        
+        try:
+            messages = get_messages_for_space(service, space['name'], start_date, end_date)
+            for message in messages:
+                if 'sender' in message and 'displayName' in message['sender']:
+                    people.add(message['sender']['displayName'])
+
+                if 'text' in message and 'via Tasks' in message['text']:
+                    text = message['text']
+                    if "@" in text:
+                        assignee = text.split("@")[1].split("(")[0].strip()
+                        assignee = assignee.split(" to")[0].strip()
+                        people.add(assignee)
+        except Exception as e:
+            logging.error(f"Error processing space {space['name']}: {e}")
+            continue
+
+    return list(people)
 
 def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[Dict]:
     """Retrieve tasks from a specific space within a date range using a valid filter query."""
     tasks = []
     completed_tasks, reopened_tasks, deleted_tasks, assigned_tasks = set(), set(), set(), set()
-    page_token = None
-
-    # Construct the filter query
-    filter_query = f'createTime > "{start_date}" AND createTime < "{end_date}"'
-
-    while True:
-        response = service.spaces().messages().list(
-            parent=space_name,
-            pageToken=page_token,
-            filter=filter_query
-        ).execute()
-
-        for message in response.get('messages', []):
+    
+    try:
+        messages = get_messages_for_space(service, space_name, start_date, end_date)
+        
+        for message in messages:
             if 'via Tasks' in message.get('text', ''):
                 task_id = message['thread']['name'].split("/")[3]
                 text = message['text']
@@ -192,9 +209,9 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[
                 elif "Re-opened" in text:
                     reopened_tasks.add(task_id)
 
-        page_token = response.get('nextPageToken')
-        if not page_token:
-            break
+    except Exception as e:
+        logging.error(f"Error fetching tasks from space {space_name}: {e}")
+        raise
 
     # Update task statuses
     for task in tasks:
@@ -385,18 +402,26 @@ def main():
             logging.error(e)
             return
 
-        spaces = load_from_json("spaces.json") or get_spaces(service)
-        people = load_from_json("people.json") or None
+        # First try to load tasks from tasks.json
+        tasks = load_from_json("tasks.json")
+        
+        if tasks:
+            logging.info("Using existing tasks from tasks.json")
+            all_tasks = tasks
+        else:
+            logging.info("No tasks.json found. Fetching tasks from API...")
+            spaces = load_from_json("spaces.json") or get_spaces(service)
+            people = load_from_json("people.json") or None
 
-        # Fetch all tasks
-        all_tasks = []
-        for space in spaces:
-            tasks = get_tasks(service, space['name'], date_start, date_end)
-            all_tasks.extend(tasks)
+            # Fetch all tasks
+            all_tasks = []
+            for space in spaces:
+                tasks = get_tasks(service, space['name'], date_start, date_end)
+                all_tasks.extend(tasks)
 
-        # Filter tasks if people.json exists
-        if people:
-            all_tasks = filter_tasks(all_tasks, people, [space['name'] for space in spaces])
+            # Filter tasks if people.json exists
+            if people:
+                all_tasks = filter_tasks(all_tasks, people, [space['name'] for space in spaces])
 
         # Generate the report
         report = analyze_tasks(all_tasks)
