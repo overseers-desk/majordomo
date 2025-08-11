@@ -1,87 +1,88 @@
 # Google Spaces Tasks Reporter
 
-This script was made with the idea of creating an efficiency report, using the Tasks status and assignee to create a
-complete report that includes the amount of tasks received, amount of tasks completed and completion rate. You can
-create the reports using a time range. The final report is saved to a `.csv` file.
+This script creates comprehensive efficiency reports by analysing Google Chat spaces and extracting task information to generate detailed completion statistics. The tool retrieves task status and assignee data across specified time ranges, calculating metrics such as tasks received, tasks completed, and completion rates. All reports are exported to CSV format for further analysis and reporting.
 
-## Installing
-The script was tested and coded under Python 3.12. To start using the script, follow these steps:
-- Create a Project on [Google Cloud Console](https://console.cloud.google.com/) if you don't have one yet.
-- Enable Google Tasks API in your project. You can find it in APIs & Services section.
-- Create a OAuth2 credential. You can find Credentials section in APIs & Services section. Make sure to add `http://localhost:7276/` to **Authorized redirect URIs**.
-- Download the .json file from the created credential, rename it to `client_secret.json` and paste it in the root project folder.
-- Install all the requirements, using pip. Reference command:
+## Overview
+
+The Google Spaces Tasks Reporter is designed for teams and organisations that need to track productivity and task completion across Google Chat spaces. By leveraging the Google Tasks API and Google Chat API, it provides insights into team performance and task management efficiency through automated data collection and reporting.
+
+**Important**: This tool requires a Google Workspace account (Business or Enterprise) for full functionality. Personal Gmail accounts cannot access the Google Chat API, which is essential for retrieving space and task information. If you're using a personal Gmail account, you'll need to upgrade to Google Workspace or work with your organisation's administrator to gain access.
+
+## Prerequisites and Setup
+
+The script requires Python 3.12 and access to Google Cloud services. Before installation, you'll need to configure several Google Cloud components to enable the necessary APIs and authentication.
+
+### Google Cloud Console Configuration
+
+Begin by creating a project in the [Google Cloud Console](https://console.cloud.google.com/) if you don't already have one. Once your project is established, navigate to the APIs & Services section to enable the required services. You'll need to activate both the Google Tasks API and Google Chat API, along with the People API for comprehensive functionality.
+
+### OAuth2 Client Setup
+
+Create an OAuth2 client within your project, selecting the "Desktop" application type for optimal compatibility. When naming the client, "Google-Spaces-Tasks-reporter" works well. In the Credentials section, ensure you add `http://localhost:7276/` to the authorised redirect URIs to enable local authentication.
+
+Download the generated JSON credential file and rename it to `client_secret.json`, placing it in your project's root directory. This file contains the necessary authentication credentials for the script to interact with Google's services.
+
+### Google Chat App Configuration
+
+Google requires every project using the Chat API to have a configured Chat app. Navigate to the Chat API Configuration page within your project settings. When setting up the app, use "Google-Spaces-Tasks" as the name (keeping it concise) and provide your GitHub repository URL. Importantly, disable interactive features since this application operates passively without user interaction.
+
+## Installation
+
+The script offers two installation methods depending on your system preferences and requirements.
+
+### Ubuntu/Debian System Packages (Recommended)
+
+For Ubuntu and Debian systems, the recommended approach uses system packages for better integration and dependency management:
+
+```bash
+sudo apt update
+sudo apt install python3-pandas python3-googleapi python3-google-auth python3-google-auth-oauthlib python3-httplib2 python3-requests
+```
+
+This method eliminates the need for the `requirements.txt` file and provides system-level package management.
+
+### Python pip Packages
+
+Alternatively, you can install all dependencies using pip:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-## How to Use
-The first run will ask for login and generate the required user credentials, under the file `token.json`.
+This approach is suitable for environments where system packages aren't available or when you prefer Python-specific package management.
 
-```
-Google Tasks Scrapper
+## Usage
 
-positional arguments:
-  {spaces,people,tasks,report}
-    spaces              Retrieve a list of spaces
-    people              Retrieve a list of people
-    tasks              Retrieve task information from spaces
-    report             Generate a tasks report
+Upon first execution, the script will prompt for Google account authentication and generate user credentials stored in `token.json`. This file enables subsequent runs without repeated authentication prompts.
 
-options:
-  -h, --help            show this help message and exit
-```
+The script provides four main commands, each serving specific data collection and reporting purposes:
 
-### Spaces Command
-```
-usage: scrapper.py spaces [-h] [--save]
+### Core Commands
 
-options:
-  -h, --help  show this help message and exit
-  --save      Save the list of spaces to a JSON file
-```
+**Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--save` flag to persist the results to `spaces.json` for future reference.
 
-### People Command
-```
-usage: scrapper.py people [-h] [--date-start DATE_START] [--date-end DATE_END] [--save]
+**People Command**: Extracts information about individuals found within the specified spaces. This command supports date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), with results optionally saved to `people.json`.
 
-options:
-  -h, --help            show this help message and exit
-  --date-start DATE_START
-                        Start date in ISO format (e.g., 2022-01-15)
-  --date-end DATE_END   End date in ISO format (e.g., 2022-01-15)
-  --save                Save the list of people to a JSON file
+**Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. Like the people command, it supports date range filtering and can save results to `tasks.json`.
+
+**Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to a CSV file with the naming convention `task_report_YYYY-MM-DD_YYYY-MM-DD.csv`.
+
+### Command-Line Interface
+
+The script provides a unified command-line interface accessible through:
+
+```bash
+python scrapper.py {spaces|people|tasks|report} [options]
 ```
 
-### Tasks Command
-```
-usage: scrapper.py tasks [-h] [--date-start DATE_START] [--date-end DATE_END] [--save]
+Each command includes help documentation accessible via the `-h` or `--help` flag, providing detailed parameter information and usage examples.
 
-options:
-  -h, --help            show this help message and exit
-  --date-start DATE_START
-                        Start date in ISO format (e.g., 2022-01-15)
-  --date-end DATE_END   End date in ISO format (e.g., 2022-01-15)
-  --save                Save tasks to tasks.json file
-```
+### Date Range Handling
 
-### Report Command
-```
-usage: scrapper.py report [-h] [--date-start DATE_START] [--date-end DATE_END] [--save]
+When no date range is specified, the script defaults to analysing the previous calendar month. All dates should be provided in ISO format (YYYY-MM-DD) for consistency and accuracy. The date filtering enables focused analysis of specific time periods, making it ideal for monthly reporting or targeted performance reviews.
 
-options:
-  -h, --help            show this help message and exit
-  --date-start DATE_START
-                        Start date in ISO format (e.g., 2022-01-15)
-  --date-end DATE_END   End date in ISO format (e.g., 2022-01-15)
-  --save                Save the report to a CSV file
-```
+## Output and Data Management
 
-## Output Files
-- `spaces.json`: Contains the list of Google Chat spaces
-- `people.json`: Contains the list of people found in the spaces
-- `tasks.json`: Contains the list of tasks with their details
-- `task_report_YYYY-MM-DD_YYYY-MM-DD.csv`: Contains the task completion report for the specified date range
+The script generates several output files to support different analysis needs. The `spaces.json` file contains the complete list of accessible Google Chat spaces, while `people.json` stores information about individuals found within those spaces. The `tasks.json` file maintains detailed task records, and the CSV report provides aggregated completion statistics for the specified time period.
 
-## Date Ranges
-If no date range is specified, the script will default to the previous calendar month. Dates should be provided in ISO format (YYYY-MM-DD).
+These output files enable both immediate analysis and long-term data tracking, supporting various reporting requirements from quick status checks to comprehensive performance reviews. The CSV format ensures compatibility with spreadsheet applications and business intelligence tools for further analysis and visualisation.
