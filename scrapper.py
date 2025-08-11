@@ -348,6 +348,9 @@ def main():
     parser = argparse.ArgumentParser(description="Google Tasks Scrapper")
     subparsers = parser.add_subparsers(dest="command")
 
+    # Config command for token management
+    config_parser = subparsers.add_parser("config", help="Configure authentication token")
+
     # Spaces command
     spaces_parser = subparsers.add_parser("spaces", help="Retrieve a list of spaces")
     spaces_parser.add_argument("--save", action="store_true", help="Save the list of spaces to a JSON file")
@@ -372,6 +375,26 @@ def main():
 
     args = parser.parse_args()
 
+    # If no command is provided, show help
+    if not args.command:
+        parser.print_help()
+        print("\nAvailable commands:")
+        print("  config   - Configure authentication token")
+        print("  spaces   - Retrieve a list of spaces")
+        print("  people   - Retrieve a list of people")
+        print("  report   - Generate a tasks report")
+        print("  tasks    - Retrieve task information from spaces")
+        print("\nUse --help with any command for more information.")
+        return
+
+    # Only get credentials when a command is actually provided
+    if args.command == "config":
+        print("Configuring authentication token...")
+        creds = get_credentials()
+        print("Authentication token configured successfully!")
+        return
+
+    # For all other commands, get credentials and build service
     creds = get_credentials()
     service = build('chat', 'v1', credentials=creds)
 

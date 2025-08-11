@@ -53,11 +53,34 @@ This approach is suitable for environments where system packages aren't availabl
 
 ## Usage
 
-Upon first execution, the script will prompt for Google account authentication and generate user credentials stored in `token.json`. This file enables subsequent runs without repeated authentication prompts.
+The script provides a command-line interface with several subcommands for different operations. When run without any arguments, it displays a helpful overview of available commands.
 
-The script provides four main commands, each serving specific data collection and reporting purposes:
+### Command Overview
+
+```bash
+python3 scrapper.py [command] [options]
+```
+
+**Available Commands:**
+- `config` - Configure authentication token
+- `spaces` - Retrieve a list of spaces
+- `people` - Retrieve a list of people
+- `report` - Generate a tasks report
+- `tasks` - Retrieve task information from spaces
+
+### Initial Setup
+
+Before using the script, you'll need to configure your authentication token:
+
+```bash
+python3 scrapper.py config
+```
+
+This command will prompt for Google account authentication and generate user credentials stored in `token.json`. This file enables subsequent runs without repeated authentication prompts.
 
 ### Core Commands
+
+**Config Command**: Sets up or refreshes your Google API authentication token. This is required for first-time use and when tokens expire.
 
 **Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--save` flag to persist the results to `spaces.json` for future reference.
 
@@ -67,12 +90,29 @@ The script provides four main commands, each serving specific data collection an
 
 **Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to a CSV file with the naming convention `task_report_YYYY-MM-DD_YYYY-MM-DD.csv`.
 
-### Command-Line Interface
-
-The script provides a unified command-line interface accessible through:
+### Command-Line Interface Examples
 
 ```bash
-python scrapper.py {spaces|people|tasks|report} [options]
+# Show available commands
+python3 scrapper.py
+
+# Configure authentication
+python3 scrapper.py config
+
+# Get list of spaces
+python3 scrapper.py spaces
+
+# Get list of spaces and save to file
+python3 scrapper.py spaces --save
+
+# Get people from specific date range
+python3 scrapper.py people --date-start 2024-01-01 --date-end 2024-01-31
+
+# Generate report for specific period
+python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --save
+
+# Get tasks and save to file
+python3 scrapper.py tasks --save
 ```
 
 Each command includes help documentation accessible via the `-h` or `--help` flag, providing detailed parameter information and usage examples.
