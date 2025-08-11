@@ -25,6 +25,10 @@ CREDENTIALS_FILE = 'client_secret.json'
 
 def setup_logging():
     """Setup logging configuration."""
+    # Suppress specific warnings from Google API client
+    logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
+    logging.getLogger('googleapiclient.discovery').setLevel(logging.ERROR)
+    
     logging.basicConfig(
         level=logging.INFO,  # Changed back to INFO from DEBUG
         format='%(asctime)s - %(levelname)s - %(message)s'
