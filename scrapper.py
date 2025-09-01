@@ -333,6 +333,44 @@ def convert_to_rfc3339(date_str: str) -> str:
     except ValueError:
         raise ValueError(f"Invalid date format: {date_str}. Expected format: YYYY-MM-DD")
 
+def parse_date_range(args) -> tuple[str, str]:
+    """
+    Parse date range arguments and return start and end dates in RFC 3339 format.
+    
+    Args:
+        args: Command line arguments object containing date-related flags
+        
+    Returns:
+        tuple: (date_start, date_end) in RFC 3339 format
+        
+    Raises:
+        ValueError: If date parsing fails or invalid date combination is provided
+    """
+    try:
+        # Handle date range options with priority: past-month/past-year > custom dates > default dates
+        if hasattr(args, 'past_month') and args.past_month:
+            date_start, date_end = get_past_month_dates()
+            logging.info("Using past month date range (30 days ago to today)")
+        elif hasattr(args, 'past_year') and args.past_year:
+            date_start, date_end = get_past_year_dates()
+            logging.info("Using past year date range (365 days ago to today)")
+        elif hasattr(args, 'date_start') and hasattr(args, 'date_end') and args.date_start and args.date_end:
+            date_start = convert_to_rfc3339(args.date_start)
+            date_end = convert_to_rfc3339(args.date_end)
+        elif hasattr(args, 'date_start') and hasattr(args, 'date_end') and (args.date_start or args.date_end):
+            logging.error("Both --date-start and --date-end must be provided together")
+            raise ValueError("Both --date-start and --date-end must be provided together")
+        else:
+            date_start, date_end = get_default_dates()
+            logging.info("Using default date range (previous calendar month)")
+        
+        return date_start, date_end
+    except Exception as e:
+        if isinstance(e, ValueError):
+            raise
+        logging.error(f"Error parsing date range: {e}")
+        raise ValueError(f"Error parsing date range: {e}")
+
 def format_task_info(task: Dict, space_name: str) -> Dict:
     """Format task information in a human-friendly way."""
     return {
@@ -472,18 +510,24 @@ def main():
     people_parser = subparsers.add_parser("people", help="Retrieve a list of people")
     people_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
     people_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    people_parser.add_argument("--past-month", action="store_true", help="Retrieve people from the past 30 days")
+    people_parser.add_argument("--past-year", action="store_true", help="Retrieve people from the past 365 days")
     people_parser.add_argument("--save", action="store_true", help="Save the list of people to a JSON file")
 
     # Report command (previously Tasks)
     report_parser = subparsers.add_parser("report", help="Generate a tasks report")
     report_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
     report_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    report_parser.add_argument("--past-month", action="store_true", help="Generate report for the past 30 days")
+    report_parser.add_argument("--past-year", action="store_true", help="Generate report for the past 365 days")
     report_parser.add_argument("--save", action="store_true", help="Save the report to a CSV file")
 
     # New Tasks command
     tasks_parser = subparsers.add_parser("tasks", help="Retrieve task information from spaces")
     tasks_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
     tasks_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    tasks_parser.add_argument("--past-month", action="store_true", help="Retrieve tasks from the past 30 days")
+    tasks_parser.add_argument("--past-year", action="store_true", help="Retrieve tasks from the past 365 days")
     tasks_parser.add_argument("--save", action="store_true", help="Save tasks to tasks.json file")
 
     # Messages command
@@ -530,10 +574,8 @@ def main():
             print(json.dumps(spaces, indent=4, ensure_ascii=False))
 
     elif args.command == "people":
-        # Use the default date range (previous calendar month) if no dates are provided
         try:
-            date_start = convert_to_rfc3339(args.date_start) if args.date_start else get_default_dates()[0]
-            date_end = convert_to_rfc3339(args.date_end) if args.date_end else get_default_dates()[1]
+            date_start, date_end = parse_date_range(args)
         except ValueError as e:
             logging.error(e)
             return
@@ -547,8 +589,7 @@ def main():
 
     elif args.command == "report":
         try:
-            date_start = convert_to_rfc3339(args.date_start) if args.date_start else get_default_dates()[0]
-            date_end = convert_to_rfc3339(args.date_end) if args.date_end else get_default_dates()[1]
+            date_start, date_end = parse_date_range(args)
         except ValueError as e:
             logging.error(e)
             return
@@ -587,8 +628,7 @@ def main():
 
     elif args.command == "tasks":
         try:
-            date_start = convert_to_rfc3339(args.date_start) if args.date_start else get_default_dates()[0]
-            date_end = convert_to_rfc3339(args.date_end) if args.date_end else get_default_dates()[1]
+            date_start, date_end = parse_date_range(args)
         except ValueError as e:
             logging.error(e)
             return
@@ -608,22 +648,7 @@ def main():
 
     elif args.command == "messages":
         try:
-            # Handle date range options with priority: past-month/past-year > custom dates > default dates
-            if args.past_month:
-                date_start, date_end = get_past_month_dates()
-                logging.info("Using past month date range (30 days ago to today)")
-            elif args.past_year:
-                date_start, date_end = get_past_year_dates()
-                logging.info("Using past year date range (365 days ago to today)")
-            elif args.date_start and args.date_end:
-                date_start = convert_to_rfc3339(args.date_start)
-                date_end = convert_to_rfc3339(args.date_end)
-            elif args.date_start or args.date_end:
-                logging.error("Both --date-start and --date-end must be provided together")
-                return
-            else:
-                date_start, date_end = get_default_dates()
-                logging.info("Using default date range (previous calendar month)")
+            date_start, date_end = parse_date_range(args)
         except ValueError as e:
             logging.error(e)
             return

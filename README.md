@@ -85,11 +85,11 @@ This command will prompt for Google account authentication and generate user cre
 
 **Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--save` flag to persist the results to `spaces.json` for future reference.
 
-**People Command**: Extracts information about individuals found within the specified spaces. This command supports date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), with results optionally saved to `people.json`.
+**People Command**: Extracts information about individuals found within the specified spaces. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be optionally saved to `people.json`.
 
-**Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. Like the people command, it supports date range filtering and can save results to `tasks.json`.
+**Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be saved to `tasks.json`.
 
-**Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to a CSV file with the naming convention `task_report_YYYY-MM-DD_YYYY-MM-DD.csv`.
+**Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to a CSV file with the naming convention `task_report_YYYY-MM-DD_YYYY-MM-DD.csv`. The command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today).
 
 **Messages Command**: Exports all chat messages from a specific Google Chat space in either JSON or CSV format. This command can accept a `--space` parameter to specify the target space directly, or if no space is specified, it will present an interactive list of all available spaces for the user to choose from. The export includes comprehensive message details such as message ID, full text content, sender information, space name, creation time, last update time, thread details, message type, and deletion status. Use the `--save` flag to save the results to a file; without it, messages are displayed in the terminal. When saving, output files are automatically named with the format `messages_export_{space_name}_{start_date}_{end_date}.{format}`. The command supports efficient date filtering using Google's API with options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today), or custom date ranges with `--date-start` and `--date-end`.
 
@@ -111,11 +111,29 @@ python3 scrapper.py spaces --save
 # Get people from specific date range
 python3 scrapper.py people --date-start 2024-01-01 --date-end 2024-01-31
 
+# Get people from the past month (30 days ago to today)
+python3 scrapper.py people --past-month
+
+# Get people from the past year (365 days ago to today)
+python3 scrapper.py people --past-year
+
 # Generate report for specific period
 python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --save
 
+# Generate report for the past month (30 days ago to today)
+python3 scrapper.py report --past-month --save
+
+# Generate report for the past year (365 days ago to today)
+python3 scrapper.py report --past-year --save
+
 # Get tasks and save to file
 python3 scrapper.py tasks --save
+
+# Get tasks for the past month (30 days ago to today)
+python3 scrapper.py tasks --past-month --save
+
+# Get tasks for the past year (365 days ago to today)
+python3 scrapper.py tasks --past-year --save
 
 # Export messages from a specific space (JSON format) and save to file
 python3 scrapper.py messages --space "spaces/ABC123" --save
@@ -143,7 +161,21 @@ Each command includes help documentation accessible via the `-h` or `--help` fla
 
 ### Date Range Handling
 
-When no date range is specified, the script defaults to analysing the previous calendar month. All dates should be provided in ISO format (YYYY-MM-DD) for consistency and accuracy. The date filtering enables focused analysis of specific time periods, making it ideal for monthly reporting or targeted performance reviews.
+The script provides flexible date range options across all relevant commands. When no date range is specified, the script defaults to analysing the previous calendar month. All dates should be provided in ISO format (YYYY-MM-DD) for consistency and accuracy.
+
+**Available Date Range Options:**
+- **Custom Range**: Use `--date-start` and `--date-end` to specify exact start and end dates
+- **Past Month**: Use `--past-month` to analyse data from the past 30 days (from today)
+- **Past Year**: Use `--past-year` to analyse data from the past 365 days (from today)
+- **Default**: When no options are specified, the script automatically uses the previous calendar month
+
+**Commands with Date Range Support:**
+- `people` - Extract people information with date filtering
+- `tasks` - Retrieve task information with date filtering
+- `report` - Generate task reports with date filtering
+- `messages` - Export messages with date filtering
+
+These date filtering options enable focused analysis of specific time periods, making it ideal for monthly reporting, quarterly reviews, or targeted performance analysis. The `--past-month` and `--past-year` options are particularly useful for quick analysis of recent activity without needing to calculate specific dates.
 
 ## Output and Data Management
 
