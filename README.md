@@ -67,6 +67,7 @@ python3 scrapper.py [command] [options]
 - `people` - Retrieve a list of people
 - `report` - Generate a tasks report
 - `tasks` - Retrieve task information from spaces
+- `messages` - Export chat messages from a specific space
 
 ### Initial Setup
 
@@ -89,6 +90,8 @@ This command will prompt for Google account authentication and generate user cre
 **Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. Like the people command, it supports date range filtering and can save results to `tasks.json`.
 
 **Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to a CSV file with the naming convention `task_report_YYYY-MM-DD_YYYY-MM-DD.csv`.
+
+**Messages Command**: Exports all chat messages from a specific Google Chat space in either JSON or CSV format. This command can accept a `--space` parameter to specify the target space directly, or if no space is specified, it will present an interactive list of all available spaces for the user to choose from. The export includes comprehensive message details such as message ID, full text content, sender information, space name, creation time, last update time, thread details, message type, and deletion status. Use the `--save` flag to save the results to a file; without it, messages are displayed in the terminal. When saving, output files are automatically named with the format `messages_export_{space_name}_{start_date}_{end_date}.{format}`. The command supports efficient date filtering using Google's API with options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today), or custom date ranges with `--date-start` and `--date-end`.
 
 ### Command-Line Interface Examples
 
@@ -113,6 +116,27 @@ python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --save
 
 # Get tasks and save to file
 python3 scrapper.py tasks --save
+
+# Export messages from a specific space (JSON format) and save to file
+python3 scrapper.py messages --space "spaces/ABC123" --save
+
+# Export messages from a specific space (CSV format) and save to file
+python3 scrapper.py messages --space "spaces/ABC123" --format csv --save
+
+# Export messages with interactive space selection and save to file
+python3 scrapper.py messages --save
+
+# Export messages for a specific date range and save to file
+python3 scrapper.py messages --date-start 2024-01-01 --date-end 2024-01-31 --save
+
+# Export messages from the past month (30 days ago to today)
+python3 scrapper.py messages --space "spaces/ABC123" --past-month --save
+
+# Export messages from the past year (365 days ago to today)
+python3 scrapper.py messages --space "spaces/ABC123" --past-year --save
+
+# Display messages without saving (default behavior)
+python3 scrapper.py messages --space "spaces/ABC123"
 ```
 
 Each command includes help documentation accessible via the `-h` or `--help` flag, providing detailed parameter information and usage examples.

@@ -202,6 +202,9 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[
                         'status': 'OPEN',
                         'created_time': message['createTime'],
                         'space_name': space_name,
+                        'message_text': message.get('text', ''),
+                        'sender': message.get('sender', {}).get('displayName', 'Unknown'),
+                        'thread_name': message.get('thread', {}).get('name', ''),
                     }
                     tasks.append(task_data)
                 elif "Assigned" in text:
@@ -302,6 +305,24 @@ def get_default_dates():
         last_day_of_previous_month.isoformat() + "Z"    # End date
     )
 
+def get_past_month_dates():
+    """Get the date range for the past month (30 days ago to today) in RFC 3339 format."""
+    today = datetime.today()
+    past_month = today - timedelta(days=30)
+    return (
+        past_month.isoformat() + "Z",  # Start date
+        today.isoformat() + "Z"        # End date
+    )
+
+def get_past_year_dates():
+    """Get the date range for the past year (365 days ago to today) in RFC 3339 format."""
+    today = datetime.today()
+    past_year = today - timedelta(days=365)
+    return (
+        past_year.isoformat() + "Z",  # Start date
+        today.isoformat() + "Z"       # End date
+    )
+
 def convert_to_rfc3339(date_str: str) -> str:
     """Convert an ISO format date (e.g., 2022-01-15) to RFC 3339 format (e.g., 2022-01-15T00:00:00Z)."""
     try:
@@ -321,6 +342,9 @@ def format_task_info(task: Dict, space_name: str) -> Dict:
         'space': space_name,
         'created_at': task.get('created_time'),
         'last_updated': task.get('last_update_time', task.get('created_time')),
+        'message_text': task.get('message_text', ''),
+        'sender': task.get('sender', ''),
+        'thread_name': task.get('thread_name', ''),
     }
 
 def get_formatted_tasks(service, spaces: List[Dict], start_date: str = None, end_date: str = None) -> List[Dict]:
@@ -341,6 +365,95 @@ def get_formatted_tasks(service, spaces: List[Dict], start_date: str = None, end
             continue
             
     return formatted_tasks
+
+def export_messages(service, space_name: str, start_date: str, end_date: str, output_format: str = "json") -> None:
+    """Export all chat messages from a specific space in the specified format."""
+    logging.info(f"Exporting messages from space: {space_name}")
+    
+    try:
+        # Get all messages from the specified space
+        messages = get_messages_for_space(service, space_name, start_date, end_date)
+        
+        if not messages:
+            logging.info("No messages found in the specified space and date range.")
+            return
+        
+        # Format messages for export
+        formatted_messages = []
+        for message in messages:
+            formatted_message = {
+                'id': message.get('name', ''),
+                'text': message.get('text', ''),
+                'sender': message.get('sender', {}).get('displayName', 'Unknown'),
+                'sender_id': message.get('sender', {}).get('name', ''),
+                'space': space_name,
+                'created_at': message.get('createTime', ''),
+                'thread_name': message.get('thread', {}).get('name', ''),
+                'message_type': message.get('messageType', ''),
+                'deleted': message.get('deleted', False),
+                'last_updated': message.get('lastUpdateTime', message.get('createTime', ''))
+            }
+            formatted_messages.append(formatted_message)
+        
+        # Generate filename with space name and date range
+        start_iso = datetime.fromisoformat(start_date.replace('Z', '')).strftime('%Y-%m-%d')
+        end_iso = datetime.fromisoformat(end_date.replace('Z', '')).strftime('%Y-%m-%d')
+        space_display_name = space_name.split('/')[-1] if '/' in space_name else space_name
+        
+        if output_format.lower() == "csv":
+            filename = f'messages_export_{space_display_name}_{start_iso}_{end_iso}.csv'
+            df = pd.DataFrame(formatted_messages)
+            # Reorder columns for better readability
+            column_order = ['id', 'text', 'sender', 'sender_id', 'space', 'created_at', 'last_updated', 'thread_name', 'message_type', 'deleted']
+            df = df.reindex(columns=column_order)
+            df.to_csv(filename, index=False)
+            logging.info(f"Exported {len(formatted_messages)} messages to {filename}")
+        else:  # Default to JSON
+            filename = f'messages_export_{space_display_name}_{start_iso}_{end_iso}.json'
+            save_to_json(formatted_messages, filename)
+            logging.info(f"Exported {len(formatted_messages)} messages to {filename}")
+            
+    except Exception as e:
+        logging.error(f"Error exporting messages from space {space_name}: {e}")
+        raise
+
+def list_spaces_interactive(spaces: List[Dict]) -> str:
+    """List all spaces and let user choose one interactively."""
+    print("\nAvailable spaces:")
+    print("-" * 80)
+    
+    # Create a numbered list of spaces
+    space_choices = []
+    for i, space in enumerate(spaces, 1):
+        space_id = space['name']
+        display_name = space.get('displayName', space_id)
+        space_choices.append((i, space_id, display_name))
+        print(f"{i:2d}. {display_name}")
+        print(f"    ID: {space_id}")
+        print()
+    
+    # Get user choice
+    while True:
+        try:
+            choice = input("Enter the number of the space to export messages from (or 'q' to quit): ").strip()
+            
+            if choice.lower() == 'q':
+                print("Export cancelled.")
+                return None
+            
+            choice_num = int(choice)
+            if 1 <= choice_num <= len(space_choices):
+                selected_space = space_choices[choice_num - 1][1]  # Get the space ID
+                selected_name = space_choices[choice_num - 1][2]   # Get the display name
+                print(f"\nSelected space: {selected_name}")
+                return selected_space
+            else:
+                print(f"Please enter a number between 1 and {len(space_choices)}")
+        except ValueError:
+            print("Please enter a valid number or 'q' to quit")
+        except KeyboardInterrupt:
+            print("\nExport cancelled.")
+            return None
 
 def main():
     setup_logging()
@@ -373,6 +486,16 @@ def main():
     tasks_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     tasks_parser.add_argument("--save", action="store_true", help="Save tasks to tasks.json file")
 
+    # Messages command
+    messages_parser = subparsers.add_parser("messages", help="Export chat messages from a specific space")
+    messages_parser.add_argument("--space", help="Space ID to export from (if not provided, will show interactive selection)")
+    messages_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
+    messages_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    messages_parser.add_argument("--past-month", action="store_true", help="Export messages from the past 30 days")
+    messages_parser.add_argument("--past-year", action="store_true", help="Export messages from the past 365 days")
+    messages_parser.add_argument("--format", choices=["json", "csv"], default="json", help="Output format (default: json)")
+    messages_parser.add_argument("--save", action="store_true", help="Save the exported messages to a file")
+
     args = parser.parse_args()
 
     # If no command is provided, show help
@@ -384,6 +507,7 @@ def main():
         print("  people   - Retrieve a list of people")
         print("  report   - Generate a tasks report")
         print("  tasks    - Retrieve task information from spaces")
+        print("  messages - Export chat messages from a specific space")
         print("\nUse --help with any command for more information.")
         return
 
@@ -481,6 +605,73 @@ def main():
         else:
             print(json.dumps(formatted_tasks, indent=4, ensure_ascii=False))
             logging.info(f"Found {len(formatted_tasks)} tasks")
+
+    elif args.command == "messages":
+        try:
+            # Handle date range options with priority: past-month/past-year > custom dates > default dates
+            if args.past_month:
+                date_start, date_end = get_past_month_dates()
+                logging.info("Using past month date range (30 days ago to today)")
+            elif args.past_year:
+                date_start, date_end = get_past_year_dates()
+                logging.info("Using past year date range (365 days ago to today)")
+            elif args.date_start and args.date_end:
+                date_start = convert_to_rfc3339(args.date_start)
+                date_end = convert_to_rfc3339(args.date_end)
+            elif args.date_start or args.date_end:
+                logging.error("Both --date-start and --date-end must be provided together")
+                return
+            else:
+                date_start, date_end = get_default_dates()
+                logging.info("Using default date range (previous calendar month)")
+        except ValueError as e:
+            logging.error(e)
+            return
+
+        # Get spaces
+        spaces = load_from_json("spaces.json") or get_spaces(service)
+        
+        # Determine which space to export from
+        if args.space:
+            # Use the specified space
+            space_name = args.space
+            # Validate that the space exists
+            space_exists = any(space['name'] == space_name for space in spaces)
+            if not space_exists:
+                logging.error(f"Space '{space_name}' not found. Use 'spaces' command to see available spaces.")
+                return
+        else:
+            # Interactive space selection
+            space_name = list_spaces_interactive(spaces)
+            if not space_name:
+                return  # User cancelled
+        
+        # Export messages from the selected space
+        if args.save:
+            export_messages(service, space_name, date_start, date_end, args.format)
+        else:
+            # Just display the messages without saving
+            messages = get_messages_for_space(service, space_name, date_start, date_end)
+            if messages:
+                formatted_messages = []
+                for message in messages:
+                    formatted_message = {
+                        'id': message.get('name', ''),
+                        'text': message.get('text', ''),
+                        'sender': message.get('sender', {}).get('displayName', 'Unknown'),
+                        'sender_id': message.get('sender', {}).get('name', ''),
+                        'space': space_name,
+                        'created_at': message.get('createTime', ''),
+                        'thread_name': message.get('thread', {}).get('name', ''),
+                        'message_type': message.get('messageType', ''),
+                        'deleted': message.get('deleted', False),
+                        'last_updated': message.get('lastUpdateTime', message.get('createTime', ''))
+                    }
+                    formatted_messages.append(formatted_message)
+                print(json.dumps(formatted_messages, indent=4, ensure_ascii=False))
+                logging.info(f"Found {len(formatted_messages)} messages (not saved)")
+            else:
+                logging.info("No messages found in the specified space and date range.")
 
 if __name__ == '__main__':
     main()
