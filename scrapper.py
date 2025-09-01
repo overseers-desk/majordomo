@@ -92,6 +92,36 @@ def get_spaces(service) -> List[Dict]:
             break
     return spaces
 
+def get_public_spaces(service) -> List[Dict]:
+    """Retrieve only public spaces (SPACE type)."""
+    return get_spaces(service)  # Reuse existing function
+
+def get_direct_message_spaces(service) -> List[Dict]:
+    """Retrieve only direct message spaces (DIRECT_MESSAGE type)."""
+    spaces = []
+    page_token = None
+    while True:
+        response = service.spaces().list(pageToken=page_token).execute()
+        for space in response.get('spaces', []):
+            if space.get('spaceType') == 'DIRECT_MESSAGE':  # Only include DIRECT_MESSAGE spaces
+                spaces.append(space)
+        page_token = response.get('nextPageToken')
+        if not page_token:
+            break
+    return spaces
+
+def get_all_spaces_and_dms(service) -> List[Dict]:
+    """Retrieve all spaces including direct messages."""
+    spaces = []
+    page_token = None
+    while True:
+        response = service.spaces().list(pageToken=page_token).execute()
+        spaces.extend(response.get('spaces', []))
+        page_token = response.get('nextPageToken')
+        if not page_token:
+            break
+    return spaces
+
 def normalize_name(name: str) -> str:
     """Normalize a name by removing accents and special characters."""
     # Normalize the name to NFKD form (decompose accents)
@@ -465,8 +495,18 @@ def list_spaces_interactive(spaces: List[Dict]) -> str:
     for i, space in enumerate(spaces, 1):
         space_id = space['name']
         display_name = space.get('displayName', space_id)
+        space_type = space.get('spaceType', 'UNKNOWN')
+        
+        # Format space type for display
+        if space_type == 'SPACE':
+            type_indicator = '[PUBLIC]'
+        elif space_type == 'DIRECT_MESSAGE':
+            type_indicator = '[PRIVATE]'
+        else:
+            type_indicator = f'[{space_type}]'
+        
         space_choices.append((i, space_id, display_name))
-        print(f"{i:2d}. {display_name}")
+        print(f"{i:2d}. {type_indicator} {display_name}")
         print(f"    ID: {space_id}")
         print()
     
@@ -505,6 +545,8 @@ def main():
     # Spaces command
     spaces_parser = subparsers.add_parser("spaces", help="Retrieve a list of spaces")
     spaces_parser.add_argument("--save", action="store_true", help="Save the list of spaces to a JSON file")
+    spaces_parser.add_argument("--include-direct-messages", action="store_true", help="Include direct message conversations")
+    spaces_parser.add_argument("--all", action="store_true", help="Show all spaces including direct messages")
 
     # People command
     people_parser = subparsers.add_parser("people", help="Retrieve a list of people")
@@ -531,8 +573,15 @@ def main():
     tasks_parser.add_argument("--save", action="store_true", help="Save tasks to tasks.json file")
 
     # Messages command
-    messages_parser = subparsers.add_parser("messages", help="Export chat messages from a specific space")
-    messages_parser.add_argument("--space", help="Space ID to export from (if not provided, will show interactive selection)")
+    messages_parser = subparsers.add_parser("messages", help="Export chat messages from spaces or direct messages")
+    
+    # Mutually exclusive group for space selection
+    group = messages_parser.add_mutually_exclusive_group()
+    group.add_argument("--space", help="Space ID to export from (if not provided, will show interactive selection)")
+    group.add_argument("--all-spaces", action="store_true", help="Export messages from all public spaces")
+    group.add_argument("--all-direct-messages", action="store_true", help="Export messages from all direct message conversations")
+    group.add_argument("--all", action="store_true", help="Export messages from all spaces and direct messages")
+    
     messages_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
     messages_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     messages_parser.add_argument("--past-month", action="store_true", help="Export messages from the past 30 days")
@@ -547,11 +596,11 @@ def main():
         parser.print_help()
         print("\nAvailable commands:")
         print("  config   - Configure authentication token")
-        print("  spaces   - Retrieve a list of spaces")
+        print("  spaces   - Retrieve a list of spaces (use --help for options)")
         print("  people   - Retrieve a list of people")
         print("  report   - Generate a tasks report")
         print("  tasks    - Retrieve task information from spaces")
-        print("  messages - Export chat messages from a specific space")
+        print("  messages - Export chat messages from spaces or direct messages")
         print("\nUse --help with any command for more information.")
         return
 
@@ -567,7 +616,18 @@ def main():
     service = build('chat', 'v1', credentials=creds)
 
     if args.command == "spaces":
-        spaces = get_spaces(service)
+        if args.all:
+            spaces = get_all_spaces_and_dms(service)
+            logging.info("Retrieved all spaces including direct messages")
+        elif args.include_direct_messages:
+            public_spaces = get_public_spaces(service)
+            dm_spaces = get_direct_message_spaces(service)
+            spaces = public_spaces + dm_spaces
+            logging.info("Retrieved public spaces and direct message conversations")
+        else:
+            spaces = get_spaces(service)
+            logging.info("Retrieved public spaces only")
+        
         if args.save:
             save_to_json(spaces, "spaces.json")
         else:
@@ -653,50 +713,117 @@ def main():
             logging.error(e)
             return
 
-        # Get spaces
-        spaces = load_from_json("spaces.json") or get_spaces(service)
-        
-        # Determine which space to export from
+        # Determine which spaces to export from
         if args.space:
-            # Use the specified space
+            # Use the specified space (works for both public spaces and direct messages)
             space_name = args.space
-            # Validate that the space exists
-            space_exists = any(space['name'] == space_name for space in spaces)
+            # Get all spaces to validate the specified space exists
+            all_spaces = get_all_spaces_and_dms(service)
+            space_exists = any(space['name'] == space_name for space in all_spaces)
             if not space_exists:
                 logging.error(f"Space '{space_name}' not found. Use 'spaces' command to see available spaces.")
                 return
+            
+            # Export from single space
+            if args.save:
+                export_messages(service, space_name, date_start, date_end, args.format)
+            else:
+                # Just display the messages without saving
+                messages = get_messages_for_space(service, space_name, date_start, date_end)
+                if messages:
+                    formatted_messages = []
+                    for message in messages:
+                        formatted_message = {
+                            'id': message.get('name', ''),
+                            'text': message.get('text', ''),
+                            'sender': message.get('sender', {}).get('displayName', 'Unknown'),
+                            'sender_id': message.get('sender', {}).get('name', ''),
+                            'space': space_name,
+                            'created_at': message.get('createTime', ''),
+                            'thread_name': message.get('thread', {}).get('name', ''),
+                            'message_type': message.get('messageType', ''),
+                            'deleted': message.get('deleted', False),
+                            'last_updated': message.get('lastUpdateTime', message.get('createTime', ''))
+                        }
+                        formatted_messages.append(formatted_message)
+                    print(json.dumps(formatted_messages, indent=4, ensure_ascii=False))
+                    logging.info(f"Found {len(formatted_messages)} messages (not saved)")
+                else:
+                    logging.info("No messages found in the specified space and date range.")
+        
+        elif args.all_spaces:
+            # Export from all public spaces
+            logging.info("Exporting messages from all public spaces...")
+            spaces = get_public_spaces(service)
+            for space in spaces:
+                space_name = space['name']
+                space_display = space.get('displayName', space_name)
+                logging.info(f"Exporting from public space: {space_display}")
+                if args.save:
+                    export_messages(service, space_name, date_start, date_end, args.format)
+                else:
+                    logging.info(f"Would export from {space_display} (use --save to actually export)")
+        
+        elif args.all_direct_messages:
+            # Export from all direct message conversations
+            logging.info("Exporting messages from all direct message conversations...")
+            spaces = get_direct_message_spaces(service)
+            for space in spaces:
+                space_name = space['name']
+                space_display = space.get('displayName', space_name)
+                logging.info(f"Exporting from direct message: {space_display}")
+                if args.save:
+                    export_messages(service, space_name, date_start, date_end, args.format)
+                else:
+                    logging.info(f"Would export from {space_display} (use --save to actually export)")
+        
+        elif args.all:
+            # Export from all spaces and direct messages
+            logging.info("Exporting messages from all spaces and direct messages...")
+            spaces = get_all_spaces_and_dms(service)
+            for space in spaces:
+                space_name = space['name']
+                space_display = space.get('displayName', space_name)
+                space_type = space.get('spaceType', 'UNKNOWN')
+                logging.info(f"Exporting from {space_type.lower()}: {space_display}")
+                if args.save:
+                    export_messages(service, space_name, date_start, date_end, args.format)
+                else:
+                    logging.info(f"Would export from {space_display} (use --save to actually export)")
+        
         else:
-            # Interactive space selection
+            # Interactive space selection (current functionality)
+            spaces = load_from_json("spaces.json") or get_spaces(service)
             space_name = list_spaces_interactive(spaces)
             if not space_name:
                 return  # User cancelled
-        
-        # Export messages from the selected space
-        if args.save:
-            export_messages(service, space_name, date_start, date_end, args.format)
-        else:
-            # Just display the messages without saving
-            messages = get_messages_for_space(service, space_name, date_start, date_end)
-            if messages:
-                formatted_messages = []
-                for message in messages:
-                    formatted_message = {
-                        'id': message.get('name', ''),
-                        'text': message.get('text', ''),
-                        'sender': message.get('sender', {}).get('displayName', 'Unknown'),
-                        'sender_id': message.get('sender', {}).get('name', ''),
-                        'space': space_name,
-                        'created_at': message.get('createTime', ''),
-                        'thread_name': message.get('thread', {}).get('name', ''),
-                        'message_type': message.get('messageType', ''),
-                        'deleted': message.get('deleted', False),
-                        'last_updated': message.get('lastUpdateTime', message.get('createTime', ''))
-                    }
-                    formatted_messages.append(formatted_message)
-                print(json.dumps(formatted_messages, indent=4, ensure_ascii=False))
-                logging.info(f"Found {len(formatted_messages)} messages (not saved)")
+            
+            # Export from selected space
+            if args.save:
+                export_messages(service, space_name, date_start, date_end, args.format)
             else:
-                logging.info("No messages found in the specified space and date range.")
+                # Just display the messages without saving
+                messages = get_messages_for_space(service, space_name, date_start, date_end)
+                if messages:
+                    formatted_messages = []
+                    for message in messages:
+                        formatted_message = {
+                            'id': message.get('name', ''),
+                            'text': message.get('text', ''),
+                            'sender': message.get('sender', {}).get('displayName', 'Unknown'),
+                            'sender_id': message.get('sender', {}).get('name', ''),
+                            'space': space_name,
+                            'created_at': message.get('createTime', ''),
+                            'thread_name': message.get('thread', {}).get('name', ''),
+                            'message_type': message.get('messageType', ''),
+                            'deleted': message.get('deleted', False),
+                            'last_updated': message.get('lastUpdateTime', message.get('createTime', ''))
+                        }
+                        formatted_messages.append(formatted_message)
+                    print(json.dumps(formatted_messages, indent=4, ensure_ascii=False))
+                    logging.info(f"Found {len(formatted_messages)} messages (not saved)")
+                else:
+                    logging.info("No messages found in the specified space and date range.")
 
 if __name__ == '__main__':
     main()
