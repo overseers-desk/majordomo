@@ -83,15 +83,15 @@ This command will prompt for Google account authentication and generate user cre
 
 **Config Command**: Sets up or refreshes your Google API authentication token. This is required for first-time use and when tokens expire.
 
-**Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--save` flag to persist the results to `spaces.json` for future reference.
+**Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--json` flag to persist the results to `spaces.json` or `--csv` to save as `spaces.csv` for future reference.
 
-**People Command**: Extracts information about individuals found within the specified spaces. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be optionally saved to `people.json`.
+**People Command**: Extracts information about individuals found within the specified spaces. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be optionally saved to `people.json` using `--json` or `people.csv` using `--csv`.
 
-**Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be saved to `tasks.json`.
+**Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be saved to `tasks.json` using `--json`.
 
-**Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to a CSV file with the naming convention `task_report_YYYY-MM-DD_YYYY-MM-DD.csv`. The command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today).
+**Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to a CSV file with the naming convention `task_report_YYYY-MM-DD_YYYY-MM-DD.csv` by default, or to JSON format using `--json`. The command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today).
 
-**Messages Command**: Exports all chat messages from a specific Google Chat space in either JSON or CSV format. This command can accept a `--space` parameter to specify the target space directly, or if no space is specified, it will present an interactive list of all available spaces for the user to choose from. The export includes comprehensive message details such as message ID, full text content, sender information, space name, creation time, last update time, thread details, message type, and deletion status. Use the `--save` flag to save the results to a file; without it, messages are displayed in the terminal. When saving, output files are automatically named with the format `messages_export_{space_name}_{start_date}_{end_date}.{format}`. The command supports efficient date filtering using Google's API with options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today), or custom date ranges with `--date-start` and `--date-end`.
+**Messages Command**: Exports all chat messages from a specific Google Chat space in either JSON or CSV format. This command can accept a `--space` parameter to specify the target space directly, or if no space is specified, it will present an interactive list of all available spaces for the user to choose from. The export includes comprehensive message details such as message ID, full text content, sender information, space name, creation time, last update time, thread details, message type, and deletion status. Use the `--json` flag to save the results to a JSON file or `--csv` to save as CSV; without either flag, messages are displayed in the terminal. When saving, output files are automatically named with the format `messages_export_{space_name}_{start_date}_{end_date}.{format}`. The command supports efficient date filtering using Google's API with options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today), or custom date ranges with `--date-start` and `--date-end`.
 
 ### Command-Line Interface Examples
 
@@ -105,8 +105,11 @@ python3 scrapper.py config
 # Get list of spaces
 python3 scrapper.py spaces
 
-# Get list of spaces and save to file
-python3 scrapper.py spaces --save
+# Get list of spaces and save to JSON file
+python3 scrapper.py spaces --json
+
+# Get list of spaces and save to CSV file
+python3 scrapper.py spaces --csv
 
 # Get people from specific date range
 python3 scrapper.py people --date-start 2024-01-01 --date-end 2024-01-31
@@ -117,41 +120,65 @@ python3 scrapper.py people --past-month
 # Get people from the past year (365 days ago to today)
 python3 scrapper.py people --past-year
 
-# Generate report for specific period
-python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --save
+# Get people and save to JSON file
+python3 scrapper.py people --json
 
-# Generate report for the past month (30 days ago to today)
-python3 scrapper.py report --past-month --save
+# Get people and save to CSV file
+python3 scrapper.py people --csv
 
-# Generate report for the past year (365 days ago to today)
-python3 scrapper.py report --past-year --save
+# Generate report for specific period (CSV format)
+python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv
 
-# Get tasks and save to file
-python3 scrapper.py tasks --save
+# Generate report for specific period (JSON format)
+python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --json
+
+# Generate report for the past month (30 days ago to today) - CSV format
+python3 scrapper.py report --past-month --csv
+
+# Generate report for the past month (30 days ago to today) - JSON format
+python3 scrapper.py report --past-month --json
+
+# Generate report for the past year (365 days ago to today) - CSV format
+python3 scrapper.py report --past-year --csv
+
+# Generate report for the past year (365 days ago to today) - JSON format
+python3 scrapper.py report --past-year --json
+
+# Get tasks and save to JSON file
+python3 scrapper.py tasks --json
 
 # Get tasks for the past month (30 days ago to today)
-python3 scrapper.py tasks --past-month --save
+python3 scrapper.py tasks --past-month --json
 
 # Get tasks for the past year (365 days ago to today)
-python3 scrapper.py tasks --past-year --save
+python3 scrapper.py tasks --past-year --json
 
 # Export messages from a specific space (JSON format) and save to file
-python3 scrapper.py messages --space "spaces/ABC123" --save
+python3 scrapper.py messages --space "spaces/ABC123" --json
 
 # Export messages from a specific space (CSV format) and save to file
-python3 scrapper.py messages --space "spaces/ABC123" --format csv --save
+python3 scrapper.py messages --space "spaces/ABC123" --csv
 
 # Export messages with interactive space selection and save to file
-python3 scrapper.py messages --save
+python3 scrapper.py messages --json
 
 # Export messages for a specific date range and save to file
-python3 scrapper.py messages --date-start 2024-01-01 --date-end 2024-01-31 --save
+python3 scrapper.py messages --date-start 2024-01-01 --date-end 2024-01-31 --json
 
 # Export messages from the past month (30 days ago to today)
-python3 scrapper.py messages --space "spaces/ABC123" --past-month --save
+python3 scrapper.py messages --space "spaces/ABC123" --past-month --json
 
 # Export messages from the past year (365 days ago to today)
-python3 scrapper.py messages --space "spaces/ABC123" --past-year --save
+python3 scrapper.py messages --space "spaces/ABC123" --past-year --json
+
+# Export messages from all spaces in CSV format
+python3 scrapper.py messages --all --csv
+
+# Export messages from all public spaces in CSV format
+python3 scrapper.py messages --all-spaces --csv
+
+# Export messages from all direct messages in CSV format
+python3 scrapper.py messages --all-direct-messages --csv
 
 # Display messages without saving (default behavior)
 python3 scrapper.py messages --space "spaces/ABC123"
@@ -180,5 +207,9 @@ These date filtering options enable focused analysis of specific time periods, m
 ## Output and Data Management
 
 The script generates several output files to support different analysis needs. The `spaces.json` file contains the complete list of accessible Google Chat spaces, while `people.json` stores information about individuals found within those spaces. The `tasks.json` file maintains detailed task records, and the CSV report provides aggregated completion statistics for the specified time period.
+
+**Output Format Options:**
+- **JSON format** (`--json`): Available for all commands, preserves the complete data structure including nested objects and arrays
+- **CSV format** (`--csv`): Available for commands with flat data structures (spaces, people, report, messages). Note that complex nested data from tasks command is not suitable for CSV export due to multi-level structure.
 
 These output files enable both immediate analysis and long-term data tracking, supporting various reporting requirements from quick status checks to comprehensive performance reviews. The CSV format ensures compatibility with spreadsheet applications and business intelligence tools for further analysis and visualisation.

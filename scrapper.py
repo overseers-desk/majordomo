@@ -138,6 +138,23 @@ def save_to_json(data: List[Dict], filename: str):
         json.dump(data, f, indent=4, ensure_ascii=False)  # Ensure non-ASCII characters are preserved
     logging.info(f"Data saved to {filename}")
 
+def save_to_csv(data: List[Dict], filename: str):
+    """Save data to a CSV file with UTF-8 encoding and headers."""
+    if not data:
+        logging.warning("No data to save to CSV")
+        return
+    
+    df = pd.DataFrame(data)
+    df.to_csv(filename, index=False, encoding='utf-8')
+    logging.info(f"Data saved to {filename}")
+
+def save_data(data: List[Dict], filename: str, output_format: str = "json"):
+    """Save data in the specified format (json or csv)."""
+    if output_format.lower() == "csv":
+        save_to_csv(data, filename)
+    else:  # Default to JSON
+        save_to_json(data, filename)
+
 def load_from_json(filename: str) -> List[Dict]:
     """Load data from a JSON file."""
     if os.path.exists(filename):
@@ -470,16 +487,10 @@ def export_messages(service, space_name: str, start_date: str, end_date: str, ou
         
         if output_format.lower() == "csv":
             filename = f'messages_export_{space_display_name}_{start_iso}_{end_iso}.csv'
-            df = pd.DataFrame(formatted_messages)
-            # Reorder columns for better readability
-            column_order = ['id', 'text', 'sender', 'sender_id', 'space', 'created_at', 'last_updated', 'thread_name', 'message_type', 'deleted']
-            df = df.reindex(columns=column_order)
-            df.to_csv(filename, index=False)
-            logging.info(f"Exported {len(formatted_messages)} messages to {filename}")
+            save_data(formatted_messages, filename, "csv")
         else:  # Default to JSON
             filename = f'messages_export_{space_display_name}_{start_iso}_{end_iso}.json'
-            save_to_json(formatted_messages, filename)
-            logging.info(f"Exported {len(formatted_messages)} messages to {filename}")
+            save_data(formatted_messages, filename, "json")
             
     except Exception as e:
         logging.error(f"Error exporting messages from space {space_name}: {e}")
@@ -544,7 +555,8 @@ def main():
 
     # Spaces command
     spaces_parser = subparsers.add_parser("spaces", help="Retrieve a list of spaces")
-    spaces_parser.add_argument("--save", action="store_true", help="Save the list of spaces to a JSON file")
+    spaces_parser.add_argument("--json", action="store_true", help="Save the list of spaces to a JSON file")
+    spaces_parser.add_argument("--csv", action="store_true", help="Save the list of spaces to a CSV file")
     spaces_parser.add_argument("--include-direct-messages", action="store_true", help="Include direct message conversations")
     spaces_parser.add_argument("--all", action="store_true", help="Show all spaces including direct messages")
 
@@ -554,7 +566,8 @@ def main():
     people_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     people_parser.add_argument("--past-month", action="store_true", help="Retrieve people from the past 30 days")
     people_parser.add_argument("--past-year", action="store_true", help="Retrieve people from the past 365 days")
-    people_parser.add_argument("--save", action="store_true", help="Save the list of people to a JSON file")
+    people_parser.add_argument("--json", action="store_true", help="Save the list of people to a JSON file")
+    people_parser.add_argument("--csv", action="store_true", help="Save the list of people to a CSV file")
 
     # Report command (previously Tasks)
     report_parser = subparsers.add_parser("report", help="Generate a tasks report")
@@ -562,7 +575,8 @@ def main():
     report_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     report_parser.add_argument("--past-month", action="store_true", help="Generate report for the past 30 days")
     report_parser.add_argument("--past-year", action="store_true", help="Generate report for the past 365 days")
-    report_parser.add_argument("--save", action="store_true", help="Save the report to a CSV file")
+    report_parser.add_argument("--json", action="store_true", help="Save the report to a JSON file")
+    report_parser.add_argument("--csv", action="store_true", help="Save the report to a CSV file")
 
     # New Tasks command
     tasks_parser = subparsers.add_parser("tasks", help="Retrieve task information from spaces")
@@ -570,7 +584,7 @@ def main():
     tasks_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     tasks_parser.add_argument("--past-month", action="store_true", help="Retrieve tasks from the past 30 days")
     tasks_parser.add_argument("--past-year", action="store_true", help="Retrieve tasks from the past 365 days")
-    tasks_parser.add_argument("--save", action="store_true", help="Save tasks to tasks.json file")
+    tasks_parser.add_argument("--json", action="store_true", help="Save tasks to tasks.json file")
 
     # Messages command
     messages_parser = subparsers.add_parser("messages", help="Export chat messages from spaces or direct messages")
@@ -586,8 +600,8 @@ def main():
     messages_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     messages_parser.add_argument("--past-month", action="store_true", help="Export messages from the past 30 days")
     messages_parser.add_argument("--past-year", action="store_true", help="Export messages from the past 365 days")
-    messages_parser.add_argument("--format", choices=["json", "csv"], default="json", help="Output format (default: json)")
-    messages_parser.add_argument("--save", action="store_true", help="Save the exported messages to a file")
+    messages_parser.add_argument("--json", action="store_true", help="Save the exported messages to a JSON file")
+    messages_parser.add_argument("--csv", action="store_true", help="Save the exported messages to a CSV file")
 
     args = parser.parse_args()
 
@@ -628,8 +642,10 @@ def main():
             spaces = get_spaces(service)
             logging.info("Retrieved public spaces only")
         
-        if args.save:
-            save_to_json(spaces, "spaces.json")
+        if args.json:
+            save_data(spaces, "spaces.json", "json")
+        elif args.csv:
+            save_data(spaces, "spaces.csv", "csv")
         else:
             print(json.dumps(spaces, indent=4, ensure_ascii=False))
 
@@ -642,8 +658,10 @@ def main():
 
         spaces = load_from_json("spaces.json") or get_spaces(service)
         people = get_people(service, spaces, date_start, date_end)
-        if args.save:
-            save_to_json(people, "people.json")
+        if args.json:
+            save_data(people, "people.json", "json")
+        elif args.csv:
+            save_data(people, "people.csv", "csv")
         else:
             print(json.dumps(people, indent=4, ensure_ascii=False))
 
@@ -677,7 +695,12 @@ def main():
 
         # Generate the report
         report = analyze_tasks(all_tasks)
-        if args.save:
+        if args.json:
+            # Convert report to list of dicts for JSON output
+            report_dict = report.to_dict('records')
+            save_data(report_dict, "task_report.json", "json")
+            logging.info("Report saved as task_report.json")
+        elif args.csv:
             generate_report(report, date_start, date_end)
         else:
             # Convert dates to ISO format for display
@@ -699,8 +722,8 @@ def main():
         # Get formatted tasks
         formatted_tasks = get_formatted_tasks(service, spaces, date_start, date_end)
         
-        if args.save:
-            save_to_json(formatted_tasks, "tasks.json")
+        if args.json:
+            save_data(formatted_tasks, "tasks.json", "json")
             logging.info(f"Saved {len(formatted_tasks)} tasks to tasks.json")
         else:
             print(json.dumps(formatted_tasks, indent=4, ensure_ascii=False))
@@ -725,8 +748,10 @@ def main():
                 return
             
             # Export from single space
-            if args.save:
-                export_messages(service, space_name, date_start, date_end, args.format)
+            if args.json:
+                export_messages(service, space_name, date_start, date_end, "json")
+            elif args.csv:
+                export_messages(service, space_name, date_start, date_end, "csv")
             else:
                 # Just display the messages without saving
                 messages = get_messages_for_space(service, space_name, date_start, date_end)
@@ -759,10 +784,12 @@ def main():
                 space_name = space['name']
                 space_display = space.get('displayName', space_name)
                 logging.info(f"Exporting from public space: {space_display}")
-                if args.save:
-                    export_messages(service, space_name, date_start, date_end, args.format)
+                if args.json:
+                    export_messages(service, space_name, date_start, date_end, "json")
+                elif args.csv:
+                    export_messages(service, space_name, date_start, date_end, "csv")
                 else:
-                    logging.info(f"Would export from {space_display} (use --save to actually export)")
+                    logging.info(f"Would export from {space_display} (use --json or --csv to actually export)")
         
         elif args.all_direct_messages:
             # Export from all direct message conversations
@@ -772,10 +799,12 @@ def main():
                 space_name = space['name']
                 space_display = space.get('displayName', space_name)
                 logging.info(f"Exporting from direct message: {space_display}")
-                if args.save:
-                    export_messages(service, space_name, date_start, date_end, args.format)
+                if args.json:
+                    export_messages(service, space_name, date_start, date_end, "json")
+                elif args.csv:
+                    export_messages(service, space_name, date_start, date_end, "csv")
                 else:
-                    logging.info(f"Would export from {space_display} (use --save to actually export)")
+                    logging.info(f"Would export from {space_display} (use --json or --csv to actually export)")
         
         elif args.all:
             # Export from all spaces and direct messages
@@ -786,10 +815,12 @@ def main():
                 space_display = space.get('displayName', space_name)
                 space_type = space.get('spaceType', 'UNKNOWN')
                 logging.info(f"Exporting from {space_type.lower()}: {space_display}")
-                if args.save:
-                    export_messages(service, space_name, date_start, date_end, args.format)
+                if args.json:
+                    export_messages(service, space_name, date_start, date_end, "json")
+                elif args.csv:
+                    export_messages(service, space_name, date_start, date_end, "csv")
                 else:
-                    logging.info(f"Would export from {space_display} (use --save to actually export)")
+                    logging.info(f"Would export from {space_display} (use --json or --csv to actually export)")
         
         else:
             # Interactive space selection (current functionality)
@@ -799,8 +830,10 @@ def main():
                 return  # User cancelled
             
             # Export from selected space
-            if args.save:
-                export_messages(service, space_name, date_start, date_end, args.format)
+            if args.json:
+                export_messages(service, space_name, date_start, date_end, "json")
+            elif args.csv:
+                export_messages(service, space_name, date_start, date_end, "csv")
             else:
                 # Just display the messages without saving
                 messages = get_messages_for_space(service, space_name, date_start, date_end)
