@@ -184,6 +184,7 @@ def get_user_display_name(creds: Credentials, user_resource_name: str) -> str:
         raise
     return None
 
+
 @retry_on_error()
 def get_messages_for_space(service, space_name: str, date_start: str, date_end: str):
     """Helper function to get messages from a space with retry logic."""
@@ -555,7 +556,7 @@ def main():
 
     # Spaces command
     spaces_parser = subparsers.add_parser("spaces", help="Retrieve a list of spaces")
-    spaces_parser.add_argument("--json", action="store_true", help="Save the list of spaces to a JSON file")
+    spaces_parser.add_argument("--json", action="store_true", help="Save the list of spaces to spaces.json file")
     spaces_parser.add_argument("--csv", action="store_true", help="Save the list of spaces to a CSV file")
     spaces_parser.add_argument("--include-direct-messages", action="store_true", help="Include direct message conversations")
     spaces_parser.add_argument("--all", action="store_true", help="Show all spaces including direct messages")
@@ -566,7 +567,7 @@ def main():
     people_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     people_parser.add_argument("--past-month", action="store_true", help="Retrieve people from the past 30 days")
     people_parser.add_argument("--past-year", action="store_true", help="Retrieve people from the past 365 days")
-    people_parser.add_argument("--json", action="store_true", help="Save the list of people to a JSON file")
+    people_parser.add_argument("--json", action="store_true", help="Save the list of people to people.json file")
     people_parser.add_argument("--csv", action="store_true", help="Save the list of people to a CSV file")
 
     # Report command (previously Tasks)
@@ -575,7 +576,7 @@ def main():
     report_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     report_parser.add_argument("--past-month", action="store_true", help="Generate report for the past 30 days")
     report_parser.add_argument("--past-year", action="store_true", help="Generate report for the past 365 days")
-    report_parser.add_argument("--json", action="store_true", help="Save the report to a JSON file")
+    report_parser.add_argument("--json", action="store_true", help="Save the report to task_report.json file")
     report_parser.add_argument("--csv", action="store_true", help="Save the report to a CSV file")
 
     # New Tasks command
@@ -600,7 +601,7 @@ def main():
     messages_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     messages_parser.add_argument("--past-month", action="store_true", help="Export messages from the past 30 days")
     messages_parser.add_argument("--past-year", action="store_true", help="Export messages from the past 365 days")
-    messages_parser.add_argument("--json", action="store_true", help="Save the exported messages to a JSON file")
+    messages_parser.add_argument("--json", action="store_true", help="Save the exported messages to JSON files (filename includes space name and date range)")
     messages_parser.add_argument("--csv", action="store_true", help="Save the exported messages to a CSV file")
 
     args = parser.parse_args()
@@ -647,7 +648,14 @@ def main():
         elif args.csv:
             save_data(spaces, "spaces.csv", "csv")
         else:
-            print(json.dumps(spaces, indent=4, ensure_ascii=False))
+            # Output space ID and space name in format "space id : space name"
+            for space in spaces:
+                space_id = space['name']
+                if space.get('spaceType') == 'DIRECT_MESSAGE':
+                    space_name = "Direct Message"
+                else:
+                    space_name = space.get('displayName', space_id)
+                print(f"{space_id} : {space_name}")
 
     elif args.command == "people":
         try:
