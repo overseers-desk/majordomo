@@ -19,6 +19,7 @@ SCOPES = [
     'https://www.googleapis.com/auth/chat.spaces',
     'https://www.googleapis.com/auth/chat.messages',
     'https://www.googleapis.com/auth/chat.messages.readonly',
+    'https://www.googleapis.com/auth/tasks.readonly',
 ]
 TOKEN_FILE = 'token.json'
 CREDENTIALS_FILE = 'client_secret.json'
@@ -353,6 +354,15 @@ def get_default_dates():
         last_day_of_previous_month.isoformat() + "Z"    # End date
     )
 
+def get_past_day_dates():
+    """Get the date range for the past day (1 day ago to today) in RFC 3339 format."""
+    today = datetime.today()
+    past_day = today - timedelta(days=1)
+    return (
+        past_day.isoformat() + "Z",  # Start date
+        today.isoformat() + "Z"      # End date
+    )
+
 def get_past_month_dates():
     """Get the date range for the past month (30 days ago to today) in RFC 3339 format."""
     today = datetime.today()
@@ -395,8 +405,11 @@ def parse_date_range(args) -> tuple[str, str]:
         ValueError: If date parsing fails or invalid date combination is provided
     """
     try:
-        # Handle date range options with priority: past-month/past-year > custom dates > default dates
-        if hasattr(args, 'past_month') and args.past_month:
+        # Handle date range options with priority: past-day > past-month/past-year > custom dates > default dates
+        if hasattr(args, 'past_day') and args.past_day:
+            date_start, date_end = get_past_day_dates()
+            logging.info("Using past day date range (1 day ago to today)")
+        elif hasattr(args, 'past_month') and args.past_month:
             date_start, date_end = get_past_month_dates()
             logging.info("Using past month date range (30 days ago to today)")
         elif hasattr(args, 'past_year') and args.past_year:
@@ -451,6 +464,308 @@ def get_formatted_tasks(service, spaces: List[Dict], start_date: str = None, end
             continue
             
     return formatted_tasks
+
+@retry_on_error()
+def get_task_details_from_tasks_api(creds: Credentials, task_id: str) -> Dict:
+    """Try to get task details from Google Tasks API using the task ID."""
+    try:
+        tasks_service = build('tasks', 'v1', credentials=creds)
+        
+        # First, try to get all task lists
+        tasklists = tasks_service.tasklists().list().execute()
+        
+        for tasklist in tasklists.get('items', []):
+            try:
+                # Try to get the specific task from this tasklist
+                task = tasks_service.tasks().get(
+                    tasklist=tasklist['id'],
+                    task=task_id
+                ).execute()
+                
+                return {
+                    'title': task.get('title', 'Unknown Task'),
+                    'notes': task.get('notes', ''),
+                    'status': task.get('status', 'needsAction'),
+                    'due': task.get('due', ''),
+                    'completed': task.get('completed', ''),
+                    'updated': task.get('updated', ''),
+                    'tasklist_id': tasklist['id'],
+                    'tasklist_title': tasklist.get('title', 'Unknown List')
+                }
+            except HttpError as e:
+                if e.resp.status == 404:
+                    # Task not found in this list, try next
+                    continue
+                else:
+                    raise
+        
+        # If not found in any tasklist, return None
+        return None
+        
+    except Exception as e:
+        logging.warning(f"Could not fetch task details for {task_id}: {e}")
+        return None
+
+@retry_on_error()
+def get_all_tasks_from_tasks_api(creds: Credentials, start_date: str, end_date: str) -> List[Dict]:
+    """Fetch all tasks from Google Tasks API within a time range."""
+    try:
+        tasks_service = build('tasks', 'v1', credentials=creds)
+        all_tasks = []
+        
+        # Get all task lists
+        tasklists = tasks_service.tasklists().list().execute()
+        
+        for tasklist in tasklists.get('items', []):
+            try:
+                # Get all tasks from this tasklist
+                tasks = tasks_service.tasks().list(
+                    tasklist=tasklist['id'],
+                    showCompleted=True,
+                    showDeleted=True,
+                    showHidden=True
+                ).execute()
+                
+                for task in tasks.get('items', []):
+                    # Parse task creation time
+                    task_created = task.get('created', '')
+                    if task_created:
+                        # Convert to datetime for comparison
+                        try:
+                            task_created_dt = datetime.fromisoformat(task_created.replace('Z', ''))
+                            start_dt = datetime.fromisoformat(start_date.replace('Z', ''))
+                            end_dt = datetime.fromisoformat(end_date.replace('Z', ''))
+                            
+                            # Check if task was created within the time range
+                            if start_dt <= task_created_dt <= end_dt:
+                                all_tasks.append({
+                                    'id': task.get('id', ''),
+                                    'title': task.get('title', 'Unknown Task'),
+                                    'notes': task.get('notes', ''),
+                                    'status': task.get('status', 'needsAction'),
+                                    'due': task.get('due', ''),
+                                    'completed': task.get('completed', ''),
+                                    'updated': task.get('updated', ''),
+                                    'created': task_created,
+                                    'tasklist_id': tasklist['id'],
+                                    'tasklist_title': tasklist.get('title', 'Unknown List')
+                                })
+                        except ValueError as e:
+                            logging.warning(f"Could not parse task creation time {task_created}: {e}")
+                            continue
+                            
+            except Exception as e:
+                logging.warning(f"Error fetching tasks from list {tasklist.get('title', 'Unknown')}: {e}")
+                continue
+        
+        logging.info(f"Found {len(all_tasks)} tasks from Google Tasks API in the specified time range")
+        return all_tasks
+        
+    except Exception as e:
+        logging.error(f"Error fetching tasks from Google Tasks API: {e}")
+        return []
+
+def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_date: str, end_date: str, creds: Credentials = None) -> List[Dict]:
+    """Retrieve tasks assigned to a specific person with detailed information."""
+    tasks = []
+    completed_tasks, reopened_tasks, deleted_tasks, assigned_tasks = set(), set(), set(), set()
+    
+    try:
+        messages = get_messages_for_space(service, space_name, start_date, end_date)
+        
+        # First pass: collect all task-related messages
+        task_messages = {}
+        for message in messages:
+            if 'via Tasks' in message.get('text', ''):
+                task_id = message['thread']['name'].split("/")[3]
+                text = message['text']
+                create_time = message['createTime']
+                sender = message.get('sender', {}).get('displayName', 'Unknown')
+                
+                if task_id not in task_messages:
+                    task_messages[task_id] = {
+                        'created': None,
+                        'assigned': [],
+                        'completed': [],
+                        'reopened': [],
+                        'deleted': [],
+                        'updates': []
+                    }
+                
+                # Categorize messages
+                if "Created" in text:
+                    assignee = text.split("@")[1].split("(")[0].strip() if "@" in text else "Unassigned"
+                    task_messages[task_id]['created'] = {
+                        'assignee': assignee,
+                        'time': create_time,
+                        'text': text,
+                        'sender': sender
+                    }
+                elif "Assigned" in text:
+                    assignee = text.split("@")[1].split("(")[0].strip() if "@" in text else "Unassigned"
+                    task_messages[task_id]['assigned'].append({
+                        'assignee': assignee,
+                        'time': create_time,
+                        'text': text,
+                        'sender': sender
+                    })
+                elif "Completed" in text:
+                    task_messages[task_id]['completed'].append({
+                        'time': create_time,
+                        'text': text,
+                        'sender': sender
+                    })
+                elif "Deleted" in text:
+                    task_messages[task_id]['deleted'].append({
+                        'time': create_time,
+                        'text': text,
+                        'sender': sender
+                    })
+                elif "Re-opened" in text:
+                    task_messages[task_id]['reopened'].append({
+                        'time': create_time,
+                        'text': text,
+                        'sender': sender
+                    })
+                else:
+                    # General updates
+                    task_messages[task_id]['updates'].append({
+                        'time': create_time,
+                        'text': text,
+                        'sender': sender
+                    })
+        
+        # Second pass: process tasks and find those assigned to the target person
+        for task_id, task_data in task_messages.items():
+            if not task_data['created']:
+                continue
+                
+            # Check if task is assigned to the target person
+            current_assignee = task_data['created']['assignee']
+            
+            # Check all assignment messages to find current assignee
+            for assignment in task_data['assigned']:
+                current_assignee = assignment['assignee']
+            
+            # Normalize names for comparison
+            # Handle cases where assignee name might be stored differently than in the message
+            # e.g., message shows "@Priyanka D (P)" but assignee is stored as "Priyanka D"
+            normalized_current = normalize_name(current_assignee)
+            normalized_target = normalize_name(assignee_name)
+            
+            # Also try matching without the parenthetical part
+            normalized_target_no_paren = normalize_name(assignee_name.split('(')[0].strip())
+            
+            if normalized_current != normalized_target and normalized_current != normalized_target_no_paren:
+                continue
+            
+            # Skip if task was deleted
+            if task_data['deleted']:
+                continue
+            
+            # Determine task status
+            status = 'OPEN'
+            if task_data['completed']:
+                # Check if it was reopened after completion
+                latest_completion = max(task_data['completed'], key=lambda x: x['time'])
+                latest_reopening = max(task_data['reopened'], key=lambda x: x['time']) if task_data['reopened'] else None
+                
+                if not latest_reopening or latest_reopening['time'] < latest_completion['time']:
+                    status = 'COMPLETED'
+            
+            # Try to get actual task details from Google Tasks API
+            task_details = None
+            if creds:
+                task_details = get_task_details_from_tasks_api(creds, task_id)
+            
+            # Find task name (extract from creation message or Tasks API)
+            task_name = "Unknown Task"
+            task_description = ""
+            
+            if task_details:
+                task_name = task_details.get('title', 'Unknown Task')
+                task_description = task_details.get('notes', '')
+            elif task_data['created']['text']:
+                # Fallback: Try to extract task name from the creation message
+                text = task_data['created']['text']
+                if "Created" in text and ":" in text:
+                    task_name = text.split("Created")[1].split(":")[1].strip()
+                    if "@" in task_name:
+                        task_name = task_name.split("@")[0].strip()
+                elif "Created" in text:
+                    task_name = text.split("Created")[1].strip()
+                    if "@" in task_name:
+                        task_name = task_name.split("@")[0].strip()
+            
+            # Find due date (if any)
+            due_date = None
+            if task_details and task_details.get('due'):
+                due_date = task_details.get('due')
+            else:
+                # Fallback: Look for due date mentions in updates
+                for update in task_data['updates']:
+                    if "due" in update['text'].lower() or "deadline" in update['text'].lower():
+                        # Try to extract date from the message
+                        # This is a simple implementation - could be enhanced with better date parsing
+                        due_date = update['time']  # Use message time as fallback
+            
+            # Find last update time
+            last_update = task_data['created']['time']
+            if task_data['updates']:
+                last_update = max(task_data['updates'], key=lambda x: x['time'])['time']
+            if task_data['assigned']:
+                latest_assignment = max(task_data['assigned'], key=lambda x: x['time'])
+                if latest_assignment['time'] > last_update:
+                    last_update = latest_assignment['time']
+            if task_data['completed']:
+                latest_completion = max(task_data['completed'], key=lambda x: x['time'])
+                if latest_completion['time'] > last_update:
+                    last_update = latest_completion['time']
+            if task_data['reopened']:
+                latest_reopening = max(task_data['reopened'], key=lambda x: x['time'])
+                if latest_reopening['time'] > last_update:
+                    last_update = latest_reopening['time']
+            
+            # Find last progress from the assignee
+            last_progress = None
+            assignee_updates = [update for update in task_data['updates'] 
+                              if normalize_name(update['sender']) == normalize_name(assignee_name)]
+            if assignee_updates:
+                last_progress = max(assignee_updates, key=lambda x: x['time'])['time']
+            
+            # Find assignment time
+            assignment_time = task_data['created']['time']
+            if task_data['assigned']:
+                # Find the most recent assignment to this person
+                assignee_assignments = [a for a in task_data['assigned'] 
+                                      if normalize_name(a['assignee']) == normalize_name(assignee_name)]
+                if assignee_assignments:
+                    assignment_time = max(assignee_assignments, key=lambda x: x['time'])['time']
+            
+            task_info = {
+                'task_id': task_id,
+                'task_name': task_name,
+                'task_description': task_description,
+                'assignee': current_assignee,
+                'assignment_time': assignment_time,
+                'due_date': due_date,
+                'last_update': last_update,
+                'last_progress': last_progress,
+                'status': status,
+                'space_name': space_name,
+                'created_text': task_data['created']['text'],
+                'created_sender': task_data['created']['sender'],
+                'tasklist_title': task_details.get('tasklist_title', '') if task_details else '',
+                'tasks_api_available': task_details is not None
+            }
+            
+            tasks.append(task_info)
+            
+    except Exception as e:
+        logging.error(f"Error fetching tasks for assignee from space {space_name}: {e}")
+        raise
+    
+    return tasks
 
 def export_messages(service, space_name: str, start_date: str, end_date: str, output_format: str = "json") -> None:
     """Export all chat messages from a specific space in the specified format."""
@@ -581,11 +896,15 @@ def main():
 
     # New Tasks command
     tasks_parser = subparsers.add_parser("tasks", help="Retrieve task information from spaces")
+    tasks_parser.add_argument("--assignee", help="Filter tasks by assignee name (e.g., 'Priyanka D (P)')")
+    tasks_parser.add_argument("--space", help="Space ID to search in (if not provided, will search all spaces)")
     tasks_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
     tasks_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    tasks_parser.add_argument("--past-day", action="store_true", help="Retrieve tasks from the past 1 day")
     tasks_parser.add_argument("--past-month", action="store_true", help="Retrieve tasks from the past 30 days")
     tasks_parser.add_argument("--past-year", action="store_true", help="Retrieve tasks from the past 365 days")
     tasks_parser.add_argument("--json", action="store_true", help="Save tasks to tasks.json file")
+    tasks_parser.add_argument("--csv", action="store_true", help="Save tasks to CSV file")
 
     # Messages command
     messages_parser = subparsers.add_parser("messages", help="Export chat messages from spaces or direct messages")
@@ -603,6 +922,7 @@ def main():
     messages_parser.add_argument("--past-year", action="store_true", help="Export messages from the past 365 days")
     messages_parser.add_argument("--json", action="store_true", help="Save the exported messages to JSON files (filename includes space name and date range)")
     messages_parser.add_argument("--csv", action="store_true", help="Save the exported messages to a CSV file")
+
 
     args = parser.parse_args()
 
@@ -725,17 +1045,81 @@ def main():
             return
 
         # Load spaces from file or fetch all spaces
-        spaces = load_from_json("spaces.json") or get_spaces(service)
-        
-        # Get formatted tasks
-        formatted_tasks = get_formatted_tasks(service, spaces, date_start, date_end)
-        
-        if args.json:
-            save_data(formatted_tasks, "tasks.json", "json")
-            logging.info(f"Saved {len(formatted_tasks)} tasks to tasks.json")
+        if args.space:
+            # Search in specific space
+            spaces = [{'name': args.space, 'displayName': args.space}]
         else:
-            print(json.dumps(formatted_tasks, indent=4, ensure_ascii=False))
-            logging.info(f"Found {len(formatted_tasks)} tasks")
+            spaces = load_from_json("spaces.json") or get_spaces(service)
+        
+        if args.assignee:
+            # Filter tasks by assignee
+            assignee_name = args.assignee
+            logging.info(f"Searching for tasks assigned to: {assignee_name}")
+
+            all_tasks = []
+            for space in spaces:
+                space_name = space.get('displayName', space['name'])
+                logging.info(f"Searching in space: {space_name}")
+                
+                try:
+                    tasks = get_tasks_for_assignee(service, space['name'], assignee_name, date_start, date_end, creds)
+                    all_tasks.extend(tasks)
+                    logging.info(f"Found {len(tasks)} tasks for {assignee_name} in {space_name}")
+                except Exception as e:
+                    logging.error(f"Error searching tasks in space {space_name}: {e}")
+                    continue
+
+            if not all_tasks:
+                logging.info(f"No tasks found assigned to {assignee_name}")
+                return
+
+            # Format output
+            if args.json:
+                filename = f"tasks_for_{assignee_name.replace(' ', '_').replace('(', '').replace(')', '')}.json"
+                save_data(all_tasks, filename, "json")
+                logging.info(f"Saved {len(all_tasks)} tasks to {filename}")
+            elif args.csv:
+                filename = f"tasks_for_{assignee_name.replace(' ', '_').replace('(', '').replace(')', '')}.csv"
+                save_data(all_tasks, filename, "csv")
+                logging.info(f"Saved {len(all_tasks)} tasks to {filename}")
+            else:
+                # Display results in terminal
+                print(f"\nTasks assigned to {assignee_name}:")
+                print("=" * 80)
+                
+                for i, task in enumerate(all_tasks, 1):
+                    print(f"\n{i}. Task: {task['task_name']}")
+                    if task['task_description']:
+                        print(f"   Description: {task['task_description']}")
+                    print(f"   ID: {task['task_id']}")
+                    print(f"   Assignee: {task['assignee']}")
+                    print(f"   Assignment Time: {task['assignment_time']}")
+                    print(f"   Due Date: {task['due_date'] or 'Not specified'}")
+                    print(f"   Last Update: {task['last_update']}")
+                    print(f"   Last Progress from {assignee_name}: {task['last_progress'] or 'None'}")
+                    print(f"   Status: {task['status']}")
+                    print(f"   Space: {task['space_name']}")
+                    if task.get('tasklist_title'):
+                        print(f"   Task List: {task['tasklist_title']}")
+                    print(f"   Tasks API: {'Available' if task.get('tasks_api_available') else 'Not Available'}")
+                    print(f"   Created by: {task['created_sender']}")
+                    print(f"   Creation Text: {task['created_text']}")
+                    print("-" * 80)
+                
+                logging.info(f"Found {len(all_tasks)} tasks assigned to {assignee_name}")
+        else:
+            # Get all formatted tasks (original behavior)
+            formatted_tasks = get_formatted_tasks(service, spaces, date_start, date_end)
+            
+            if args.json:
+                save_data(formatted_tasks, "tasks.json", "json")
+                logging.info(f"Saved {len(formatted_tasks)} tasks to tasks.json")
+            elif args.csv:
+                save_data(formatted_tasks, "tasks.csv", "csv")
+                logging.info(f"Saved {len(formatted_tasks)} tasks to tasks.csv")
+            else:
+                print(json.dumps(formatted_tasks, indent=4, ensure_ascii=False))
+                logging.info(f"Found {len(formatted_tasks)} tasks")
 
     elif args.command == "messages":
         try:
