@@ -1,3 +1,32 @@
+"""
+Google Spaces Tasks Reporter
+
+IMPORTANT LIMITATIONS:
+=====================
+
+This tool has a fundamental limitation: tasks created via Google Chat are NOT accessible 
+through the Google Tasks API. This means:
+
+✅ WHAT WE CAN TRACK (via Chat API):
+- Task creation events from Chat messages
+- Task assignment changes
+- Task completion notifications
+- Task deletion notifications
+- Basic task metadata (assignee, creation time, space)
+
+❌ WHAT WE CANNOT TRACK (via Tasks API):
+- Task titles and descriptions (only generic "Created a task for @Person")
+- Due dates
+- Detailed task status from Tasks API
+- Task notes and comments
+- Task list organization
+
+For detailed explanation, see: GOOGLE_CHAT_TASKS_LIMITATIONS.md
+
+The tool now operates in "Chat-only mode" focusing on what's available through
+the Google Chat API rather than attempting integration with Google Tasks API.
+"""
+
 import os
 import logging
 import json
@@ -15,11 +44,12 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
 
 # Constants
+# NOTE: Google Tasks API scope removed - see GOOGLE_CHAT_TASKS_LIMITATIONS.md
+# Tasks created via Google Chat are NOT accessible through Google Tasks API
 SCOPES = [
     'https://www.googleapis.com/auth/chat.spaces',
     'https://www.googleapis.com/auth/chat.messages',
     'https://www.googleapis.com/auth/chat.messages.readonly',
-    'https://www.googleapis.com/auth/tasks.readonly',
 ]
 TOKEN_FILE = 'token.json'
 CREDENTIALS_FILE = 'client_secret.json'
@@ -465,116 +495,51 @@ def get_formatted_tasks(service, spaces: List[Dict], start_date: str = None, end
             
     return formatted_tasks
 
-@retry_on_error()
-def get_task_details_from_tasks_api(creds: Credentials, task_id: str) -> Dict:
-    """Try to get task details from Google Tasks API using the task ID."""
-    try:
-        tasks_service = build('tasks', 'v1', credentials=creds)
-        
-        # First, try to get all task lists
-        tasklists = tasks_service.tasklists().list().execute()
-        
-        for tasklist in tasklists.get('items', []):
-            try:
-                # Try to get the specific task from this tasklist
-                task = tasks_service.tasks().get(
-                    tasklist=tasklist['id'],
-                    task=task_id
-                ).execute()
-                
-                return {
-                    'title': task.get('title', 'Unknown Task'),
-                    'notes': task.get('notes', ''),
-                    'status': task.get('status', 'needsAction'),
-                    'due': task.get('due', ''),
-                    'completed': task.get('completed', ''),
-                    'updated': task.get('updated', ''),
-                    'tasklist_id': tasklist['id'],
-                    'tasklist_title': tasklist.get('title', 'Unknown List')
-                }
-            except HttpError as e:
-                if e.resp.status == 404:
-                    # Task not found in this list, try next
-                    continue
-                else:
-                    raise
-        
-        # If not found in any tasklist, return None
-        return None
-        
-    except Exception as e:
-        logging.warning(f"Could not fetch task details for {task_id}: {e}")
-        return None
-
-@retry_on_error()
-def get_all_tasks_from_tasks_api(creds: Credentials, start_date: str, end_date: str) -> List[Dict]:
-    """Fetch all tasks from Google Tasks API within a time range."""
-    try:
-        tasks_service = build('tasks', 'v1', credentials=creds)
-        all_tasks = []
-        
-        # Get all task lists
-        tasklists = tasks_service.tasklists().list().execute()
-        
-        for tasklist in tasklists.get('items', []):
-            try:
-                # Get all tasks from this tasklist
-                tasks = tasks_service.tasks().list(
-                    tasklist=tasklist['id'],
-                    showCompleted=True,
-                    showDeleted=True,
-                    showHidden=True
-                ).execute()
-                
-                for task in tasks.get('items', []):
-                    # Parse task creation time
-                    task_created = task.get('created', '')
-                    if task_created:
-                        # Convert to datetime for comparison
-                        try:
-                            task_created_dt = datetime.fromisoformat(task_created.replace('Z', ''))
-                            start_dt = datetime.fromisoformat(start_date.replace('Z', ''))
-                            end_dt = datetime.fromisoformat(end_date.replace('Z', ''))
-                            
-                            # Check if task was created within the time range
-                            if start_dt <= task_created_dt <= end_dt:
-                                all_tasks.append({
-                                    'id': task.get('id', ''),
-                                    'title': task.get('title', 'Unknown Task'),
-                                    'notes': task.get('notes', ''),
-                                    'status': task.get('status', 'needsAction'),
-                                    'due': task.get('due', ''),
-                                    'completed': task.get('completed', ''),
-                                    'updated': task.get('updated', ''),
-                                    'created': task_created,
-                                    'tasklist_id': tasklist['id'],
-                                    'tasklist_title': tasklist.get('title', 'Unknown List')
-                                })
-                        except ValueError as e:
-                            logging.warning(f"Could not parse task creation time {task_created}: {e}")
-                            continue
-                            
-            except Exception as e:
-                logging.warning(f"Error fetching tasks from list {tasklist.get('title', 'Unknown')}: {e}")
-                continue
-        
-        logging.info(f"Found {len(all_tasks)} tasks from Google Tasks API in the specified time range")
-        return all_tasks
-        
-    except Exception as e:
-        logging.error(f"Error fetching tasks from Google Tasks API: {e}")
-        return []
+# REMOVED: Google Tasks API functions
+# See GOOGLE_CHAT_TASKS_LIMITATIONS.md for explanation
+# Tasks created via Google Chat are NOT accessible through Google Tasks API
 
 def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_date: str, end_date: str, creds: Credentials = None) -> List[Dict]:
-    """Retrieve tasks assigned to a specific person with detailed information."""
+    """
+    Retrieve tasks assigned to a specific person using only Google Chat API.
+    
+    IMPORTANT LIMITATION: This function only uses Google Chat API because tasks created
+    via Google Chat are NOT accessible through Google Tasks API. See 
+    GOOGLE_CHAT_TASKS_LIMITATIONS.md for detailed explanation.
+    
+    What this function CAN track:
+    - Task creation events from Chat messages
+    - Task assignment changes
+    - Task completion notifications  
+    - Task deletion notifications
+    - Basic task metadata (assignee, creation time, space)
+    
+    What this function CANNOT track:
+    - Task titles and descriptions (only generic "Created a task for @Person")
+    - Due dates
+    - Detailed task status from Tasks API
+    - Task notes and comments
+    - Task list organization
+    
+    Args:
+        service: Google Chat API service instance
+        space_name: Name of the Chat space to search
+        assignee_name: Name of the person to filter tasks for
+        start_date: Start date in RFC 3339 format
+        end_date: End date in RFC 3339 format
+        creds: Credentials object (unused - kept for compatibility)
+        
+    Returns:
+        List of task dictionaries with available information from Chat messages
+    """
     tasks = []
-    completed_tasks, reopened_tasks, deleted_tasks, assigned_tasks = set(), set(), set(), set()
     
     try:
         messages = get_messages_for_space(service, space_name, start_date, end_date)
         
         # First pass: collect all task-related messages
         task_messages = {}
+        
         for message in messages:
             if 'via Tasks' in message.get('text', ''):
                 task_id = message['thread']['name'].split("/")[3]
@@ -592,7 +557,7 @@ def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_d
                         'updates': []
                     }
                 
-                # Categorize messages
+                # Categorize messages based on Chat message patterns
                 if "Created" in text:
                     assignee = text.split("@")[1].split("(")[0].strip() if "@" in text else "Unassigned"
                     task_messages[task_id]['created'] = {
@@ -663,7 +628,7 @@ def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_d
             if task_data['deleted']:
                 continue
             
-            # Determine task status
+            # Determine task status based on Chat messages
             status = 'OPEN'
             if task_data['completed']:
                 # Check if it was reopened after completion
@@ -673,41 +638,35 @@ def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_d
                 if not latest_reopening or latest_reopening['time'] < latest_completion['time']:
                     status = 'COMPLETED'
             
-            # Try to get actual task details from Google Tasks API
-            task_details = None
-            if creds:
-                task_details = get_task_details_from_tasks_api(creds, task_id)
-            
-            # Find task name (extract from creation message or Tasks API)
-            task_name = "Unknown Task"
+            # Extract task name from Chat message (limited information available)
+            # Chat messages only show generic "Created a task for @Person (via Tasks)"
+            task_name = "Task created via Chat"
             task_description = ""
             
-            if task_details:
-                task_name = task_details.get('title', 'Unknown Task')
-                task_description = task_details.get('notes', '')
-            elif task_data['created']['text']:
-                # Fallback: Try to extract task name from the creation message
-                text = task_data['created']['text']
-                if "Created" in text and ":" in text:
-                    task_name = text.split("Created")[1].split(":")[1].strip()
-                    if "@" in task_name:
-                        task_name = task_name.split("@")[0].strip()
-                elif "Created" in text:
-                    task_name = text.split("Created")[1].strip()
-                    if "@" in task_name:
-                        task_name = task_name.split("@")[0].strip()
+            # Try to extract any additional context from the creation message
+            text = task_data['created']['text']
+            if "Created" in text and ":" in text:
+                # Look for task description after colon
+                potential_desc = text.split("Created")[1].split(":")[1].strip()
+                if "@" in potential_desc:
+                    potential_desc = potential_desc.split("@")[0].strip()
+                if potential_desc and potential_desc != "a task for":
+                    task_name = potential_desc
+            elif "Created" in text:
+                # Look for task description after "Created"
+                potential_desc = text.split("Created")[1].strip()
+                if "@" in potential_desc:
+                    potential_desc = potential_desc.split("@")[0].strip()
+                if potential_desc and potential_desc != "a task for":
+                    task_name = potential_desc
             
-            # Find due date (if any)
+            # Look for due date mentions in updates (very limited)
             due_date = None
-            if task_details and task_details.get('due'):
-                due_date = task_details.get('due')
-            else:
-                # Fallback: Look for due date mentions in updates
-                for update in task_data['updates']:
-                    if "due" in update['text'].lower() or "deadline" in update['text'].lower():
-                        # Try to extract date from the message
-                        # This is a simple implementation - could be enhanced with better date parsing
-                        due_date = update['time']  # Use message time as fallback
+            for update in task_data['updates']:
+                if "due" in update['text'].lower() or "deadline" in update['text'].lower():
+                    # Try to extract date from the message
+                    # This is a simple implementation - could be enhanced with better date parsing
+                    due_date = update['time']  # Use message time as fallback
             
             # Find last update time
             last_update = task_data['created']['time']
@@ -755,8 +714,11 @@ def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_d
                 'space_name': space_name,
                 'created_text': task_data['created']['text'],
                 'created_sender': task_data['created']['sender'],
-                'tasklist_title': task_details.get('tasklist_title', '') if task_details else '',
-                'tasks_api_available': task_details is not None
+                'tasklist_title': '',  # Not available from Chat API
+                'tasks_api_available': False,  # Always False - see limitations
+                'timestamp_matched': False,  # Not applicable - no Tasks API integration
+                'api_task_id': '',  # Not available - Chat and Tasks APIs are separate
+                'limitation_note': 'Task details limited - see GOOGLE_CHAT_TASKS_LIMITATIONS.md'
             }
             
             tasks.append(task_info)
@@ -1091,7 +1053,7 @@ def main():
                     print(f"\n{i}. Task: {task['task_name']}")
                     if task['task_description']:
                         print(f"   Description: {task['task_description']}")
-                    print(f"   ID: {task['task_id']}")
+                    print(f"   Chat Task ID: {task['task_id']}")
                     print(f"   Assignee: {task['assignee']}")
                     print(f"   Assignment Time: {task['assignment_time']}")
                     print(f"   Due Date: {task['due_date'] or 'Not specified'}")
@@ -1099,11 +1061,8 @@ def main():
                     print(f"   Last Progress from {assignee_name}: {task['last_progress'] or 'None'}")
                     print(f"   Status: {task['status']}")
                     print(f"   Space: {task['space_name']}")
-                    if task.get('tasklist_title'):
-                        print(f"   Task List: {task['tasklist_title']}")
-                    print(f"   Tasks API: {'Available' if task.get('tasks_api_available') else 'Not Available'}")
                     print(f"   Created by: {task['created_sender']}")
-                    print(f"   Creation Text: {task['created_text']}")
+                    print(f"   ⚠️  {task.get('limitation_note', '')}")
                     print("-" * 80)
                 
                 logging.info(f"Found {len(all_tasks)} tasks assigned to {assignee_name}")
