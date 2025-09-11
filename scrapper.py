@@ -169,13 +169,40 @@ def save_to_json(data: List[Dict], filename: str):
         json.dump(data, f, indent=4, ensure_ascii=False)  # Ensure non-ASCII characters are preserved
     logging.info(f"Data saved to {filename}")
 
+def clean_text_for_csv(text: str) -> str:
+    """Clean text for CSV export by removing line breaks and escaping quotes."""
+    if not text:
+        return ""
+    
+    # Remove line breaks and replace with spaces
+    cleaned = text.replace('\n', ' ').replace('\r', ' ')
+    
+    # Replace multiple spaces with single space
+    cleaned = ' '.join(cleaned.split())
+    
+    # Escape quotes by doubling them (CSV standard)
+    cleaned = cleaned.replace('"', '""')
+    
+    return cleaned
+
 def save_to_csv(data: List[Dict], filename: str):
     """Save data to a CSV file with UTF-8 encoding and headers."""
     if not data:
         logging.warning("No data to save to CSV")
         return
     
-    df = pd.DataFrame(data)
+    # Clean text fields for CSV export
+    cleaned_data = []
+    for item in data:
+        cleaned_item = item.copy()
+        # Clean text fields that might contain line breaks or quotes
+        text_fields = ['first_thread_message', 'message_text', 'text', 'task_description', 'task_name']
+        for field in text_fields:
+            if field in cleaned_item and cleaned_item[field]:
+                cleaned_item[field] = clean_text_for_csv(str(cleaned_item[field]))
+        cleaned_data.append(cleaned_item)
+    
+    df = pd.DataFrame(cleaned_data)
     df.to_csv(filename, index=False, encoding='utf-8')
     logging.info(f"Data saved to {filename}")
 
@@ -233,6 +260,130 @@ def get_messages_for_space(service, space_name: str, date_start: str, date_end: 
             break
     return messages
 
+@retry_on_error()
+def get_first_thread_message(service, space_name: str, thread_name: str) -> Dict:
+    """
+    Retrieve just the first message from a thread for lightweight context.
+    
+    Args:
+        service: Google Chat API service instance
+        space_name: Name of the Chat space (e.g., 'spaces/AAAA')
+        thread_name: Name of the thread (e.g., 'spaces/AAAA/threads/XyBuRxxncFM')
+        
+    Returns:
+        Dictionary containing the first message, or empty dict if none found
+    """
+    try:
+        # Get messages in the thread with a limit of 1 to get just the first message
+        response = service.spaces().messages().list(
+            parent=space_name,
+            pageSize=1,  # Only get the first message
+            filter=f'thread.name="{thread_name}"'
+        ).execute()
+        
+        messages = response.get('messages', [])
+        if messages:
+            # Verify this message is from the correct thread
+            message = messages[0]
+            if message.get('thread', {}).get('name') == thread_name:
+                return message
+        
+        return {}
+        
+    except Exception as e:
+        logging.warning(f"Could not retrieve first message for thread {thread_name}: {e}")
+        return {}
+
+@retry_on_error()
+def get_thread_messages(service, space_name: str, thread_name: str) -> List[Dict]:
+    """
+    Retrieve all messages from a specific thread.
+    
+    Args:
+        service: Google Chat API service instance
+        space_name: Name of the Chat space (e.g., 'spaces/AAAA')
+        thread_name: Name of the thread (e.g., 'spaces/AAAA/threads/XyBuRxxncFM')
+        
+    Returns:
+        List of message dictionaries ordered chronologically (oldest first)
+    """
+    try:
+        # Get all messages in the thread
+        page_token = None
+        messages = []
+        
+        while True:
+            # Use the thread name to filter messages in this specific thread
+            response = service.spaces().messages().list(
+                parent=space_name,
+                pageToken=page_token,
+                # Filter by thread name - this should get only messages from this thread
+                filter=f'thread.name="{thread_name}"'
+            ).execute()
+            
+            thread_messages = response.get('messages', [])
+            # Filter to ensure we only get messages from the specific thread
+            for message in thread_messages:
+                if message.get('thread', {}).get('name') == thread_name:
+                    messages.append(message)
+            
+            page_token = response.get('nextPageToken')
+            if not page_token:
+                break
+        
+        # Sort messages by creation time to ensure chronological order
+        messages.sort(key=lambda x: x.get('createTime', ''))
+        
+        logging.debug(f"Retrieved {len(messages)} messages from thread {thread_name}")
+        return messages
+        
+    except Exception as e:
+        logging.warning(f"Could not retrieve thread messages for {thread_name}: {e}")
+        # If thread-specific retrieval fails, return empty list
+        # This maintains backward compatibility
+        return []
+
+def get_thread_info(service, space_name: str, thread_name: str) -> Dict:
+    """
+    Get information about a thread including first message and message count.
+    
+    Args:
+        service: Google Chat API service instance
+        space_name: Name of the Chat space
+        thread_name: Name of the thread
+        
+    Returns:
+        Dictionary containing thread information:
+        - first_message: The first (oldest) message in the thread
+        - message_count: Total number of messages in the thread
+        - first_message_text: Text content of the first message
+        - thread_starter: Display name of who started the thread
+        - last_message_time: Creation time of the last message in the thread
+    """
+    thread_messages = get_thread_messages(service, space_name, thread_name)
+    
+    if not thread_messages:
+        return {
+            'first_message': None,
+            'message_count': 0,
+            'first_message_text': '',
+            'thread_starter': '',
+            'last_message_time': None,
+            'error': 'Could not retrieve thread messages'
+        }
+    
+    first_message = thread_messages[0]
+    last_message = thread_messages[-1]  # Messages are sorted chronologically
+    
+    return {
+        'first_message': first_message,
+        'message_count': len(thread_messages),
+        'first_message_text': first_message.get('text', ''),
+        'thread_starter': first_message.get('sender', {}).get('displayName', 'Unknown'),
+        'last_message_time': last_message.get('createTime'),
+        'error': None
+    }
+
 def get_people(service, spaces: List[Dict], start_date: str = None, end_date: str = None) -> List[str]:
     """Retrieve a list of unique people from SPACE type spaces by scraping messages."""
     people = set()
@@ -260,21 +411,44 @@ def get_people(service, spaces: List[Dict], start_date: str = None, end_date: st
 
     return list(people)
 
-def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[Dict]:
-    """Retrieve tasks from a specific space within a date range using a valid filter query."""
+def get_tasks(service, space_name: str, start_date: str, end_date: str, thread_mode: str = "context") -> List[Dict]:
+    """Retrieve tasks from a specific space within a date range using a valid filter query.
+    
+    Args:
+        service: Google Chat API service instance
+        space_name: Name of the Chat space
+        start_date: Start date in RFC 3339 format
+        end_date: End date in RFC 3339 format
+        thread_mode: Thread information to include: "context" (default, includes first message) or "full" (complete thread)
+    """
     tasks = []
     completed_tasks, reopened_tasks, deleted_tasks, assigned_tasks = set(), set(), set(), set()
     
     try:
         messages = get_messages_for_space(service, space_name, start_date, end_date)
         
+        # Count tasks for progress tracking
+        task_creation_messages = [msg for msg in messages if 'via Tasks' in msg.get('text', '') and "Created" in msg.get('text', '')]
+        total_tasks = len(task_creation_messages)
+        
+        if total_tasks > 0:
+            if thread_mode == "full":
+                logging.info(f"Fetching complete thread messages for {total_tasks} tasks")
+            else:
+                logging.info(f"Fetching task context for {total_tasks} tasks")
+        
+        task_counter = 0
         for message in messages:
             if 'via Tasks' in message.get('text', ''):
                 task_id = message['thread']['name'].split("/")[3]
                 text = message['text']
                 assignee = text.split("@")[1].split("(")[0].strip() if "@" in text else "Unassigned"
+                thread_name = message.get('thread', {}).get('name', '')
 
                 if "Created" in text:
+                    task_counter += 1
+                    
+                    # Base task data
                     task_data = {
                         'id': task_id,
                         'assignee': assignee,
@@ -283,8 +457,30 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str) -> List[
                         'space_name': space_name,
                         'message_text': message.get('text', ''),
                         'sender': message.get('sender', {}).get('displayName', 'Unknown'),
-                        'thread_name': message.get('thread', {}).get('name', ''),
+                        'thread_name': thread_name,
                     }
+                    
+                    # Always include basic thread context (first message for task understanding)
+                    if task_counter % 10 == 0:
+                        logging.info(f"Processing tasks: {task_counter}/{total_tasks}")
+                    
+                    # Get first message for context (lightweight - only need first message)
+                    first_message = get_first_thread_message(service, space_name, thread_name)
+                    task_data['first_thread_message'] = first_message.get('text', '') if first_message else ''
+                    
+                    # Add complete thread messages only if requested
+                    if thread_mode == "full":
+                        thread_messages = get_thread_messages(service, space_name, thread_name)
+                        # Simplify thread messages to just the essential information
+                        simplified_messages = []
+                        for msg in thread_messages:
+                            simplified_messages.append({
+                                'date': msg.get('createTime', ''),
+                                'sender': msg.get('sender', {}).get('displayName', 'Unknown'),
+                                'message': msg.get('text', '')
+                            })
+                        task_data['thread_messages'] = simplified_messages
+                    
                     tasks.append(task_data)
                 elif "Assigned" in text:
                     assigned_tasks.add(task_id + "@" + assignee)
@@ -462,9 +658,9 @@ def parse_date_range(args) -> tuple[str, str]:
         logging.error(f"Error parsing date range: {e}")
         raise ValueError(f"Error parsing date range: {e}")
 
-def format_task_info(task: Dict, space_name: str) -> Dict:
+def format_task_info(task: Dict, space_name: str, thread_mode: str = "context") -> Dict:
     """Format task information in a human-friendly way."""
-    return {
+    formatted_task = {
         'id': task['id'],
         'assignee': task.get('assignee', 'Unassigned'),
         'status': task.get('status', 'UNKNOWN'),
@@ -474,9 +670,17 @@ def format_task_info(task: Dict, space_name: str) -> Dict:
         'message_text': task.get('message_text', ''),
         'sender': task.get('sender', ''),
         'thread_name': task.get('thread_name', ''),
+        # Always include first message for context
+        'first_thread_message': task.get('first_thread_message', ''),
     }
+    
+    # Add complete thread messages only if requested
+    if thread_mode == "full":
+        formatted_task['thread_messages'] = task.get('thread_messages', [])
+    
+    return formatted_task
 
-def get_formatted_tasks(service, spaces: List[Dict], start_date: str = None, end_date: str = None) -> List[Dict]:
+def get_formatted_tasks(service, spaces: List[Dict], start_date: str = None, end_date: str = None, thread_mode: str = "context") -> List[Dict]:
     """Retrieve formatted task information from specified spaces."""
     formatted_tasks = []
     
@@ -485,9 +689,9 @@ def get_formatted_tasks(service, spaces: List[Dict], start_date: str = None, end
         logging.info(f"Fetching tasks from space: {space_name}")
         
         try:
-            tasks = get_tasks(service, space['name'], start_date, end_date)
+            tasks = get_tasks(service, space['name'], start_date, end_date, thread_mode)
             for task in tasks:
-                formatted_task = format_task_info(task, space_name)
+                formatted_task = format_task_info(task, space_name, thread_mode)
                 formatted_tasks.append(formatted_task)
         except Exception as e:
             logging.error(f"Error fetching tasks from space {space_name}: {e}")
@@ -499,7 +703,7 @@ def get_formatted_tasks(service, spaces: List[Dict], start_date: str = None, end
 # See GOOGLE_CHAT_TASKS_LIMITATIONS.md for explanation
 # Tasks created via Google Chat are NOT accessible through Google Tasks API
 
-def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_date: str, end_date: str, creds: Credentials = None) -> List[Dict]:
+def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_date: str, end_date: str, creds: Credentials = None, thread_mode: str = "context") -> List[Dict]:
     """
     Retrieve tasks assigned to a specific person using only Google Chat API.
     
@@ -701,6 +905,7 @@ def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_d
                 if assignee_assignments:
                     assignment_time = max(assignee_assignments, key=lambda x: x['time'])['time']
             
+            # Base task info
             task_info = {
                 'task_id': task_id,
                 'task_name': task_name,
@@ -718,8 +923,25 @@ def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_d
                 'tasks_api_available': False,  # Always False - see limitations
                 'timestamp_matched': False,  # Not applicable - no Tasks API integration
                 'api_task_id': '',  # Not available - Chat and Tasks APIs are separate
-                'limitation_note': 'Task details limited - see GOOGLE_CHAT_TASKS_LIMITATIONS.md'
             }
+            
+            # Always include first message for context
+            thread_name = f"spaces/{space_name.split('/')[-1]}/threads/{task_id}"
+            first_message = get_first_thread_message(service, space_name, thread_name)
+            task_info['first_thread_message'] = first_message.get('text', '') if first_message else ''
+            
+            # Add complete thread messages only if requested
+            if thread_mode == "full":
+                thread_messages = get_thread_messages(service, space_name, thread_name)
+                # Simplify thread messages to just the essential information
+                simplified_messages = []
+                for msg in thread_messages:
+                    simplified_messages.append({
+                        'date': msg.get('createTime', ''),
+                        'sender': msg.get('sender', {}).get('displayName', 'Unknown'),
+                        'message': msg.get('text', '')
+                    })
+                task_info['thread_messages'] = simplified_messages
             
             tasks.append(task_info)
             
@@ -865,6 +1087,7 @@ def main():
     tasks_parser.add_argument("--past-day", action="store_true", help="Retrieve tasks from the past 1 day")
     tasks_parser.add_argument("--past-month", action="store_true", help="Retrieve tasks from the past 30 days")
     tasks_parser.add_argument("--past-year", action="store_true", help="Retrieve tasks from the past 365 days")
+    tasks_parser.add_argument("--with-threads", action="store_true", help="Include complete thread messages (JSON only)")
     tasks_parser.add_argument("--json", action="store_true", help="Save tasks to tasks.json file")
     tasks_parser.add_argument("--csv", action="store_true", help="Save tasks to CSV file")
 
@@ -976,7 +1199,7 @@ def main():
             # Fetch all tasks
             all_tasks = []
             for space in spaces:
-                tasks = get_tasks(service, space['name'], date_start, date_end)
+                tasks = get_tasks(service, space['name'], date_start, date_end, "context")
                 all_tasks.extend(tasks)
 
             # Filter tasks if people.json exists
@@ -1006,6 +1229,18 @@ def main():
             logging.error(e)
             return
 
+        # Handle thread flag validation
+        if args.csv and args.with_threads:
+            logging.error("❌ CSV format is not compatible with complete thread messages due to nested data structure.")
+            logging.error("💡 Suggestion: Use --json instead for complete thread messages, or use CSV for task summaries.")
+            logging.error("   Examples:")
+            logging.error("     python3 scrapper.py tasks --with-threads --json")
+            logging.error("     python3 scrapper.py tasks --csv  # includes task context by default")
+            return
+        
+        # Determine thread mode: always include basic context, optionally include full threads
+        thread_mode = "full" if args.with_threads else "context"
+
         # Load spaces from file or fetch all spaces
         if args.space:
             # Search in specific space
@@ -1024,7 +1259,7 @@ def main():
                 logging.info(f"Searching in space: {space_name}")
                 
                 try:
-                    tasks = get_tasks_for_assignee(service, space['name'], assignee_name, date_start, date_end, creds)
+                    tasks = get_tasks_for_assignee(service, space['name'], assignee_name, date_start, date_end, creds, thread_mode)
                     all_tasks.extend(tasks)
                     logging.info(f"Found {len(tasks)} tasks for {assignee_name} in {space_name}")
                 except Exception as e:
@@ -1062,13 +1297,26 @@ def main():
                     print(f"   Status: {task['status']}")
                     print(f"   Space: {task['space_name']}")
                     print(f"   Created by: {task['created_sender']}")
+                    
+                    # New thread information
+                    print(f"   Thread Messages: {task.get('thread_message_count', 0)}")
+                    print(f"   Thread Started by: {task.get('thread_starter', 'Unknown')}")
+                    if task.get('first_thread_message'):
+                        # Truncate long messages for display
+                        first_msg = task['first_thread_message']
+                        if len(first_msg) > 100:
+                            first_msg = first_msg[:100] + "..."
+                        print(f"   First Thread Message: {first_msg}")
+                    if task.get('thread_retrieval_error'):
+                        print(f"   ⚠️  Thread Info Error: {task['thread_retrieval_error']}")
+                    
                     print(f"   ⚠️  {task.get('limitation_note', '')}")
                     print("-" * 80)
                 
                 logging.info(f"Found {len(all_tasks)} tasks assigned to {assignee_name}")
         else:
             # Get all formatted tasks (original behavior)
-            formatted_tasks = get_formatted_tasks(service, spaces, date_start, date_end)
+            formatted_tasks = get_formatted_tasks(service, spaces, date_start, date_end, thread_mode)
             
             if args.json:
                 save_data(formatted_tasks, "tasks.json", "json")
