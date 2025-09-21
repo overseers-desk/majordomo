@@ -598,6 +598,15 @@ def get_past_month_dates():
         today.isoformat() + "Z"        # End date
     )
 
+def get_past_week_dates():
+    """Get the date range for the past week (7 days ago to today) in RFC 3339 format."""
+    today = datetime.today()
+    past_week = today - timedelta(days=7)
+    return (
+        past_week.isoformat() + "Z",  # Start date
+        today.isoformat() + "Z"       # End date
+    )
+
 def get_past_year_dates():
     """Get the date range for the past year (365 days ago to today) in RFC 3339 format."""
     today = datetime.today()
@@ -631,10 +640,13 @@ def parse_date_range(args) -> tuple[str, str]:
         ValueError: If date parsing fails or invalid date combination is provided
     """
     try:
-        # Handle date range options with priority: past-day > past-month/past-year > custom dates > default dates
+        # Handle date range options with priority: past-day > past-week > past-month/past-year > custom dates > default dates
         if hasattr(args, 'past_day') and args.past_day:
             date_start, date_end = get_past_day_dates()
             logging.info("Using past day date range (1 day ago to today)")
+        elif hasattr(args, 'past_week') and args.past_week:
+            date_start, date_end = get_past_week_dates()
+            logging.info("Using past week date range (7 days ago to today)")
         elif hasattr(args, 'past_month') and args.past_month:
             date_start, date_end = get_past_month_dates()
             logging.info("Using past month date range (30 days ago to today)")
@@ -1064,6 +1076,7 @@ def main():
     people_parser = subparsers.add_parser("people", help="Retrieve a list of people")
     people_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
     people_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    people_parser.add_argument("--past-week", action="store_true", help="Retrieve people from the past 7 days")
     people_parser.add_argument("--past-month", action="store_true", help="Retrieve people from the past 30 days")
     people_parser.add_argument("--past-year", action="store_true", help="Retrieve people from the past 365 days")
     people_parser.add_argument("--json", action="store_true", help="Save the list of people to people.json file")
@@ -1073,6 +1086,7 @@ def main():
     report_parser = subparsers.add_parser("report", help="Generate a tasks report")
     report_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
     report_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    report_parser.add_argument("--past-week", action="store_true", help="Generate report for the past 7 days")
     report_parser.add_argument("--past-month", action="store_true", help="Generate report for the past 30 days")
     report_parser.add_argument("--past-year", action="store_true", help="Generate report for the past 365 days")
     report_parser.add_argument("--json", action="store_true", help="Save the report to task_report.json file")
@@ -1085,6 +1099,7 @@ def main():
     tasks_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
     tasks_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
     tasks_parser.add_argument("--past-day", action="store_true", help="Retrieve tasks from the past 1 day")
+    tasks_parser.add_argument("--past-week", action="store_true", help="Retrieve tasks from the past 7 days")
     tasks_parser.add_argument("--past-month", action="store_true", help="Retrieve tasks from the past 30 days")
     tasks_parser.add_argument("--past-year", action="store_true", help="Retrieve tasks from the past 365 days")
     tasks_parser.add_argument("--with-threads", action="store_true", help="Include complete thread messages (JSON only)")
@@ -1103,6 +1118,7 @@ def main():
     
     messages_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
     messages_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
+    messages_parser.add_argument("--past-week", action="store_true", help="Export messages from the past 7 days")
     messages_parser.add_argument("--past-month", action="store_true", help="Export messages from the past 30 days")
     messages_parser.add_argument("--past-year", action="store_true", help="Export messages from the past 365 days")
     messages_parser.add_argument("--json", action="store_true", help="Save the exported messages to JSON files (filename includes space name and date range)")

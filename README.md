@@ -85,13 +85,13 @@ This command will prompt for Google account authentication and generate user cre
 
 **Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--json` flag to persist the results to `spaces.json` or `--csv` to save as `spaces.csv` for future reference.
 
-**People Command**: Extracts information about individuals found within the specified spaces. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be optionally saved to `people.json` using `--json` or `people.csv` using `--csv`.
+**People Command**: Extracts information about individuals found within the specified spaces. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be optionally saved to `people.json` using `--json` or `people.csv` using `--csv`.
 
-**Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be saved to `tasks.json` using `--json`.
+**Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be saved to `tasks.json` using `--json`.
 
-**Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to a CSV file with the naming convention `task_report_YYYY-MM-DD_YYYY-MM-DD.csv` by default, or to JSON format using `--json`. The command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today).
+**Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to a CSV file with the naming convention `task_report_YYYY-MM-DD_YYYY-MM-DD.csv` by default, or to JSON format using `--json`. The command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today).
 
-**Messages Command**: Exports all chat messages from a specific Google Chat space in either JSON or CSV format. This command can accept a `--space` parameter to specify the target space directly, or if no space is specified, it will present an interactive list of all available spaces for the user to choose from. The export includes comprehensive message details such as message ID, full text content, sender information, space name, creation time, last update time, thread details, message type, and deletion status. Use the `--json` flag to save the results to a JSON file or `--csv` to save as CSV; without either flag, messages are displayed in the terminal. When saving, output files are automatically named with the format `messages_export_{space_name}_{start_date}_{end_date}.{format}`. The command supports efficient date filtering using Google's API with options for `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today), or custom date ranges with `--date-start` and `--date-end`.
+**Messages Command**: Exports all chat messages from a specific Google Chat space in either JSON or CSV format. This command can accept a `--space` parameter to specify the target space directly, or if no space is specified, it will present an interactive list of all available spaces for the user to choose from. The export includes comprehensive message details such as message ID, full text content, sender information, space name, creation time, last update time, thread details, message type, and deletion status. Use the `--json` flag to save the results to a JSON file or `--csv` to save as CSV; without either flag, messages are displayed in the terminal. When saving, output files are automatically named with the format `messages_export_{space_name}_{start_date}_{end_date}.{format}`. The command supports efficient date filtering using Google's API with options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today), or custom date ranges with `--date-start` and `--date-end`.
 
 ### Command-Line Interface Examples
 
@@ -114,6 +114,9 @@ python3 scrapper.py spaces --csv
 # Get people from specific date range
 python3 scrapper.py people --date-start 2024-01-01 --date-end 2024-01-31
 
+# Get people from the past week (7 days ago to today)
+python3 scrapper.py people --past-week
+
 # Get people from the past month (30 days ago to today)
 python3 scrapper.py people --past-month
 
@@ -132,6 +135,12 @@ python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv
 # Generate report for specific period (JSON format)
 python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --json
 
+# Generate report for the past week (7 days ago to today) - CSV format
+python3 scrapper.py report --past-week --csv
+
+# Generate report for the past week (7 days ago to today) - JSON format
+python3 scrapper.py report --past-week --json
+
 # Generate report for the past month (30 days ago to today) - CSV format
 python3 scrapper.py report --past-month --csv
 
@@ -146,6 +155,9 @@ python3 scrapper.py report --past-year --json
 
 # Get tasks and save to JSON file
 python3 scrapper.py tasks --json
+
+# Get tasks for the past week (7 days ago to today)
+python3 scrapper.py tasks --past-week --json
 
 # Get tasks for the past month (30 days ago to today)
 python3 scrapper.py tasks --past-month --json
@@ -164,6 +176,9 @@ python3 scrapper.py messages --json
 
 # Export messages for a specific date range and save to file
 python3 scrapper.py messages --date-start 2024-01-01 --date-end 2024-01-31 --json
+
+# Export messages from the past week (7 days ago to today)
+python3 scrapper.py messages --space "spaces/ABC123" --past-week --json
 
 # Export messages from the past month (30 days ago to today)
 python3 scrapper.py messages --space "spaces/ABC123" --past-month --json
@@ -192,6 +207,7 @@ The script provides flexible date range options across all relevant commands. Wh
 
 **Available Date Range Options:**
 - **Custom Range**: Use `--date-start` and `--date-end` to specify exact start and end dates
+- **Past Week**: Use `--past-week` to analyse data from the past 7 days (from today)
 - **Past Month**: Use `--past-month` to analyse data from the past 30 days (from today)
 - **Past Year**: Use `--past-year` to analyse data from the past 365 days (from today)
 - **Default**: When no options are specified, the script automatically uses the previous calendar month
@@ -202,7 +218,7 @@ The script provides flexible date range options across all relevant commands. Wh
 - `report` - Generate task reports with date filtering
 - `messages` - Export messages with date filtering
 
-These date filtering options enable focused analysis of specific time periods, making it ideal for monthly reporting, quarterly reviews, or targeted performance analysis. The `--past-month` and `--past-year` options are particularly useful for quick analysis of recent activity without needing to calculate specific dates.
+These date filtering options enable focused analysis of specific time periods, making it ideal for weekly reporting, monthly reporting, quarterly reviews, or targeted performance analysis. The `--past-week`, `--past-month` and `--past-year` options are particularly useful for quick analysis of recent activity without needing to calculate specific dates.
 
 ## Output and Data Management
 
