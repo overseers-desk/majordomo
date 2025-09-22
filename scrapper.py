@@ -36,6 +36,7 @@ from typing import List, Dict
 import unicodedata
 import pandas as pd
 import time
+import fnmatch
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -162,6 +163,25 @@ def normalize_name(name: str) -> str:
     # Convert to lowercase and strip whitespace
     normalized = normalized.lower().strip()
     return normalized
+
+def matches_assignee_pattern(assignee_name: str, pattern: str) -> bool:
+    """
+    Check if an assignee name matches a pattern.
+    Supports both exact matching and glob patterns (e.g., '*riyanka D*').
+    
+    Args:
+        assignee_name: The actual assignee name to check
+        pattern: The search pattern (can contain wildcards * and ?)
+        
+    Returns:
+        True if the name matches the pattern, False otherwise
+    """
+    # Normalize both the name and pattern for comparison
+    normalized_name = normalize_name(assignee_name)
+    normalized_pattern = normalize_name(pattern)
+    
+    # Use fnmatch for glob pattern matching
+    return fnmatch.fnmatch(normalized_name, normalized_pattern)
 
 def save_to_json(data: List[Dict], filename: str):
     """Save data to a JSON file with UTF-8 encoding."""
@@ -555,13 +575,18 @@ def filter_tasks(tasks: List[Dict], people: List[str], spaces: List[str]) -> Lis
             filtered_tasks.append(task)
     return filtered_tasks
 
-def generate_report(report: pd.DataFrame, start_date: str, end_date: str):
+def generate_report(report: pd.DataFrame, start_date: str, end_date: str, filename: str = None):
     """Generate and save the task report as a CSV file."""
-    # Convert dates to ISO format for filename (assuming they're in RFC3339 format)
+    # Convert dates to ISO format for display
     start_iso = datetime.fromisoformat(start_date.replace('Z', '')).strftime('%Y-%m-%d')
     end_iso = datetime.fromisoformat(end_date.replace('Z', '')).strftime('%Y-%m-%d')
     
-    file_name = f'task_report_{start_iso}_{end_iso}.csv'
+    # Use provided filename or generate default
+    if filename:
+        file_name = filename
+    else:
+        file_name = f'task_report_{start_iso}_{end_iso}.csv'
+    
     report.to_csv(file_name, index=False)
     
     # Print date range and report
@@ -828,17 +853,13 @@ def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_d
             for assignment in task_data['assigned']:
                 current_assignee = assignment['assignee']
             
-            # Normalize names for comparison
-            # Handle cases where assignee name might be stored differently than in the message
-            # e.g., message shows "@Priyanka D (P)" but assignee is stored as "Priyanka D"
-            normalized_current = normalize_name(current_assignee)
-            normalized_target = normalize_name(assignee_name)
-            
-            # Also try matching without the parenthetical part
-            normalized_target_no_paren = normalize_name(assignee_name.split('(')[0].strip())
-            
-            if normalized_current != normalized_target and normalized_current != normalized_target_no_paren:
-                continue
+            # Check if current assignee matches the pattern
+            # Supports both exact matching and glob patterns (e.g., '*riyanka D*')
+            if not matches_assignee_pattern(current_assignee, assignee_name):
+                # Also try matching without the parenthetical part for backwards compatibility
+                assignee_no_paren = assignee_name.split('(')[0].strip()
+                if not matches_assignee_pattern(current_assignee, assignee_no_paren):
+                    continue
             
             # Skip if task was deleted
             if task_data['deleted']:
@@ -904,7 +925,7 @@ def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_d
             # Find last progress from the assignee
             last_progress = None
             assignee_updates = [update for update in task_data['updates'] 
-                              if normalize_name(update['sender']) == normalize_name(assignee_name)]
+                              if matches_assignee_pattern(update['sender'], assignee_name)]
             if assignee_updates:
                 last_progress = max(assignee_updates, key=lambda x: x['time'])['time']
             
@@ -913,7 +934,7 @@ def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_d
             if task_data['assigned']:
                 # Find the most recent assignment to this person
                 assignee_assignments = [a for a in task_data['assigned'] 
-                                      if normalize_name(a['assignee']) == normalize_name(assignee_name)]
+                                      if matches_assignee_pattern(a['assignee'], assignee_name)]
                 if assignee_assignments:
                     assignment_time = max(assignee_assignments, key=lambda x: x['time'])['time']
             
@@ -963,7 +984,7 @@ def get_tasks_for_assignee(service, space_name: str, assignee_name: str, start_d
     
     return tasks
 
-def export_messages(service, space_name: str, start_date: str, end_date: str, output_format: str = "json") -> None:
+def export_messages(service, space_name: str, start_date: str, end_date: str, output_format: str = "json", filename: str = None) -> None:
     """Export all chat messages from a specific space in the specified format."""
     logging.info(f"Exporting messages from space: {space_name}")
     
@@ -992,17 +1013,21 @@ def export_messages(service, space_name: str, start_date: str, end_date: str, ou
             }
             formatted_messages.append(formatted_message)
         
-        # Generate filename with space name and date range
-        start_iso = datetime.fromisoformat(start_date.replace('Z', '')).strftime('%Y-%m-%d')
-        end_iso = datetime.fromisoformat(end_date.replace('Z', '')).strftime('%Y-%m-%d')
-        space_display_name = space_name.split('/')[-1] if '/' in space_name else space_name
-        
-        if output_format.lower() == "csv":
-            filename = f'messages_export_{space_display_name}_{start_iso}_{end_iso}.csv'
-            save_data(formatted_messages, filename, "csv")
-        else:  # Default to JSON
-            filename = f'messages_export_{space_display_name}_{start_iso}_{end_iso}.json'
-            save_data(formatted_messages, filename, "json")
+        # Use provided filename or generate default
+        if filename:
+            save_data(formatted_messages, filename, output_format.lower())
+        else:
+            # Generate filename with space name and date range
+            start_iso = datetime.fromisoformat(start_date.replace('Z', '')).strftime('%Y-%m-%d')
+            end_iso = datetime.fromisoformat(end_date.replace('Z', '')).strftime('%Y-%m-%d')
+            space_display_name = space_name.split('/')[-1] if '/' in space_name else space_name
+            
+            if output_format.lower() == "csv":
+                default_filename = f'messages_export_{space_display_name}_{start_iso}_{end_iso}.csv'
+            else:  # Default to JSON
+                default_filename = f'messages_export_{space_display_name}_{start_iso}_{end_iso}.json'
+            
+            save_data(formatted_messages, default_filename, output_format.lower())
             
     except Exception as e:
         logging.error(f"Error exporting messages from space {space_name}: {e}")
@@ -1059,71 +1084,189 @@ def list_spaces_interactive(spaces: List[Dict]) -> str:
 def main():
     setup_logging()
 
-    parser = argparse.ArgumentParser(description="Google Tasks Scrapper")
-    subparsers = parser.add_subparsers(dest="command")
+    parser = argparse.ArgumentParser(
+        description="Google Spaces Tasks Reporter - Analyse Google Chat spaces and extract task information",
+        epilog="Use '<command> --help' for detailed help on any command"
+    )
+    subparsers = parser.add_subparsers(dest="command", help="Available commands:")
 
     # Config command for token management
-    config_parser = subparsers.add_parser("config", help="Configure authentication token")
+    config_parser = subparsers.add_parser(
+        "config", 
+        help="Configure authentication token",
+        description="Configure or refresh your Google API authentication token. Required for first-time use and when tokens expire.",
+        epilog="Example: python3 scrapper.py config"
+    )
 
     # Spaces command
-    spaces_parser = subparsers.add_parser("spaces", help="Retrieve a list of spaces")
-    spaces_parser.add_argument("--json", action="store_true", help="Save the list of spaces to spaces.json file")
-    spaces_parser.add_argument("--csv", action="store_true", help="Save the list of spaces to a CSV file")
-    spaces_parser.add_argument("--include-direct-messages", action="store_true", help="Include direct message conversations")
-    spaces_parser.add_argument("--all", action="store_true", help="Show all spaces including direct messages")
+    spaces_parser = subparsers.add_parser(
+        "spaces", 
+        help="Retrieve a list of spaces",
+        description="Retrieve a comprehensive list of Google Chat spaces accessible to your account. By default, only shows public spaces.",
+        epilog="""Examples:
+  python3 scrapper.py spaces                           # List all public spaces
+  python3 scrapper.py spaces --json spaces.json       # Save to JSON file
+  python3 scrapper.py spaces --csv spaces.csv         # Save to CSV file
+  python3 scrapper.py spaces --include-direct-messages # Include direct messages
+  python3 scrapper.py spaces --all                    # Show all spaces and DMs"""
+    )
+    spaces_parser.add_argument("--json", metavar="FILE", 
+                              help="Save the list of spaces to specified JSON file (preserves full data structure)")
+    spaces_parser.add_argument("--csv", metavar="FILE", 
+                              help="Save the list of spaces to specified CSV file (for spreadsheet analysis)")
+    spaces_parser.add_argument("--include-direct-messages", action="store_true", 
+                              help="Include direct message conversations in addition to public spaces")
+    spaces_parser.add_argument("--all", action="store_true", 
+                              help="Show all spaces including both public spaces and direct messages")
 
     # People command
-    people_parser = subparsers.add_parser("people", help="Retrieve a list of people")
-    people_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
-    people_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
-    people_parser.add_argument("--past-week", action="store_true", help="Retrieve people from the past 7 days")
-    people_parser.add_argument("--past-month", action="store_true", help="Retrieve people from the past 30 days")
-    people_parser.add_argument("--past-year", action="store_true", help="Retrieve people from the past 365 days")
-    people_parser.add_argument("--json", action="store_true", help="Save the list of people to people.json file")
-    people_parser.add_argument("--csv", action="store_true", help="Save the list of people to a CSV file")
+    people_parser = subparsers.add_parser(
+        "people", 
+        help="Retrieve a list of people",
+        description="Extract information about individuals found within the specified spaces during a time period. Defaults to the previous calendar month if no date range is specified.",
+        epilog="""Examples:
+  python3 scrapper.py people                                        # Previous month
+  python3 scrapper.py people --past-week                           # Past 7 days
+  python3 scrapper.py people --past-month                          # Past 30 days
+  python3 scrapper.py people --date-start 2024-01-01 --date-end 2024-01-31  # Custom range
+  python3 scrapper.py people --json people.json                    # Save to JSON
+  python3 scrapper.py people --csv people.csv                      # Save to CSV"""
+    )
+    people_parser.add_argument("--date-start", metavar="YYYY-MM-DD",
+                              help="Start date in ISO format (e.g., 2024-01-15). Must be used with --date-end")
+    people_parser.add_argument("--date-end", metavar="YYYY-MM-DD",
+                              help="End date in ISO format (e.g., 2024-01-15). Must be used with --date-start")
+    people_parser.add_argument("--past-week", action="store_true", 
+                              help="Retrieve people from the past 7 days (from today)")
+    people_parser.add_argument("--past-month", action="store_true", 
+                              help="Retrieve people from the past 30 days (from today)")
+    people_parser.add_argument("--past-year", action="store_true", 
+                              help="Retrieve people from the past 365 days (from today)")
+    people_parser.add_argument("--json", metavar="FILE", 
+                              help="Save the list of people to specified JSON file")
+    people_parser.add_argument("--csv", metavar="FILE", 
+                              help="Save the list of people to specified CSV file")
 
     # Report command (previously Tasks)
-    report_parser = subparsers.add_parser("report", help="Generate a tasks report")
-    report_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
-    report_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
-    report_parser.add_argument("--past-week", action="store_true", help="Generate report for the past 7 days")
-    report_parser.add_argument("--past-month", action="store_true", help="Generate report for the past 30 days")
-    report_parser.add_argument("--past-year", action="store_true", help="Generate report for the past 365 days")
-    report_parser.add_argument("--json", action="store_true", help="Save the report to task_report.json file")
-    report_parser.add_argument("--csv", action="store_true", help="Save the report to a CSV file")
+    report_parser = subparsers.add_parser(
+        "report", 
+        help="Generate a tasks report",
+        description="Generate comprehensive task completion reports with efficiency metrics. Analyses task completion rates and exports results for further analysis. Defaults to the previous calendar month if no date range is specified.",
+        epilog="""Examples:
+  python3 scrapper.py report                                       # Previous month report
+  python3 scrapper.py report --past-week --csv weekly_report.csv  # Past week to CSV
+  python3 scrapper.py report --past-month --json monthly.json     # Past month to JSON
+  python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv custom.csv"""
+    )
+    report_parser.add_argument("--date-start", metavar="YYYY-MM-DD",
+                              help="Start date in ISO format (e.g., 2024-01-15). Must be used with --date-end")
+    report_parser.add_argument("--date-end", metavar="YYYY-MM-DD",
+                              help="End date in ISO format (e.g., 2024-01-15). Must be used with --date-start")
+    report_parser.add_argument("--past-week", action="store_true", 
+                              help="Generate report for the past 7 days (from today)")
+    report_parser.add_argument("--past-month", action="store_true", 
+                              help="Generate report for the past 30 days (from today)")
+    report_parser.add_argument("--past-year", action="store_true", 
+                              help="Generate report for the past 365 days (from today)")
+    report_parser.add_argument("--json", metavar="FILE", 
+                              help="Save the report to specified JSON file (preserves complete data)")
+    report_parser.add_argument("--csv", metavar="FILE", 
+                              help="Save the report to specified CSV file (suitable for spreadsheet analysis)")
 
     # New Tasks command
-    tasks_parser = subparsers.add_parser("tasks", help="Retrieve task information from spaces")
-    tasks_parser.add_argument("--assignee", help="Filter tasks by assignee name (e.g., 'Priyanka D (P)')")
-    tasks_parser.add_argument("--space", help="Space ID to search in (if not provided, will search all spaces)")
-    tasks_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
-    tasks_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
-    tasks_parser.add_argument("--past-day", action="store_true", help="Retrieve tasks from the past 1 day")
-    tasks_parser.add_argument("--past-week", action="store_true", help="Retrieve tasks from the past 7 days")
-    tasks_parser.add_argument("--past-month", action="store_true", help="Retrieve tasks from the past 30 days")
-    tasks_parser.add_argument("--past-year", action="store_true", help="Retrieve tasks from the past 365 days")
-    tasks_parser.add_argument("--with-threads", action="store_true", help="Include complete thread messages (JSON only)")
-    tasks_parser.add_argument("--json", action="store_true", help="Save tasks to tasks.json file")
-    tasks_parser.add_argument("--csv", action="store_true", help="Save tasks to CSV file")
+    tasks_parser = subparsers.add_parser(
+        "tasks", 
+        help="Retrieve task information from spaces",
+        description="Retrieve detailed task information from Google Chat spaces. Can filter by assignee and supports both basic context and complete thread information. Defaults to the previous calendar month if no date range is specified.",
+        epilog="""Examples:
+  python3 scrapper.py tasks                                        # All tasks, previous month
+  python3 scrapper.py tasks --assignee "John Doe"                 # Tasks for specific person
+  python3 scrapper.py tasks --assignee "*john*"                   # Tasks matching pattern
+  python3 scrapper.py tasks --space "spaces/ABC123"               # Tasks from specific space
+  python3 scrapper.py tasks --past-week --with-threads --json tasks.json  # Past week with full threads
+  python3 scrapper.py tasks --past-month --csv tasks.csv          # Past month to CSV"""
+    )
+    tasks_parser.add_argument("--assignee", metavar="NAME", 
+                             help="Filter tasks by assignee name. Supports exact match (e.g., 'Priyanka D') or glob patterns with wildcards (e.g., '*riyanka*', '?riyanka D*')")
+    tasks_parser.add_argument("--space", metavar="SPACE_ID",
+                             help="Space ID to search in (e.g., 'spaces/ABC123'). If not provided, searches all accessible spaces")
+    tasks_parser.add_argument("--date-start", metavar="YYYY-MM-DD",
+                             help="Start date in ISO format (e.g., 2024-01-15). Must be used with --date-end")
+    tasks_parser.add_argument("--date-end", metavar="YYYY-MM-DD",
+                             help="End date in ISO format (e.g., 2024-01-15). Must be used with --date-start")
+    tasks_parser.add_argument("--past-day", action="store_true", 
+                             help="Retrieve tasks from the past 1 day (from today)")
+    tasks_parser.add_argument("--past-week", action="store_true", 
+                             help="Retrieve tasks from the past 7 days (from today)")
+    tasks_parser.add_argument("--past-month", action="store_true", 
+                             help="Retrieve tasks from the past 30 days (from today)")
+    tasks_parser.add_argument("--past-year", action="store_true", 
+                             help="Retrieve tasks from the past 365 days (from today)")
+    tasks_parser.add_argument("--with-threads", action="store_true", 
+                             help="Include complete thread messages for full context (JSON output only, not compatible with CSV due to nested structure)")
+    tasks_parser.add_argument("--json", metavar="FILE", 
+                             help="Save tasks to specified JSON file (supports both basic and full thread data)")
+    tasks_parser.add_argument("--csv", metavar="FILE", 
+                             help="Save tasks to specified CSV file (includes task context but not full threads)")
 
     # Messages command
-    messages_parser = subparsers.add_parser("messages", help="Export chat messages from spaces or direct messages")
+    messages_parser = subparsers.add_parser(
+        "messages", 
+        help="Export chat messages from spaces or direct messages",
+        description="Export all chat messages from Google Chat spaces or direct message conversations. Supports exporting from specific spaces, all public spaces, all direct messages, or everything. Defaults to the previous calendar month if no date range is specified.",
+        epilog="""Examples:
+  python3 scrapper.py messages                                     # Interactive space selection
+  python3 scrapper.py messages --space "spaces/ABC123" --json     # Specific space to JSON
+  python3 scrapper.py messages --all-spaces --csv                 # All public spaces to CSV
+  python3 scrapper.py messages --all-direct-messages --json       # All DMs to JSON
+  python3 scrapper.py messages --all --csv                        # Everything to CSV
+  python3 scrapper.py messages --past-week --json weekly_msgs.json # Past week to JSON"""
+    )
     
     # Mutually exclusive group for space selection
     group = messages_parser.add_mutually_exclusive_group()
-    group.add_argument("--space", help="Space ID to export from (if not provided, will show interactive selection)")
-    group.add_argument("--all-spaces", action="store_true", help="Export messages from all public spaces")
-    group.add_argument("--all-direct-messages", action="store_true", help="Export messages from all direct message conversations")
-    group.add_argument("--all", action="store_true", help="Export messages from all spaces and direct messages")
+    group.add_argument("--space", metavar="SPACE_ID",
+                      help="Space ID to export from (e.g., 'spaces/ABC123'). If not provided, shows interactive selection menu")
+    group.add_argument("--all-spaces", action="store_true", 
+                      help="Export messages from all public spaces (excludes direct messages)")
+    group.add_argument("--all-direct-messages", action="store_true", 
+                      help="Export messages from all direct message conversations (excludes public spaces)")
+    group.add_argument("--all", action="store_true", 
+                      help="Export messages from all spaces and direct messages (comprehensive export)")
     
-    messages_parser.add_argument("--date-start", help="Start date in ISO format (e.g., 2022-01-15)")
-    messages_parser.add_argument("--date-end", help="End date in ISO format (e.g., 2022-01-15)")
-    messages_parser.add_argument("--past-week", action="store_true", help="Export messages from the past 7 days")
-    messages_parser.add_argument("--past-month", action="store_true", help="Export messages from the past 30 days")
-    messages_parser.add_argument("--past-year", action="store_true", help="Export messages from the past 365 days")
-    messages_parser.add_argument("--json", action="store_true", help="Save the exported messages to JSON files (filename includes space name and date range)")
-    messages_parser.add_argument("--csv", action="store_true", help="Save the exported messages to a CSV file")
+    messages_parser.add_argument("--date-start", metavar="YYYY-MM-DD",
+                                help="Start date in ISO format (e.g., 2024-01-15). Must be used with --date-end")
+    messages_parser.add_argument("--date-end", metavar="YYYY-MM-DD",
+                                help="End date in ISO format (e.g., 2024-01-15). Must be used with --date-start")
+    messages_parser.add_argument("--past-week", action="store_true", 
+                                help="Export messages from the past 7 days (from today)")
+    messages_parser.add_argument("--past-month", action="store_true", 
+                                help="Export messages from the past 30 days (from today)")
+    messages_parser.add_argument("--past-year", action="store_true", 
+                                help="Export messages from the past 365 days (from today)")
+    messages_parser.add_argument("--json", metavar="FILE", 
+                                help="Save the exported messages to specified JSON file (preserves full message structure)")
+    messages_parser.add_argument("--csv", metavar="FILE", 
+                                help="Save the exported messages to specified CSV file (suitable for spreadsheet analysis)")
 
+    # Thread command - retrieve messages from a specific thread
+    thread_parser = subparsers.add_parser(
+        "thread", 
+        help="Retrieve messages from a specific thread",
+        description="Retrieve all messages from a specific thread within a Google Chat space. Useful for detailed conversation analysis or when you need to examine the complete context of a particular discussion thread.",
+        epilog="""Examples:
+  python3 scrapper.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789" --json
+  python3 scrapper.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789" --csv
+  python3 scrapper.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789"  # Display only"""
+    )
+    thread_parser.add_argument("--space", metavar="SPACE_ID", required=True, 
+                              help="Space ID containing the thread (e.g., 'spaces/ABC123')")
+    thread_parser.add_argument("--thread", metavar="THREAD_ID", required=True, 
+                              help="Full thread ID to retrieve messages from (e.g., 'spaces/ABC123/threads/XYZ789')")
+    thread_parser.add_argument("--json", metavar="FILE", 
+                              help="Save thread messages to specified JSON file (preserves full message structure)")
+    thread_parser.add_argument("--csv", metavar="FILE", 
+                              help="Save thread messages to specified CSV file (suitable for spreadsheet analysis)")
 
     args = parser.parse_args()
 
@@ -1137,6 +1280,7 @@ def main():
         print("  report   - Generate a tasks report")
         print("  tasks    - Retrieve task information from spaces")
         print("  messages - Export chat messages from spaces or direct messages")
+        print("  thread   - Retrieve messages from a specific thread")
         print("\nUse --help with any command for more information.")
         return
 
@@ -1165,9 +1309,9 @@ def main():
             logging.info("Retrieved public spaces only")
         
         if args.json:
-            save_data(spaces, "spaces.json", "json")
-        elif args.csv:
-            save_data(spaces, "spaces.csv", "csv")
+            save_data(spaces, args.json, "json")
+        if args.csv:
+            save_data(spaces, args.csv, "csv")
         else:
             # Output space ID and space name in format "space id : space name"
             for space in spaces:
@@ -1188,9 +1332,9 @@ def main():
         spaces = load_from_json("spaces.json") or get_spaces(service)
         people = get_people(service, spaces, date_start, date_end)
         if args.json:
-            save_data(people, "people.json", "json")
-        elif args.csv:
-            save_data(people, "people.csv", "csv")
+            save_data(people, args.json, "json")
+        if args.csv:
+            save_data(people, args.csv, "csv")
         else:
             print(json.dumps(people, indent=4, ensure_ascii=False))
 
@@ -1227,10 +1371,11 @@ def main():
         if args.json:
             # Convert report to list of dicts for JSON output
             report_dict = report.to_dict('records')
-            save_data(report_dict, "task_report.json", "json")
-            logging.info("Report saved as task_report.json")
-        elif args.csv:
-            generate_report(report, date_start, date_end)
+            save_data(report_dict, args.json, "json")
+            logging.info(f"Report saved as {args.json}")
+        if args.csv:
+            # Use specified CSV filename for report generation
+            generate_report(report, date_start, date_end, args.csv)
         else:
             # Convert dates to ISO format for display
             start_iso = datetime.fromisoformat(date_start.replace('Z', '')).strftime('%Y-%m-%d')
@@ -1284,17 +1429,17 @@ def main():
 
             if not all_tasks:
                 logging.info(f"No tasks found assigned to {assignee_name}")
+                if args.json or args.csv:
+                    logging.info("❌ No file was created because no matching tasks were found.")
                 return
 
             # Format output
             if args.json:
-                filename = f"tasks_for_{assignee_name.replace(' ', '_').replace('(', '').replace(')', '')}.json"
-                save_data(all_tasks, filename, "json")
-                logging.info(f"Saved {len(all_tasks)} tasks to {filename}")
-            elif args.csv:
-                filename = f"tasks_for_{assignee_name.replace(' ', '_').replace('(', '').replace(')', '')}.csv"
-                save_data(all_tasks, filename, "csv")
-                logging.info(f"Saved {len(all_tasks)} tasks to {filename}")
+                save_data(all_tasks, args.json, "json")
+                logging.info(f"Saved {len(all_tasks)} tasks to {args.json}")
+            if args.csv:
+                save_data(all_tasks, args.csv, "csv")
+                logging.info(f"Saved {len(all_tasks)} tasks to {args.csv}")
             else:
                 # Display results in terminal
                 print(f"\nTasks assigned to {assignee_name}:")
@@ -1335,11 +1480,11 @@ def main():
             formatted_tasks = get_formatted_tasks(service, spaces, date_start, date_end, thread_mode)
             
             if args.json:
-                save_data(formatted_tasks, "tasks.json", "json")
-                logging.info(f"Saved {len(formatted_tasks)} tasks to tasks.json")
-            elif args.csv:
-                save_data(formatted_tasks, "tasks.csv", "csv")
-                logging.info(f"Saved {len(formatted_tasks)} tasks to tasks.csv")
+                save_data(formatted_tasks, args.json, "json")
+                logging.info(f"Saved {len(formatted_tasks)} tasks to {args.json}")
+            if args.csv:
+                save_data(formatted_tasks, args.csv, "csv")
+                logging.info(f"Saved {len(formatted_tasks)} tasks to {args.csv}")
             else:
                 print(json.dumps(formatted_tasks, indent=4, ensure_ascii=False))
                 logging.info(f"Found {len(formatted_tasks)} tasks")
@@ -1364,9 +1509,9 @@ def main():
             
             # Export from single space
             if args.json:
-                export_messages(service, space_name, date_start, date_end, "json")
-            elif args.csv:
-                export_messages(service, space_name, date_start, date_end, "csv")
+                export_messages(service, space_name, date_start, date_end, "json", args.json)
+            if args.csv:
+                export_messages(service, space_name, date_start, date_end, "csv", args.csv)
             else:
                 # Just display the messages without saving
                 messages = get_messages_for_space(service, space_name, date_start, date_end)
@@ -1400,9 +1545,9 @@ def main():
                 space_display = space.get('displayName', space_name)
                 logging.info(f"Exporting from public space: {space_display}")
                 if args.json:
-                    export_messages(service, space_name, date_start, date_end, "json")
-                elif args.csv:
-                    export_messages(service, space_name, date_start, date_end, "csv")
+                    export_messages(service, space_name, date_start, date_end, "json", args.json)
+                if args.csv:
+                    export_messages(service, space_name, date_start, date_end, "csv", args.csv)
                 else:
                     logging.info(f"Would export from {space_display} (use --json or --csv to actually export)")
         
@@ -1415,9 +1560,9 @@ def main():
                 space_display = space.get('displayName', space_name)
                 logging.info(f"Exporting from direct message: {space_display}")
                 if args.json:
-                    export_messages(service, space_name, date_start, date_end, "json")
-                elif args.csv:
-                    export_messages(service, space_name, date_start, date_end, "csv")
+                    export_messages(service, space_name, date_start, date_end, "json", args.json)
+                if args.csv:
+                    export_messages(service, space_name, date_start, date_end, "csv", args.csv)
                 else:
                     logging.info(f"Would export from {space_display} (use --json or --csv to actually export)")
         
@@ -1431,9 +1576,9 @@ def main():
                 space_type = space.get('spaceType', 'UNKNOWN')
                 logging.info(f"Exporting from {space_type.lower()}: {space_display}")
                 if args.json:
-                    export_messages(service, space_name, date_start, date_end, "json")
-                elif args.csv:
-                    export_messages(service, space_name, date_start, date_end, "csv")
+                    export_messages(service, space_name, date_start, date_end, "json", args.json)
+                if args.csv:
+                    export_messages(service, space_name, date_start, date_end, "csv", args.csv)
                 else:
                     logging.info(f"Would export from {space_display} (use --json or --csv to actually export)")
         
@@ -1446,9 +1591,9 @@ def main():
             
             # Export from selected space
             if args.json:
-                export_messages(service, space_name, date_start, date_end, "json")
-            elif args.csv:
-                export_messages(service, space_name, date_start, date_end, "csv")
+                export_messages(service, space_name, date_start, date_end, "json", args.json)
+            if args.csv:
+                export_messages(service, space_name, date_start, date_end, "csv", args.csv)
             else:
                 # Just display the messages without saving
                 messages = get_messages_for_space(service, space_name, date_start, date_end)
@@ -1472,6 +1617,59 @@ def main():
                     logging.info(f"Found {len(formatted_messages)} messages (not saved)")
                 else:
                     logging.info("No messages found in the specified space and date range.")
+
+    elif args.command == "thread":
+        # Retrieve messages from a specific thread
+        space_name = args.space
+        thread_name = args.thread
+        
+        logging.info(f"Retrieving messages from thread: {thread_name}")
+        logging.info(f"In space: {space_name}")
+        
+        try:
+            # Get thread messages using the existing function
+            messages = get_thread_messages(service, space_name, thread_name)
+            
+            if messages:
+                # Format the messages for output
+                formatted_messages = []
+                for message in messages:
+                    formatted_message = {
+                        'id': message.get('name', ''),
+                        'text': message.get('text', ''),
+                        'sender': message.get('sender', {}).get('displayName', 'Unknown'),
+                        'sender_id': message.get('sender', {}).get('name', ''),
+                        'space': space_name,
+                        'thread': thread_name,
+                        'created_at': message.get('createTime', ''),
+                        'message_type': message.get('messageType', ''),
+                        'deleted': message.get('deleted', False),
+                        'last_updated': message.get('lastUpdateTime', message.get('createTime', ''))
+                    }
+                    formatted_messages.append(formatted_message)
+                
+                # Output or save the messages
+                if args.json:
+                    save_data(formatted_messages, args.json, "json")
+                    logging.info(f"Saved {len(formatted_messages)} messages to {args.json}")
+                if args.csv:
+                    save_data(formatted_messages, args.csv, "csv")
+                    logging.info(f"Saved {len(formatted_messages)} messages to {args.csv}")
+                else:
+                    # Print to console
+                    print(json.dumps(formatted_messages, indent=4, ensure_ascii=False))
+                    logging.info(f"Retrieved {len(formatted_messages)} messages from thread")
+            else:
+                logging.info("No messages found in the specified thread.")
+                
+        except Exception as e:
+            logging.error(f"Error retrieving thread messages: {e}")
+            if "503" in str(e) or "500" in str(e):
+                logging.info("💡 This appears to be a temporary server error. Try again in a few minutes.")
+            elif "404" in str(e):
+                logging.error("❌ Thread or space not found. Please check your thread and space IDs.")
+            else:
+                logging.error("❌ An unexpected error occurred. Check your thread and space IDs.")
 
 if __name__ == '__main__':
     main()
