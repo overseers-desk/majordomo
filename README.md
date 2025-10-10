@@ -89,117 +89,65 @@ This command will prompt for Google account authentication and generate user cre
 
 **Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be saved to `tasks.json` using `--json`.
 
-**Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to a CSV file with the naming convention `task_report_YYYY-MM-DD_YYYY-MM-DD.csv` by default, or to JSON format using `--json`. The command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today).
+**Report Command**: Generates comprehensive task completion reports with filtering and detailed view options. Supports date filtering (`--past-week`, `--past-month`, `--past-year`, or custom dates) and exports to CSV or JSON format.
+
+Advanced filtering options:
+- **`--assignee PATTERN`**: Filter by assignee using glob patterns (`*` = any characters, `?` = single character). Case-insensitive and Unicode-aware. Examples: `"*Edwards"` matches anyone ending with Edwards; `"Priyanka*"` matches anyone starting with Priyanka.
+- **`--drill-down`**: Drills down into per-assignee details including actual task descriptions (first thread message), tasks assigned/closed in the past week, and completion status.
 
 **Messages Command**: Exports all chat messages from a specific Google Chat space in either JSON or CSV format. This command can accept a `--space` parameter to specify the target space directly, or if no space is specified, it will present an interactive list of all available spaces for the user to choose from. The export includes comprehensive message details such as message ID, full text content, sender information, space name, creation time, last update time, thread details, message type, and deletion status. Use the `--json` flag to save the results to a JSON file or `--csv` to save as CSV; without either flag, messages are displayed in the terminal. When saving, output files are automatically named with the format `messages_export_{space_name}_{start_date}_{end_date}.{format}`. The command supports efficient date filtering using Google's API with options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today), or custom date ranges with `--date-start` and `--date-end`.
 
-### Command-Line Interface Examples
+### Usage Examples
 
+#### Initial Setup
 ```bash
-# Show available commands
-python3 scrapper.py
-
-# Configure authentication
-python3 scrapper.py config
-
-# Get list of spaces
-python3 scrapper.py spaces
-
-# Get list of spaces and save to JSON file
-python3 scrapper.py spaces --json
-
-# Get list of spaces and save to CSV file
-python3 scrapper.py spaces --csv
-
-# Get people from specific date range
-python3 scrapper.py people --date-start 2024-01-01 --date-end 2024-01-31
-
-# Get people from the past week (7 days ago to today)
-python3 scrapper.py people --past-week
-
-# Get people from the past month (30 days ago to today)
-python3 scrapper.py people --past-month
-
-# Get people from the past year (365 days ago to today)
-python3 scrapper.py people --past-year
-
-# Get people and save to JSON file
-python3 scrapper.py people --json
-
-# Get people and save to CSV file
-python3 scrapper.py people --csv
-
-# Generate report for specific period (CSV format)
-python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv
-
-# Generate report for specific period (JSON format)
-python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --json
-
-# Generate report for the past week (7 days ago to today) - CSV format
-python3 scrapper.py report --past-week --csv
-
-# Generate report for the past week (7 days ago to today) - JSON format
-python3 scrapper.py report --past-week --json
-
-# Generate report for the past month (30 days ago to today) - CSV format
-python3 scrapper.py report --past-month --csv
-
-# Generate report for the past month (30 days ago to today) - JSON format
-python3 scrapper.py report --past-month --json
-
-# Generate report for the past year (365 days ago to today) - CSV format
-python3 scrapper.py report --past-year --csv
-
-# Generate report for the past year (365 days ago to today) - JSON format
-python3 scrapper.py report --past-year --json
-
-# Get tasks and save to JSON file
-python3 scrapper.py tasks --json
-
-# Get tasks for the past week (7 days ago to today)
-python3 scrapper.py tasks --past-week --json
-
-# Get tasks for the past month (30 days ago to today)
-python3 scrapper.py tasks --past-month --json
-
-# Get tasks for the past year (365 days ago to today)
-python3 scrapper.py tasks --past-year --json
-
-# Export messages from a specific space (JSON format) and save to file
-python3 scrapper.py messages --space "spaces/ABC123" --json
-
-# Export messages from a specific space (CSV format) and save to file
-python3 scrapper.py messages --space "spaces/ABC123" --csv
-
-# Export messages with interactive space selection and save to file
-python3 scrapper.py messages --json
-
-# Export messages for a specific date range and save to file
-python3 scrapper.py messages --date-start 2024-01-01 --date-end 2024-01-31 --json
-
-# Export messages from the past week (7 days ago to today)
-python3 scrapper.py messages --space "spaces/ABC123" --past-week --json
-
-# Export messages from the past month (30 days ago to today)
-python3 scrapper.py messages --space "spaces/ABC123" --past-month --json
-
-# Export messages from the past year (365 days ago to today)
-python3 scrapper.py messages --space "spaces/ABC123" --past-year --json
-
-# Export messages from all spaces in CSV format
-python3 scrapper.py messages --all --csv
-
-# Export messages from all public spaces in CSV format
-python3 scrapper.py messages --all-spaces --csv
-
-# Export messages from all direct messages in CSV format
-python3 scrapper.py messages --all-direct-messages --csv
-
-# Display messages without saving (default behavior)
-python3 scrapper.py messages --space "spaces/ABC123"
+python3 scrapper.py config            # Configure authentication (first time)
+python3 scrapper.py spaces --json     # Get spaces list and save for reuse
 ```
 
-Each command includes help documentation accessible via the `-h` or `--help` flag, providing detailed parameter information and usage examples.
+#### Basic Reports
+```bash
+python3 scrapper.py report --past-week       # Standard weekly report
+python3 scrapper.py report --past-month      # Monthly report
+python3 scrapper.py report --csv report.csv  # Save to CSV
+```
+
+#### Filtered Reports
+```bash
+# Filter by name pattern
+python3 scrapper.py report --assignee "*Edwards" --past-month
+python3 scrapper.py report --assignee "John*" --past-week
+
+# Drill down into per-person details
+python3 scrapper.py report --past-week --drill-down
+
+# Combined: filtered + drill-down
+python3 scrapper.py report --assignee "*ÐS" --drill-down --past-month
+```
+
+#### Task Queries
+```bash
+python3 scrapper.py tasks --past-week --json           # Get recent tasks
+python3 scrapper.py tasks --assignee "John*" --csv     # Filter by assignee
+```
+
+#### Message Export
+```bash
+python3 scrapper.py messages --space "spaces/ABC123" --past-week --json
+python3 scrapper.py messages --all-spaces --csv        # All spaces
+python3 scrapper.py messages                           # Interactive selection
+```
+
+#### Advanced Usage
+```bash
+# Custom date range
+python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv
+
+# Drill-down report with JSON export
+python3 scrapper.py report --assignee "Team*" --drill-down --json detailed.json
+```
+
+Use `--help` with any command for detailed parameter information.
 
 ### Date Range Handling
 

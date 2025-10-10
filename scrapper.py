@@ -154,20 +154,10 @@ def get_all_spaces_and_dms(service) -> List[Dict]:
             break
     return spaces
 
-def normalize_name(name: str) -> str:
-    """Normalize a name by removing accents and special characters."""
-    # Normalize the name to NFKD form (decompose accents)
-    normalized = unicodedata.normalize('NFKD', name)
-    # Remove non-ASCII characters (e.g., accents)
-    normalized = normalized.encode('ascii', 'ignore').decode('ascii')
-    # Convert to lowercase and strip whitespace
-    normalized = normalized.lower().strip()
-    return normalized
-
 def matches_assignee_pattern(assignee_name: str, pattern: str) -> bool:
     """
     Check if an assignee name matches a pattern.
-    Supports both exact matching and glob patterns (e.g., '*riyanka D*').
+    Supports glob patterns (e.g., '*riyanka D*') with standard Unix glob matching (case-sensitive).
     
     Args:
         assignee_name: The actual assignee name to check
@@ -176,12 +166,8 @@ def matches_assignee_pattern(assignee_name: str, pattern: str) -> bool:
     Returns:
         True if the name matches the pattern, False otherwise
     """
-    # Normalize both the name and pattern for comparison
-    normalized_name = normalize_name(assignee_name)
-    normalized_pattern = normalize_name(pattern)
-    
-    # Use fnmatch for glob pattern matching
-    return fnmatch.fnmatch(normalized_name, normalized_pattern)
+    # Use fnmatch for standard Unix glob pattern matching
+    return fnmatch.fnmatch(assignee_name, pattern)
 
 def save_to_json(data: List[Dict], filename: str):
     """Save data to a JSON file with UTF-8 encoding."""
@@ -431,7 +417,7 @@ def get_people(service, spaces: List[Dict], start_date: str = None, end_date: st
 
     return list(people)
 
-def get_tasks(service, space_name: str, start_date: str, end_date: str, thread_mode: str = "context") -> List[Dict]:
+def get_tasks(service, space_name: str, start_date: str, end_date: str, thread_mode: str = "context", assignee_filter: str = None) -> List[Dict]:
     """Retrieve tasks from a specific space within a date range using a valid filter query.
     
     Args:
@@ -440,6 +426,7 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str, thread_m
         start_date: Start date in RFC 3339 format
         end_date: End date in RFC 3339 format
         thread_mode: Thread information to include: "context" (default, includes first message) or "full" (complete thread)
+        assignee_filter: Optional glob pattern to filter tasks by assignee (avoids fetching messages for non-matching tasks)
     """
     tasks = []
     completed_tasks, reopened_tasks, deleted_tasks, assigned_tasks = set(), set(), set(), set()
@@ -467,6 +454,10 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str, thread_m
 
                 if "Created" in text:
                     task_counter += 1
+                    
+                    # Skip if assignee filter is provided and doesn't match
+                    if assignee_filter and not matches_assignee_pattern(assignee, assignee_filter):
+                        continue
                     
                     # Base task data
                     task_data = {
@@ -563,15 +554,14 @@ def analyze_tasks(tasks: List[Dict]) -> pd.DataFrame:
 
 def filter_tasks(tasks: List[Dict], people: List[str], spaces: List[str]) -> List[Dict]:
     """Filter tasks to only include people and spaces listed in people.json and spaces.json."""
-    # Normalize the list of people
-    normalized_people = {normalize_name(person) for person in people}
-    normalized_spaces = {space for space in spaces}
+    # Create lowercase sets for case-insensitive matching
+    people_lower = {person.lower() for person in people}
+    spaces_set = {space for space in spaces}
 
     filtered_tasks = []
     for task in tasks:
-        # Normalize the assignee name
-        normalized_assignee = normalize_name(task['assignee'])
-        if normalized_assignee in normalized_people and task['space_name'] in normalized_spaces:
+        assignee_lower = task['assignee'].lower()
+        if assignee_lower in people_lower and task['space_name'] in spaces_set:
             filtered_tasks.append(task)
     return filtered_tasks
 
@@ -1033,6 +1023,215 @@ def export_messages(service, space_name: str, start_date: str, end_date: str, ou
         logging.error(f"Error exporting messages from space {space_name}: {e}")
         raise
 
+def drill_down_report(service, tasks: List[Dict], date_start: str, date_end: str, assignee_pattern: str = None) -> Dict:
+    """
+    Generate a drill-down report with detailed task information for each assignee.
+    
+    For each assignee, shows:
+    - Number of tasks assigned in the past week from the report start date
+    - List of those tasks with their first message (not the "task created..." message)
+    - Number of tasks closed in that week
+    - List of closed tasks with their first message
+    
+    Args:
+        service: Google Chat API service instance
+        tasks: List of task dictionaries
+        date_start: Report start date in RFC 3339 format
+        date_end: Report end date in RFC 3339 format
+        assignee_pattern: Optional glob pattern to filter assignees to show
+        
+    Returns:
+        Dictionary mapping assignee names to their drill-down report data
+    """
+    # Calculate the date range for "past week" relative to report end date
+    end_date_obj = datetime.fromisoformat(date_end.replace('Z', ''))
+    week_start = end_date_obj - timedelta(days=7)
+    week_start_str = week_start.isoformat() + "Z"
+    
+    # Group tasks by assignee
+    assignee_data = {}
+    
+    for task in tasks:
+        assignee = task.get('assignee', 'Unassigned')
+        
+        # If pattern is provided, only include assignees that match it
+        if assignee_pattern and not matches_assignee_pattern(assignee, assignee_pattern):
+            continue
+        
+        if assignee not in assignee_data:
+            assignee_data[assignee] = {
+                'tasks_assigned_this_week': [],
+                'tasks_closed_this_week': [],
+                'total_tasks': 0,
+                'total_completed': 0
+            }
+        
+        assignee_data[assignee]['total_tasks'] += 1
+        if task.get('status') == 'COMPLETED':
+            assignee_data[assignee]['total_completed'] += 1
+        
+        # Check if task was created in the past week
+        created_time = task.get('created_time', '')
+        if created_time:
+            created_date = datetime.fromisoformat(created_time.replace('Z', ''))
+            if created_date >= week_start:
+                # Use existing first thread message from task data (already fetched during task collection)
+                # This avoids unnecessary API calls
+                first_message = task.get('first_thread_message', '')
+                
+                # Only fetch if not already available
+                if not first_message:
+                    thread_name = task.get('thread_name', '')
+                    space_name = task.get('space_name', '')
+                    
+                    if thread_name and space_name:
+                        try:
+                            first_msg_data = get_first_thread_message(service, space_name, thread_name)
+                            first_message = first_msg_data.get('text', '') if first_msg_data else ''
+                        except Exception as e:
+                            logging.warning(f"Could not retrieve first message for task {task.get('id')}: {e}")
+                
+                assignee_data[assignee]['tasks_assigned_this_week'].append({
+                    'task_id': task.get('id'),
+                    'created_time': created_time,
+                    'first_message': first_message,
+                    'space': task.get('space_name', ''),
+                    'status': task.get('status', 'UNKNOWN')
+                })
+        
+        # Check if task was completed in the past week
+        # Note: We don't have completion_time in the current structure, 
+        # so we'll check if the task is completed and was created recently
+        # For a more accurate implementation, you'd need to track completion events separately
+        if task.get('status') == 'COMPLETED' and created_time:
+            created_date = datetime.fromisoformat(created_time.replace('Z', ''))
+            if created_date >= week_start:
+                # Use existing first thread message from task data (already fetched during task collection)
+                # This avoids unnecessary API calls
+                first_message = task.get('first_thread_message', '')
+                
+                # Only fetch if not already available
+                if not first_message:
+                    thread_name = task.get('thread_name', '')
+                    space_name = task.get('space_name', '')
+                    
+                    if thread_name and space_name:
+                        try:
+                            first_msg_data = get_first_thread_message(service, space_name, thread_name)
+                            first_message = first_msg_data.get('text', '') if first_msg_data else ''
+                        except Exception as e:
+                            logging.warning(f"Could not retrieve first message for task {task.get('id')}: {e}")
+                
+                assignee_data[assignee]['tasks_closed_this_week'].append({
+                    'task_id': task.get('id'),
+                    'created_time': created_time,
+                    'first_message': first_message,
+                    'space': task.get('space_name', ''),
+                })
+    
+    return assignee_data
+
+def drill_down_report_streaming(service, tasks: List[Dict], date_start: str, date_end: str, assignee_pattern: str = None) -> Dict:
+    """
+    Generate and print drill-down report in real-time as data is processed.
+    Prints each assignee section immediately for streaming output.
+    """
+    # Calculate the date range for "past week" relative to report end date
+    end_date_obj = datetime.fromisoformat(date_end.replace('Z', ''))
+    week_start = end_date_obj - timedelta(days=7)
+    
+    # Group tasks by assignee (same logic as drill_down_report)
+    assignee_data = {}
+    
+    for task in tasks:
+        assignee = task.get('assignee', 'Unassigned')
+        
+        # If pattern is provided, only include assignees that match it
+        if assignee_pattern and not matches_assignee_pattern(assignee, assignee_pattern):
+            continue
+        
+        if assignee not in assignee_data:
+            assignee_data[assignee] = {
+                'tasks_assigned_this_week': [],
+                'tasks_closed_this_week': [],
+                'total_tasks': 0,
+                'total_completed': 0
+            }
+        
+        assignee_data[assignee]['total_tasks'] += 1
+        if task.get('status') == 'COMPLETED':
+            assignee_data[assignee]['total_completed'] += 1
+        
+        # Check if task was created in the past week
+        created_time = task.get('created_time', '')
+        if created_time:
+            created_date = datetime.fromisoformat(created_time.replace('Z', ''))
+            if created_date >= week_start:
+                first_message = task.get('first_thread_message', '')
+                
+                assignee_data[assignee]['tasks_assigned_this_week'].append({
+                    'task_id': task.get('id'),
+                    'created_time': created_time,
+                    'first_message': first_message,
+                    'space': task.get('space_name', ''),
+                    'status': task.get('status', 'UNKNOWN')
+                })
+        
+        # Check if task was completed in the past week
+        if task.get('status') == 'COMPLETED' and created_time:
+            created_date = datetime.fromisoformat(created_time.replace('Z', ''))
+            if created_date >= week_start:
+                first_message = task.get('first_thread_message', '')
+                
+                assignee_data[assignee]['tasks_closed_this_week'].append({
+                    'task_id': task.get('id'),
+                    'created_time': created_time,
+                    'first_message': first_message,
+                    'space': task.get('space_name', ''),
+                })
+    
+    # Print each assignee immediately as we process them
+    for assignee, data in sorted(assignee_data.items()):
+        print(f"\n{'─' * 80}")
+        print(f"Assignee: {assignee}")
+        print(f"{'─' * 80}")
+        print(f"Total tasks in period: {data['total_tasks']}")
+        print(f"Total completed: {data['total_completed']}")
+        
+        # Tasks assigned in the past week
+        tasks_assigned_week = data['tasks_assigned_this_week']
+        print(f"\n  Tasks assigned in past week: {len(tasks_assigned_week)}")
+        if tasks_assigned_week:
+            for i, task in enumerate(tasks_assigned_week, 1):
+                created = datetime.fromisoformat(task['created_time'].replace('Z', '')).strftime('%Y-%m-%d %H:%M')
+                print(f"    {i}. [{task['status']}] {created}")
+                if task['first_message']:
+                    # Truncate long messages
+                    msg = task['first_message']
+                    if len(msg) > 150:
+                        msg = msg[:150] + "..."
+                    print(f"       {msg}")
+                print(f"       Space: {task['space']}")
+                print()
+        
+        # Tasks closed in the past week
+        tasks_closed_week = data['tasks_closed_this_week']
+        print(f"  Tasks closed in past week: {len(tasks_closed_week)}")
+        if tasks_closed_week:
+            for i, task in enumerate(tasks_closed_week, 1):
+                created = datetime.fromisoformat(task['created_time'].replace('Z', '')).strftime('%Y-%m-%d %H:%M')
+                print(f"    {i}. [COMPLETED] {created}")
+                if task['first_message']:
+                    # Truncate long messages
+                    msg = task['first_message']
+                    if len(msg) > 150:
+                        msg = msg[:150] + "..."
+                    print(f"       {msg}")
+                print(f"       Space: {task['space']}")
+                print()
+    
+    return assignee_data
+
 def list_spaces_interactive(spaces: List[Dict]) -> str:
     """List all spaces and let user choose one interactively."""
     print("\nAvailable spaces:")
@@ -1156,8 +1355,13 @@ def main():
   python3 scrapper.py report                                       # Previous month report
   python3 scrapper.py report --past-week --csv weekly_report.csv  # Past week to CSV
   python3 scrapper.py report --past-month --json monthly.json     # Past month to JSON
+  python3 scrapper.py report --assignee "*ÐS" --drill-down        # Filter by name pattern with drill-down
   python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv custom.csv"""
     )
+    report_parser.add_argument("--assignee", metavar="PATTERN",
+                              help="Filter report by assignee name. Supports glob patterns (e.g., '*ÐS' to match names ending with ÐS, '*john*' to match any john)")
+    report_parser.add_argument("--drill-down", action="store_true",
+                              help="Drill down into per-assignee details including: tasks assigned in past week, tasks closed in past week, with task descriptions from first message")
     report_parser.add_argument("--date-start", metavar="YYYY-MM-DD",
                               help="Start date in ISO format (e.g., 2024-01-15). Must be used with --date-end")
     report_parser.add_argument("--date-end", metavar="YYYY-MM-DD",
@@ -1350,32 +1554,68 @@ def main():
         spaces = load_from_json("spaces.json") or get_spaces(service)
         people = load_from_json("people.json") or None
 
-        # Fetch all tasks for the specified date range
+        # Get assignee filter if specified (pass to get_tasks to avoid fetching unnecessary data)
+        assignee_filter = args.assignee if hasattr(args, 'assignee') and args.assignee else None
+        
+        # Fetch tasks for the specified date range (with early filtering for efficiency)
         all_tasks = []
         for space in spaces:
-            tasks = get_tasks(service, space['name'], date_start, date_end, "context")
+            tasks = get_tasks(service, space['name'], date_start, date_end, "context", assignee_filter)
             all_tasks.extend(tasks)
 
         # Filter tasks if people.json exists
         if people:
             all_tasks = filter_tasks(all_tasks, people, [space['name'] for space in spaces])
+        
+        if assignee_filter:
+            logging.info(f"Found {len(all_tasks)} tasks matching assignee pattern: {assignee_filter}")
 
-        # Generate the report
-        report = analyze_tasks(all_tasks)
-        if args.json:
-            # Convert report to list of dicts for JSON output
-            report_dict = report.to_dict('records')
-            save_data(report_dict, args.json, "json")
-            logging.info(f"Report saved as {args.json}")
-        if args.csv:
-            # Use specified CSV filename for report generation
-            generate_report(report, date_start, date_end, args.csv)
-        else:
+        if not all_tasks:
+            logging.info("No tasks found matching the criteria")
+            return
+
+        # Generate drill-down report if requested
+        if hasattr(args, 'drill_down') and args.drill_down:
+            logging.info("Generating drill-down report with per-assignee task breakdown...")
+            # Pass assignee pattern to drill-down report for additional filtering
+            assignee_pattern = args.assignee if hasattr(args, 'assignee') else None
+            
             # Convert dates to ISO format for display
             start_iso = datetime.fromisoformat(date_start.replace('Z', '')).strftime('%Y-%m-%d')
             end_iso = datetime.fromisoformat(date_end.replace('Z', '')).strftime('%Y-%m-%d')
-            print(f"\nTask Report for period: {start_iso} to {end_iso}")
-            print(report.to_string(index=False))
+            
+            # Print header immediately
+            print(f"\n{'=' * 80}")
+            print(f"TASK REPORT - DRILL-DOWN VIEW")
+            print(f"Period: {start_iso} to {end_iso}")
+            print(f"{'=' * 80}\n")
+            
+            # Stream output as we process (for real-time feedback)
+            drill_down_data = drill_down_report_streaming(service, all_tasks, date_start, date_end, assignee_pattern)
+            
+            print(f"\n{'=' * 80}\n")
+            
+            # Optionally save drill-down data to JSON
+            if args.json:
+                save_data(drill_down_data, args.json, "json")
+                logging.info(f"Drill-down report saved as {args.json}")
+        else:
+            # Generate standard report
+            report = analyze_tasks(all_tasks)
+            if args.json:
+                # Convert report to list of dicts for JSON output
+                report_dict = report.to_dict('records')
+                save_data(report_dict, args.json, "json")
+                logging.info(f"Report saved as {args.json}")
+            if args.csv:
+                # Use specified CSV filename for report generation
+                generate_report(report, date_start, date_end, args.csv)
+            else:
+                # Convert dates to ISO format for display
+                start_iso = datetime.fromisoformat(date_start.replace('Z', '')).strftime('%Y-%m-%d')
+                end_iso = datetime.fromisoformat(date_end.replace('Z', '')).strftime('%Y-%m-%d')
+                print(f"\nTask Report for period: {start_iso} to {end_iso}")
+                print(report.to_string(index=False))
 
     elif args.command == "tasks":
         try:
