@@ -1345,26 +1345,20 @@ def main():
             logging.error(e)
             return
 
-        # First try to load tasks from tasks.json
-        tasks = load_from_json("tasks.json")
-        
-        if tasks:
-            logging.info("Using existing tasks from tasks.json")
-            all_tasks = tasks
-        else:
-            logging.info("No tasks.json found. Fetching tasks from API...")
-            spaces = load_from_json("spaces.json") or get_spaces(service)
-            people = load_from_json("people.json") or None
+        # Always fetch fresh data based on user's date parameters
+        logging.info(f"Fetching tasks from API for date range: {date_start} to {date_end}")
+        spaces = load_from_json("spaces.json") or get_spaces(service)
+        people = load_from_json("people.json") or None
 
-            # Fetch all tasks
-            all_tasks = []
-            for space in spaces:
-                tasks = get_tasks(service, space['name'], date_start, date_end, "context")
-                all_tasks.extend(tasks)
+        # Fetch all tasks for the specified date range
+        all_tasks = []
+        for space in spaces:
+            tasks = get_tasks(service, space['name'], date_start, date_end, "context")
+            all_tasks.extend(tasks)
 
-            # Filter tasks if people.json exists
-            if people:
-                all_tasks = filter_tasks(all_tasks, people, [space['name'] for space in spaces])
+        # Filter tasks if people.json exists
+        if people:
+            all_tasks = filter_tasks(all_tasks, people, [space['name'] for space in spaces])
 
         # Generate the report
         report = analyze_tasks(all_tasks)
