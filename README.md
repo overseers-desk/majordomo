@@ -6,6 +6,11 @@ This script creates comprehensive efficiency reports by analysing Google Chat sp
 
 The Google Spaces Tasks Reporter is designed for teams and organisations that need to track productivity and task completion across Google Chat spaces. By leveraging the Google Tasks API and Google Chat API, it provides insights into team performance and task management efficiency through automated data collection and reporting.
 
+**Two Ways to Use This Tool:**
+
+1. **Command-Line Interface (CLI)**: Use `scrapper.py` for automated reporting, data exports, and scripting (documented below)
+2. **Web Application**: Interactive dashboard for visual task tracking (see `WEB_APPLICATION.md`)
+
 **Important**: This tool requires a Google Workspace account (Business or Enterprise) for full functionality. Personal Gmail accounts cannot access the Google Chat API, which is essential for retrieving space and task information. If you're using a personal Gmail account, you'll need to upgrade to Google Workspace or work with your organisation's administrator to gain access.
 
 ## Prerequisites and Setup

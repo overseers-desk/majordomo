@@ -116,10 +116,8 @@ function renderCheckboxes() {
     peopleContainer.innerHTML = '';
     spacesContainer.innerHTML = '';
     
-    // Use tracked people from config if available, otherwise all people
-    const peopleList = dashboardData.tracked_people.length > 0 
-        ? dashboardData.tracked_people 
-        : dashboardData.all_people;
+    // Always use all people (space filtering is now done server-side via config)
+    const peopleList = dashboardData.all_people;
     
     // Render people checkboxes
     peopleList.forEach(person => {

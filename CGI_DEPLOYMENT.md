@@ -1,6 +1,8 @@
 # CGI Deployment Guide
 
-This document explains how to deploy the Google Spaces Tasks Reporter as a CGI application.
+This document explains how to deploy the Google Spaces Tasks Reporter web application as a CGI application.
+
+For information about using and configuring the web application, see `WEB_APPLICATION.md`.
 
 ## Files for CGI Deployment
 

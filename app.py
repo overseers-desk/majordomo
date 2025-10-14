@@ -60,9 +60,29 @@ def fetch_data():
         # Fetch data from Google
         creds = get_credentials()
         service = build('chat', 'v1', credentials=creds)
-        spaces = get_spaces(service)
+        all_spaces = get_spaces(service)
         
-        # Fetch all tasks from all spaces
+        # Load space filtering config
+        space_whitelist = []
+        space_blacklist = []
+        if os.path.exists('config.json'):
+            try:
+                with open('config.json', 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    space_whitelist = config.get('space_whitelist', [])
+                    space_blacklist = config.get('space_blacklist', [])
+            except Exception as e:
+                print(f"Error loading config.json: {e}")
+        
+        # Filter spaces based on whitelist/blacklist
+        # If whitelist is empty, all spaces are in scope (except blacklisted ones)
+        # If whitelist is not empty, only whitelisted spaces are in scope (and not blacklisted)
+        if space_whitelist:
+            spaces = [s for s in all_spaces if s['name'] in space_whitelist and s['name'] not in space_blacklist]
+        else:
+            spaces = [s for s in all_spaces if s['name'] not in space_blacklist]
+        
+        # Fetch all tasks from filtered spaces
         all_tasks = []
         for space in spaces:
             try:
@@ -72,16 +92,6 @@ def fetch_data():
                 # Log error but continue with other spaces
                 print(f"Error fetching tasks from space {space['name']}: {e}")
                 continue
-        
-        # Load tracked people config
-        tracked_people = []
-        if os.path.exists('config.json'):
-            try:
-                with open('config.json', 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    tracked_people = config.get('tracked_people', [])
-            except Exception as e:
-                print(f"Error loading config.json: {e}")
         
         # Extract all unique people from tasks
         all_people = set()
@@ -98,7 +108,6 @@ def fetch_data():
             'period': period,
             'date_start': date_start,
             'date_end': date_end,
-            'tracked_people': tracked_people,
             'all_people': sorted(list(all_people)),
             'spaces': spaces,
             'tasks': all_tasks
