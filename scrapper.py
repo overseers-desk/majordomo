@@ -34,9 +34,10 @@ import argparse
 from datetime import datetime, timedelta
 from typing import List, Dict
 import unicodedata
-import pandas as pd
 import time
 import fnmatch
+import csv
+from collections import defaultdict
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -208,8 +209,21 @@ def save_to_csv(data: List[Dict], filename: str):
                 cleaned_item[field] = clean_text_for_csv(str(cleaned_item[field]))
         cleaned_data.append(cleaned_item)
     
-    df = pd.DataFrame(cleaned_data)
-    df.to_csv(filename, index=False, encoding='utf-8')
+    # Get all unique keys from all dictionaries to ensure consistent columns
+    all_keys = []
+    seen = set()
+    for item in cleaned_data:
+        for key in item.keys():
+            if key not in seen:
+                all_keys.append(key)
+                seen.add(key)
+    
+    # Write to CSV using built-in csv module
+    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=all_keys)
+        writer.writeheader()
+        writer.writerows(cleaned_data)
+    
     logging.info(f"Data saved to {filename}")
 
 def save_data(data: List[Dict], filename: str, output_format: str = "json"):
@@ -528,28 +542,36 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str, thread_m
 
     return tasks
 
-def analyze_tasks(tasks: List[Dict]) -> pd.DataFrame:
+def analyze_tasks(tasks: List[Dict]) -> List[Dict]:
     """Analyze tasks and generate a report with tasks received, completed, and completion rate."""
     if not tasks:
         logging.warning("No tasks found to analyze.")
-        return pd.DataFrame(columns=['assignee', 'tasks_received', 'tasks_completed', 'completion_rate'])
+        return []
 
-    df = pd.DataFrame(tasks)
-
-    # Group by assignee and calculate tasks received and completed
-    total_tasks = df.groupby('assignee').size().rename('tasks_received')
-    completed_tasks = df[df['status'] == 'COMPLETED'].groupby('assignee').size().rename('tasks_completed')
-
-    # Merge the results into a single DataFrame
-    report = pd.concat([total_tasks, completed_tasks], axis=1).fillna(0)
-
-    # Calculate completion rate
-    report['completion_rate'] = report['tasks_completed'] / report['tasks_received']
-
-    # Reset index to make 'assignee' a column
-    report.reset_index(inplace=True)
-    report.rename(columns={'index': 'assignee'}, inplace=True)
-
+    # Count tasks received and completed per assignee using dictionaries
+    tasks_received = defaultdict(int)
+    tasks_completed = defaultdict(int)
+    
+    for task in tasks:
+        assignee = task.get('assignee', 'Unknown')
+        tasks_received[assignee] += 1
+        if task.get('status') == 'COMPLETED':
+            tasks_completed[assignee] += 1
+    
+    # Build report as list of dictionaries
+    report = []
+    for assignee in sorted(tasks_received.keys()):
+        received = tasks_received[assignee]
+        completed = tasks_completed[assignee]
+        completion_rate = completed / received if received > 0 else 0.0
+        
+        report.append({
+            'assignee': assignee,
+            'tasks_received': received,
+            'tasks_completed': completed,
+            'completion_rate': completion_rate
+        })
+    
     return report
 
 def filter_tasks(tasks: List[Dict], people: List[str], spaces: List[str]) -> List[Dict]:
@@ -565,7 +587,7 @@ def filter_tasks(tasks: List[Dict], people: List[str], spaces: List[str]) -> Lis
             filtered_tasks.append(task)
     return filtered_tasks
 
-def generate_report(report: pd.DataFrame, start_date: str, end_date: str, filename: str = None):
+def generate_report(report: List[Dict], start_date: str, end_date: str, filename: str = None):
     """Generate and save the task report as a CSV file."""
     # Convert dates to ISO format for display
     start_iso = datetime.fromisoformat(start_date.replace('Z', '')).strftime('%Y-%m-%d')
@@ -577,11 +599,13 @@ def generate_report(report: pd.DataFrame, start_date: str, end_date: str, filena
     else:
         file_name = f'task_report_{start_iso}_{end_iso}.csv'
     
-    report.to_csv(file_name, index=False)
+    # Save report using our csv-based function
+    save_to_csv(report, file_name)
     
     # Print date range and report
     logging.info(f"\nTask Report for period: {start_iso} to {end_iso}")
-    logging.info(report)
+    for row in report:
+        logging.info(f"  {row['assignee']}: {row['tasks_received']} received, {row['tasks_completed']} completed, {row['completion_rate']:.1%} completion rate")
     logging.info(f"\nReport saved as {file_name}")
 
 def get_default_dates():

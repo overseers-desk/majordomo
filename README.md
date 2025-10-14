@@ -36,7 +36,7 @@ For Ubuntu and Debian systems, the recommended approach uses system packages for
 
 ```bash
 sudo apt update
-sudo apt install python3-pandas python3-googleapi python3-google-auth python3-google-auth-oauthlib python3-httplib2 python3-requests
+sudo apt install python3-googleapi python3-google-auth python3-google-auth-oauthlib python3-httplib2 python3-requests
 ```
 
 This method eliminates the need for the `requirements.txt` file and provides system-level package management.
