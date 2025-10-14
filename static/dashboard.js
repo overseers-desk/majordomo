@@ -214,17 +214,17 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     // Create header row
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
-    headerRow.appendChild(createHeaderCell('Person'));
+    headerRow.appendChild(createHeaderCell('Person', true)); // Mark as first column
     
     // Add space columns
     selectedSpaces.forEach(spaceId => {
         const space = dashboardData.spaces.find(s => s.name === spaceId);
         const displayName = space ? (space.displayName || spaceId) : spaceId;
-        headerRow.appendChild(createHeaderCell(displayName));
+        headerRow.appendChild(createHeaderCell(displayName, false)); // Rotated column
     });
     
     // Add total column
-    headerRow.appendChild(createHeaderCell('Total'));
+    headerRow.appendChild(createHeaderCell('Total', false)); // Rotated column
     thead.appendChild(headerRow);
     table.appendChild(thead);
     
@@ -259,7 +259,7 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     // Create footer with totals
     const tfoot = document.createElement('tfoot');
     const footerRow = document.createElement('tr');
-    footerRow.appendChild(createHeaderCell('Total'));
+    footerRow.appendChild(createHeaderCell('Total', true)); // Mark as first column
     
     // Calculate column totals
     selectedSpaces.forEach(space => {
@@ -294,9 +294,21 @@ function renderMatrix(selectedPeople, selectedSpaces) {
 }
 
 // Helper function to create header cell
-function createHeaderCell(text) {
+function createHeaderCell(text, isFirstColumn = false) {
     const th = document.createElement('th');
-    th.textContent = text;
+    
+    if (isFirstColumn) {
+        // First column (Person) - no rotation
+        th.textContent = text;
+    } else {
+        // Space columns - add rotated div
+        const rotatedDiv = document.createElement('div');
+        rotatedDiv.className = 'rotated-header';
+        rotatedDiv.textContent = text;
+        rotatedDiv.title = text; // Full name on hover
+        th.appendChild(rotatedDiv);
+    }
+    
     return th;
 }
 
