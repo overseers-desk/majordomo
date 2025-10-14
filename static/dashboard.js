@@ -230,6 +230,42 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     
     // Create body rows - NOW SPACES ARE ROWS
     const tbody = document.createElement('tbody');
+    
+    // Create TOTAL ROW FIRST (at the top)
+    const totalRow = document.createElement('tr');
+    totalRow.className = 'total-row';
+    
+    // Calculate column totals (total per person across all spaces)
+    selectedPeople.forEach(person => {
+        const personTotal = metrics[person]['_total'];
+        const cell = createMetricCell(person, '_total', personTotal);
+        cell.className = 'metric-cell total-cell';
+        totalRow.appendChild(cell);
+    });
+    
+    // Grand total
+    let grandAssigned = 0, grandCompleted = 0;
+    selectedPeople.forEach(person => {
+        grandAssigned += metrics[person]['_total'].assigned;
+        grandCompleted += metrics[person]['_total'].completed;
+    });
+    const grandCell = createMetricCell('_all', '_total', {
+        assigned: grandAssigned,
+        completed: grandCompleted
+    });
+    grandCell.className = 'metric-cell total-cell grand-total';
+    totalRow.appendChild(grandCell);
+    
+    // Add "Total" label in the last column (space column)
+    const totalLabelCell = document.createElement('td');
+    totalLabelCell.textContent = 'Total';
+    totalLabelCell.className = 'space-cell total-cell';
+    totalLabelCell.style.fontWeight = '700';
+    totalRow.appendChild(totalLabelCell);
+    
+    tbody.appendChild(totalRow);
+    
+    // Now add individual space rows
     selectedSpaces.forEach(spaceId => {
         const space = dashboardData.spaces.find(s => s.name === spaceId);
         const displayName = space ? (space.displayName || spaceId) : spaceId;
@@ -265,37 +301,6 @@ function renderMatrix(selectedPeople, selectedSpaces) {
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
-    
-    // Create footer with totals - NOW COLUMN TOTALS BY PERSON
-    const tfoot = document.createElement('tfoot');
-    const footerRow = document.createElement('tr');
-    
-    // Calculate column totals (total per person across all spaces)
-    selectedPeople.forEach(person => {
-        const personTotal = metrics[person]['_total'];
-        const cell = createMetricCell(person, '_total', personTotal);
-        cell.className = 'metric-cell total-cell';
-        footerRow.appendChild(cell);
-    });
-    
-    // Grand total
-    let grandAssigned = 0, grandCompleted = 0;
-    selectedPeople.forEach(person => {
-        grandAssigned += metrics[person]['_total'].assigned;
-        grandCompleted += metrics[person]['_total'].completed;
-    });
-    const grandCell = createMetricCell('_all', '_total', {
-        assigned: grandAssigned,
-        completed: grandCompleted
-    });
-    grandCell.className = 'metric-cell total-cell grand-total';
-    footerRow.appendChild(grandCell);
-    
-    // Add "Total" label in the last column (space column)
-    footerRow.appendChild(createHeaderCell('Total', true)); // Mark as last column, not rotated
-    
-    tfoot.appendChild(footerRow);
-    table.appendChild(tfoot);
 }
 
 // Helper function to create header cell

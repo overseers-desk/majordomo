@@ -325,8 +325,7 @@ nav a.active {
     background-color: transparent; /* No background to allow text overlap */
 }
 
-#performance-matrix thead th:last-child,
-#performance-matrix tfoot th:last-child {
+#performance-matrix thead th:last-child {
     /* Space/Total column - not rotated */
     text-align: left;
     padding: 12px 8px;
@@ -347,34 +346,23 @@ nav a.active {
     white-space: nowrap;
 }
 
-#performance-matrix tfoot th .rotated-header {
-    transform: rotate(-45deg);
-    transform-origin: bottom left;
-    position: absolute;
-    bottom: 5px;
-    left: 5px;
-    width: 200px;
-    text-align: left;
-    white-space: nowrap;
-}
-
 #performance-matrix thead th:last-child {
     background-color: #e9ecef;
-}
-
-#performance-matrix tfoot th {
-    background-color: transparent; /* No background for rotated footer headers */
-    font-weight: 700;
-}
-
-#performance-matrix tfoot th:last-child {
-    background-color: #e9ecef; /* Keep background for last column */
 }
 
 #performance-matrix .space-cell {
     text-align: left;
     font-weight: 500;
     background-color: #f8f9fa;
+}
+
+#performance-matrix .total-row {
+    border-bottom: 3px solid #007bff;
+}
+
+#performance-matrix .total-row td {
+    font-weight: 700;
+    background-color: #e9ecef;
 }
 
 #performance-matrix .metric-cell {
