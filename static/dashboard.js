@@ -214,7 +214,6 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     // Create header row - NOW WITH PEOPLE AS COLUMNS
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
-    headerRow.appendChild(createHeaderCell('Space', true)); // Mark as first column
     
     // Add person columns
     selectedPeople.forEach(person => {
@@ -223,6 +222,9 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     
     // Add total column
     headerRow.appendChild(createHeaderCell('Total', false)); // Rotated column
+    
+    // Add space column at the end
+    headerRow.appendChild(createHeaderCell('Space', true)); // Mark as last column, not rotated
     thead.appendChild(headerRow);
     table.appendChild(thead);
     
@@ -232,13 +234,6 @@ function renderMatrix(selectedPeople, selectedSpaces) {
         const space = dashboardData.spaces.find(s => s.name === spaceId);
         const displayName = space ? (space.displayName || spaceId) : spaceId;
         const row = document.createElement('tr');
-        
-        // Space name cell
-        const nameCell = document.createElement('td');
-        nameCell.className = 'space-cell';
-        nameCell.textContent = displayName;
-        nameCell.title = displayName; // Show full name on hover
-        row.appendChild(nameCell);
         
         // Person metric cells
         selectedPeople.forEach(person => {
@@ -260,6 +255,13 @@ function renderMatrix(selectedPeople, selectedSpaces) {
         totalCell.className = 'metric-cell total-cell';
         row.appendChild(totalCell);
         
+        // Space name cell at the end
+        const nameCell = document.createElement('td');
+        nameCell.className = 'space-cell';
+        nameCell.textContent = displayName;
+        nameCell.title = displayName; // Show full name on hover
+        row.appendChild(nameCell);
+        
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
@@ -267,7 +269,6 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     // Create footer with totals - NOW COLUMN TOTALS BY PERSON
     const tfoot = document.createElement('tfoot');
     const footerRow = document.createElement('tr');
-    footerRow.appendChild(createHeaderCell('Total', true)); // Mark as first column
     
     // Calculate column totals (total per person across all spaces)
     selectedPeople.forEach(person => {
@@ -289,6 +290,9 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     });
     grandCell.className = 'metric-cell total-cell grand-total';
     footerRow.appendChild(grandCell);
+    
+    // Add "Total" label in the last column (space column)
+    footerRow.appendChild(createHeaderCell('Total', true)); // Mark as last column, not rotated
     
     tfoot.appendChild(footerRow);
     table.appendChild(tfoot);

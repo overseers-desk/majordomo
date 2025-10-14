@@ -320,20 +320,20 @@ nav a.active {
     overflow: visible; /* Allow text to extend beyond cell */
 }
 
-#performance-matrix thead th:not(:first-child) {
+#performance-matrix thead th:not(:last-child) {
     width: 50px; /* Narrow columns for people */
     background-color: transparent; /* No background to allow text overlap */
 }
 
-#performance-matrix thead th:first-child,
-#performance-matrix tfoot th:first-child {
+#performance-matrix thead th:last-child,
+#performance-matrix tfoot th:last-child {
     /* Space/Total column - not rotated */
     text-align: left;
     padding: 12px 8px;
     height: auto;
     vertical-align: middle;
     width: auto;
-    background-color: #f8f9fa; /* Keep background for first column */
+    background-color: #f8f9fa; /* Keep background for last column */
 }
 
 #performance-matrix thead th .rotated-header {
@@ -358,7 +358,7 @@ nav a.active {
     white-space: nowrap;
 }
 
-#performance-matrix thead th:first-child {
+#performance-matrix thead th:last-child {
     background-color: #e9ecef;
 }
 
@@ -367,18 +367,14 @@ nav a.active {
     font-weight: 700;
 }
 
-#performance-matrix tfoot th:first-child {
-    background-color: #e9ecef; /* Keep background for first column */
+#performance-matrix tfoot th:last-child {
+    background-color: #e9ecef; /* Keep background for last column */
 }
 
 #performance-matrix .space-cell {
     text-align: left;
     font-weight: 500;
     background-color: #f8f9fa;
-    max-width: 20em; /* Approximately 32 characters */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 #performance-matrix .metric-cell {
