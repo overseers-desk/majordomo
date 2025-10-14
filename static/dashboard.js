@@ -54,6 +54,47 @@ function getSelectedFilters() {
     return { people: selectedPeople, spaces: selectedSpaces };
 }
 
+// Update filter labels to show counts
+function updateFilterLabels() {
+    const filters = getSelectedFilters();
+    const totalPeople = document.querySelectorAll('#people-checkboxes input[type="checkbox"]').length;
+    const totalSpaces = document.querySelectorAll('#space-checkboxes input[type="checkbox"]').length;
+    
+    document.getElementById('people-label').textContent = 
+        `People (${filters.people.length} of ${totalPeople} selected)`;
+    document.getElementById('spaces-label').textContent = 
+        `Spaces (${filters.spaces.length} of ${totalSpaces} selected)`;
+}
+
+// Toggle filter panel visibility
+function toggleFilterPanel(panelId, toggleId) {
+    const panel = document.getElementById(panelId);
+    const toggle = document.getElementById(toggleId);
+    const arrow = toggle.querySelector('.filter-arrow');
+    
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        arrow.textContent = '▲';
+        toggle.classList.add('active');
+    } else {
+        panel.style.display = 'none';
+        arrow.textContent = '▼';
+        toggle.classList.remove('active');
+    }
+}
+
+// Select or deselect all checkboxes in a container
+function setAllCheckboxes(containerId, checked) {
+    document.querySelectorAll(`#${containerId} input[type="checkbox"]`).forEach(cb => {
+        cb.checked = checked;
+    });
+    
+    const filters = getSelectedFilters();
+    savePreferences(filters.people, filters.spaces);
+    updateFilterLabels();
+    renderMatrix(filters.people, filters.spaces);
+}
+
 // Calculate metrics from raw tasks
 function calculateMetrics(tasks, selectedPeople, selectedSpaces) {
     const metrics = {};
@@ -132,6 +173,7 @@ function renderCheckboxes() {
         checkbox.addEventListener('change', () => {
             const filters = getSelectedFilters();
             savePreferences(filters.people, filters.spaces);
+            updateFilterLabels();
             renderMatrix(filters.people, filters.spaces);
         });
         
@@ -153,6 +195,7 @@ function renderCheckboxes() {
         checkbox.addEventListener('change', () => {
             const filters = getSelectedFilters();
             savePreferences(filters.people, filters.spaces);
+            updateFilterLabels();
             renderMatrix(filters.people, filters.spaces);
         });
         
@@ -161,6 +204,9 @@ function renderCheckboxes() {
         label.appendChild(document.createTextNode(' ' + displayName));
         spacesContainer.appendChild(label);
     });
+    
+    // Update filter labels after rendering checkboxes
+    updateFilterLabels();
 }
 
 // Render performance matrix table
@@ -478,6 +524,32 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set up close details button
     document.getElementById('close-details').addEventListener('click', () => {
         document.getElementById('task-details').style.display = 'none';
+    });
+    
+    // Set up filter toggle buttons
+    document.getElementById('people-toggle').addEventListener('click', () => {
+        toggleFilterPanel('people-panel', 'people-toggle');
+    });
+    
+    document.getElementById('spaces-toggle').addEventListener('click', () => {
+        toggleFilterPanel('spaces-panel', 'spaces-toggle');
+    });
+    
+    // Set up select all/deselect all buttons
+    document.getElementById('select-all-people').addEventListener('click', () => {
+        setAllCheckboxes('people-checkboxes', true);
+    });
+    
+    document.getElementById('deselect-all-people').addEventListener('click', () => {
+        setAllCheckboxes('people-checkboxes', false);
+    });
+    
+    document.getElementById('select-all-spaces').addEventListener('click', () => {
+        setAllCheckboxes('space-checkboxes', true);
+    });
+    
+    document.getElementById('deselect-all-spaces').addEventListener('click', () => {
+        setAllCheckboxes('space-checkboxes', false);
     });
 });
 
