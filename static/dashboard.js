@@ -211,16 +211,14 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     const table = document.getElementById('performance-matrix');
     table.innerHTML = '';
     
-    // Create header row
+    // Create header row - NOW WITH PEOPLE AS COLUMNS
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
-    headerRow.appendChild(createHeaderCell('Person', true)); // Mark as first column
+    headerRow.appendChild(createHeaderCell('Space', true)); // Mark as first column
     
-    // Add space columns
-    selectedSpaces.forEach(spaceId => {
-        const space = dashboardData.spaces.find(s => s.name === spaceId);
-        const displayName = space ? (space.displayName || spaceId) : spaceId;
-        headerRow.appendChild(createHeaderCell(displayName, false)); // Rotated column
+    // Add person columns
+    selectedPeople.forEach(person => {
+        headerRow.appendChild(createHeaderCell(person, false)); // Rotated column
     });
     
     // Add total column
@@ -228,27 +226,37 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     thead.appendChild(headerRow);
     table.appendChild(thead);
     
-    // Create body rows
+    // Create body rows - NOW SPACES ARE ROWS
     const tbody = document.createElement('tbody');
-    selectedPeople.forEach(person => {
+    selectedSpaces.forEach(spaceId => {
+        const space = dashboardData.spaces.find(s => s.name === spaceId);
+        const displayName = space ? (space.displayName || spaceId) : spaceId;
         const row = document.createElement('tr');
         
-        // Person name cell
+        // Space name cell
         const nameCell = document.createElement('td');
-        nameCell.className = 'person-cell';
-        nameCell.textContent = person;
+        nameCell.className = 'space-cell';
+        nameCell.textContent = displayName;
+        nameCell.title = displayName; // Show full name on hover
         row.appendChild(nameCell);
         
-        // Space metric cells
-        selectedSpaces.forEach(space => {
-            const metric = metrics[person][space];
-            const cell = createMetricCell(person, space, metric);
+        // Person metric cells
+        selectedPeople.forEach(person => {
+            const metric = metrics[person][spaceId];
+            const cell = createMetricCell(person, spaceId, metric);
             row.appendChild(cell);
         });
         
-        // Total cell
-        const totalMetric = metrics[person]['_total'];
-        const totalCell = createMetricCell(person, '_total', totalMetric);
+        // Row total cell (total for this space across all people)
+        let rowAssigned = 0, rowCompleted = 0;
+        selectedPeople.forEach(person => {
+            rowAssigned += metrics[person][spaceId].assigned;
+            rowCompleted += metrics[person][spaceId].completed;
+        });
+        const totalCell = createMetricCell('_all', spaceId, {
+            assigned: rowAssigned,
+            completed: rowCompleted
+        });
         totalCell.className = 'metric-cell total-cell';
         row.appendChild(totalCell);
         
@@ -256,22 +264,15 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     });
     table.appendChild(tbody);
     
-    // Create footer with totals
+    // Create footer with totals - NOW COLUMN TOTALS BY PERSON
     const tfoot = document.createElement('tfoot');
     const footerRow = document.createElement('tr');
     footerRow.appendChild(createHeaderCell('Total', true)); // Mark as first column
     
-    // Calculate column totals
-    selectedSpaces.forEach(space => {
-        let colAssigned = 0, colCompleted = 0;
-        selectedPeople.forEach(person => {
-            colAssigned += metrics[person][space].assigned;
-            colCompleted += metrics[person][space].completed;
-        });
-        const cell = createMetricCell('_all', space, {
-            assigned: colAssigned,
-            completed: colCompleted
-        });
+    // Calculate column totals (total per person across all spaces)
+    selectedPeople.forEach(person => {
+        const personTotal = metrics[person]['_total'];
+        const cell = createMetricCell(person, '_total', personTotal);
         cell.className = 'metric-cell total-cell';
         footerRow.appendChild(cell);
     });

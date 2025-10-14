@@ -321,13 +321,13 @@ nav a.active {
 }
 
 #performance-matrix thead th:not(:first-child) {
-    width: 50px; /* Narrow columns for spaces */
+    width: 50px; /* Narrow columns for people */
     background-color: transparent; /* No background to allow text overlap */
 }
 
 #performance-matrix thead th:first-child,
 #performance-matrix tfoot th:first-child {
-    /* Person/Total column - not rotated */
+    /* Space/Total column - not rotated */
     text-align: left;
     padding: 12px 8px;
     height: auto;
@@ -371,10 +371,14 @@ nav a.active {
     background-color: #e9ecef; /* Keep background for first column */
 }
 
-#performance-matrix .person-cell {
+#performance-matrix .space-cell {
     text-align: left;
     font-weight: 500;
     background-color: #f8f9fa;
+    max-width: 20em; /* Approximately 32 characters */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 #performance-matrix .metric-cell {
