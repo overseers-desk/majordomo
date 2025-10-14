@@ -32,7 +32,7 @@ import logging
 import json
 import argparse
 from datetime import datetime, timedelta
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import unicodedata
 import time
 import fnmatch
@@ -665,7 +665,7 @@ def convert_to_rfc3339(date_str: str) -> str:
     except ValueError:
         raise ValueError(f"Invalid date format: {date_str}. Expected format: YYYY-MM-DD")
 
-def parse_date_range(args) -> tuple[str, str]:
+def parse_date_range(args) -> Tuple[str, str]:
     """
     Parse date range arguments and return start and end dates in RFC 3339 format.
     
@@ -673,7 +673,7 @@ def parse_date_range(args) -> tuple[str, str]:
         args: Command line arguments object containing date-related flags
         
     Returns:
-        tuple: (date_start, date_end) in RFC 3339 format
+        Tuple: (date_start, date_end) in RFC 3339 format
         
     Raises:
         ValueError: If date parsing fails or invalid date combination is provided
@@ -1627,9 +1627,8 @@ def main():
             # Generate standard report
             report = analyze_tasks(all_tasks)
             if args.json:
-                # Convert report to list of dicts for JSON output
-                report_dict = report.to_dict('records')
-                save_data(report_dict, args.json, "json")
+                # Report is already a list of dicts, ready for JSON output
+                save_data(report, args.json, "json")
                 logging.info(f"Report saved as {args.json}")
             if args.csv:
                 # Use specified CSV filename for report generation
@@ -1639,7 +1638,17 @@ def main():
                 start_iso = datetime.fromisoformat(date_start.replace('Z', '')).strftime('%Y-%m-%d')
                 end_iso = datetime.fromisoformat(date_end.replace('Z', '')).strftime('%Y-%m-%d')
                 print(f"\nTask Report for period: {start_iso} to {end_iso}")
-                print(report.to_string(index=False))
+                # Format report as table
+                if report:
+                    # Print header
+                    print(f"{'Assignee':<30} {'Tasks Received':<15} {'Tasks Completed':<17} {'Completion Rate':<15}")
+                    print("-" * 80)
+                    # Print data rows
+                    for row in report:
+                        assignee = row['assignee'][:29] if len(row['assignee']) > 29 else row['assignee']
+                        print(f"{assignee:<30} {row['tasks_received']:<15} {row['tasks_completed']:<17} {row['completion_rate']:<14.1%}")
+                else:
+                    print("No tasks found in the report period.")
 
     elif args.command == "tasks":
         try:
