@@ -105,22 +105,19 @@ function calculateMetrics(tasks, selectedPeople, selectedSpaces) {
         selectedSpaces.forEach(space => {
             metrics[person][space] = {
                 assigned: 0,
-                completed: 0,
-                given: 0
+                completed: 0
             };
         });
         // Add total column
         metrics[person]['_total'] = {
             assigned: 0,
-            completed: 0,
-            given: 0
+            completed: 0
         };
     });
     
     // Calculate metrics from tasks
     tasks.forEach(task => {
         const assignee = task.assignee;
-        const sender = task.sender;
         const space = task.space_name;
         const status = task.status;
         
@@ -134,12 +131,6 @@ function calculateMetrics(tasks, selectedPeople, selectedSpaces) {
                 metrics[assignee][space].completed++;
                 metrics[assignee]['_total'].completed++;
             }
-        }
-        
-        // Count tasks given (created/assigned by this person)
-        if (selectedPeople.includes(sender) && selectedSpaces.includes(space)) {
-            metrics[sender][space].given++;
-            metrics[sender]['_total'].given++;
         }
     });
     
@@ -272,32 +263,28 @@ function renderMatrix(selectedPeople, selectedSpaces) {
     
     // Calculate column totals
     selectedSpaces.forEach(space => {
-        let colAssigned = 0, colCompleted = 0, colGiven = 0;
+        let colAssigned = 0, colCompleted = 0;
         selectedPeople.forEach(person => {
             colAssigned += metrics[person][space].assigned;
             colCompleted += metrics[person][space].completed;
-            colGiven += metrics[person][space].given;
         });
         const cell = createMetricCell('_all', space, {
             assigned: colAssigned,
-            completed: colCompleted,
-            given: colGiven
+            completed: colCompleted
         });
         cell.className = 'metric-cell total-cell';
         footerRow.appendChild(cell);
     });
     
     // Grand total
-    let grandAssigned = 0, grandCompleted = 0, grandGiven = 0;
+    let grandAssigned = 0, grandCompleted = 0;
     selectedPeople.forEach(person => {
         grandAssigned += metrics[person]['_total'].assigned;
         grandCompleted += metrics[person]['_total'].completed;
-        grandGiven += metrics[person]['_total'].given;
     });
     const grandCell = createMetricCell('_all', '_total', {
         assigned: grandAssigned,
-        completed: grandCompleted,
-        given: grandGiven
+        completed: grandCompleted
     });
     grandCell.className = 'metric-cell total-cell grand-total';
     footerRow.appendChild(grandCell);
@@ -318,7 +305,7 @@ function createMetricCell(person, space, metric) {
     const cell = document.createElement('td');
     cell.className = 'metric-cell';
     
-    // Create three clickable spans for each metric
+    // Create two clickable spans for each metric
     const assignedSpan = document.createElement('span');
     assignedSpan.className = 'metric-number assigned';
     assignedSpan.textContent = metric.assigned;
@@ -337,20 +324,9 @@ function createMetricCell(person, space, metric) {
         completedSpan.addEventListener('click', () => showTaskDetails(person, space, 'completed'));
     }
     
-    const givenSpan = document.createElement('span');
-    givenSpan.className = 'metric-number given';
-    givenSpan.textContent = metric.given;
-    givenSpan.title = 'Tasks Given';
-    if (metric.given > 0) {
-        givenSpan.style.cursor = 'pointer';
-        givenSpan.addEventListener('click', () => showTaskDetails(person, space, 'given'));
-    }
-    
     cell.appendChild(assignedSpan);
     cell.appendChild(document.createTextNode(' / '));
     cell.appendChild(completedSpan);
-    cell.appendChild(document.createTextNode(' / '));
-    cell.appendChild(givenSpan);
     
     return cell;
 }
@@ -373,11 +349,6 @@ function showTaskDetails(person, space, metric) {
             task.status === 'COMPLETED' &&
             (space === '_total' || task.space_name === space)
         );
-    } else if (metric === 'given') {
-        filteredTasks = dashboardData.tasks.filter(task => 
-            task.sender === person &&
-            (space === '_total' || task.space_name === space)
-        );
     }
     
     // Update details section
@@ -386,7 +357,7 @@ function showTaskDetails(person, space, metric) {
     const detailsTable = document.getElementById('details-table');
     
     // Set title
-    const metricText = metric === 'assigned' ? 'Assigned' : metric === 'completed' ? 'Completed' : 'Given';
+    const metricText = metric === 'assigned' ? 'Assigned' : 'Completed';
     const spaceText = space === '_total' ? 'All Spaces' : (dashboardData.spaces.find(s => s.name === space)?.displayName || space);
     detailsTitle.textContent = `${metricText} Tasks - ${person} - ${spaceText} (${filteredTasks.length})`;
     
