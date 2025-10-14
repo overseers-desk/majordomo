@@ -1,4 +1,9 @@
-google-api-python-client==2.136.0
+# Package versions match Ubuntu 25.04 (Plucky Puffin) APT packages
+# Install via: sudo apt install python3-googleapi python3-google-auth python3-google-auth-oauthlib
+#
+# These versions are from system packages rather than PyPI to ensure
+# compatibility with Ubuntu deployments without pip virtual environments
+
+google-api-python-client==2.165.0
 google-auth-oauthlib==1.2.1
-pandas==2.2.2
-google-auth==2.32.0
+google-auth==2.28.2
