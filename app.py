@@ -98,9 +98,9 @@ def fetch_data():
         for task in all_tasks:
             assignee = task.get('assignee', '').strip()
             sender = task.get('sender', '').strip()
-            if assignee and assignee != 'Unassigned':
+            if assignee and assignee not in ['Unassigned', 'Unknown']:
                 all_people.add(assignee)
-            if sender:
+            if sender and sender != 'Unknown':
                 all_people.add(sender)
         
         # Prepare data structure

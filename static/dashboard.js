@@ -392,7 +392,7 @@ function showTaskDetails(person, space, metric) {
         // Create header
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
-        ['Task ID', 'Created', 'Assignee', 'Sender', 'Status', 'Space', 'First Message'].forEach(text => {
+        ['Task ID', 'Created', 'Assignee', 'Status', 'Space', 'First Message'].forEach(text => {
             const th = document.createElement('th');
             th.textContent = text;
             headerRow.appendChild(th);
@@ -420,11 +420,6 @@ function showTaskDetails(person, space, metric) {
             const assigneeCell = document.createElement('td');
             assigneeCell.textContent = task.assignee || 'N/A';
             row.appendChild(assigneeCell);
-            
-            // Sender
-            const senderCell = document.createElement('td');
-            senderCell.textContent = task.sender || 'N/A';
-            row.appendChild(senderCell);
             
             // Status
             const statusCell = document.createElement('td');
