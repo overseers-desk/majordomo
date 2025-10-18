@@ -2,6 +2,10 @@
 token.json
 client_secret.json
 
+# HTTP Basic Authentication files
+.htaccess
+.htpasswd
+
 # Configuration files (user-specific)
 config.json
 
