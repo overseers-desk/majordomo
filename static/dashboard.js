@@ -462,9 +462,15 @@ async function fetchData() {
     errorMsg.style.display = 'none';
     
     try {
+        // Calculate date range on client side
+        const today = new Date();
+        const daysBack = currentPeriod === 'last-day' ? 1 : currentPeriod === 'last-week' ? 7 : 30;
+        const startDate = new Date(today);
+        startDate.setDate(startDate.getDate() - daysBack);
+        
         // Get the script path (e.g., /cgi-bin/tasks-reporter.cgi)
         const scriptPath = window.location.pathname.split('?')[0];
-        const apiUrl = `${scriptPath}/api/fetch-data?period=${currentPeriod}`;
+        const apiUrl = `${scriptPath}/api/fetch-data?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(today.toISOString())}`;
         const response = await fetch(apiUrl);
         
         if (!response.ok) {

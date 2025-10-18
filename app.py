@@ -38,24 +38,17 @@ def dashboard():
 @app.route('/api/fetch-data')
 def fetch_data():
     """
-    Fetch all task data from Google Chat API for the specified period.
-    This is called only when user explicitly clicks the "Fetch Data" button.
+    Fetch all task data from Google Chat API for the specified date range.
+    Expects 'start' and 'end' query parameters in RFC 3339 format.
     """
-    # Get period from query parameter
-    period = request.args.get('period', 'last-week')
+    # Get date range from query parameters
+    date_start = request.args.get('start')
+    date_end = request.args.get('end')
     
-    # Validate period
-    if period not in ['last-day', 'last-week', 'last-month']:
-        return jsonify({'error': 'Invalid period'}), 400
+    if not date_start or not date_end:
+        return jsonify({'error': 'Missing start and end parameters'}), 400
     
     try:
-        # Get date range based on period
-        date_funcs = {
-            'last-day': get_past_day_dates,
-            'last-week': get_past_week_dates,
-            'last-month': get_past_month_dates
-        }
-        date_start, date_end = date_funcs[period]()
         
         # Fetch data from Google
         creds = get_credentials()
@@ -105,7 +98,6 @@ def fetch_data():
         
         # Prepare data structure
         data = {
-            'period': period,
             'date_start': date_start,
             'date_end': date_end,
             'all_people': sorted(list(all_people)),
