@@ -98,6 +98,22 @@ def fetch_data():
                 print(f"Error fetching tasks from space {space['name']}: {e}")
                 continue
         
+        # Load assignee filtering config from environment variable (set in .htaccess)
+        # This allows filtering out tasks assigned to specific people
+        ignored_assignees = []
+        ignore_assignee_env = os.environ.get('IGNORE_ASSIGNEE', '')
+        if ignore_assignee_env:
+            try:
+                # Parse JSON array from environment variable
+                ignored_assignees = json.loads(ignore_assignee_env)
+            except json.JSONDecodeError as e:
+                print(f"Error parsing IGNORE_ASSIGNEE environment variable: {e}")
+        
+        # Filter out tasks assigned to ignored assignees
+        if ignored_assignees:
+            all_tasks = [task for task in all_tasks 
+                        if task.get('assignee', '').strip() not in ignored_assignees]
+        
         # Extract all unique people from tasks
         all_people = set()
         for task in all_tasks:
