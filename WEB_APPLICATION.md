@@ -29,43 +29,23 @@ For production deployment on a web server, refer to `CGI_DEPLOYMENT.md` for deta
 
 ## Configuration
 
-### Space Filtering (config.json)
+### Space Filtering (.htaccess)
 
-The web application uses `config.json` to control which Google Chat spaces are included in the dashboard. This file contains two arrays:
+The web application uses Apache environment variables in `.htaccess` to control which Google Chat spaces are excluded from the dashboard. This approach allows you to add comments documenting which spaces are being filtered:
 
-```json
-{
-  "space_whitelist": [],
-  "space_blacklist": ["spaces/AAAAMj0BPws"]
-}
+```apache
+# Space filtering configuration for the web dashboard
+# Format: JSON array of space IDs (without "spaces/" prefix)
+
+# Grayhat - excluded space  
+# spaces/AAAAfPFB3gs - another excluded space
+SetEnv IGNORE_SPACES '["AAAAMj0BPws", "AAAAfPFB3gs"]'
 ```
 
-**Configuration Logic:**
-
-- **Whitelist empty (default)**: All spaces are in scope, except those in the blacklist
-- **Whitelist not empty**: Only whitelisted spaces are in scope, excluding any that are also blacklisted
-
-**Example configurations:**
-
-```json
-// Include all spaces except Grayhat
-{
-  "space_whitelist": [],
-  "space_blacklist": ["spaces/AAAAMj0BPws"]
-}
-
-// Only include specific spaces
-{
-  "space_whitelist": ["spaces/AAAAfPFB3gs", "spaces/AAAA1djitm8"],
-  "space_blacklist": []
-}
-
-// Include specific spaces but exclude one
-{
-  "space_whitelist": ["spaces/AAAAfPFB3gs", "spaces/AAAA1djitm8", "spaces/AAAABDd8-KM"],
-  "space_blacklist": ["spaces/AAAABDd8-KM"]
-}
-```
+**Configuration:**
+- The `IGNORE_SPACES` environment variable contains a JSON array of space IDs
+- Space IDs should be listed WITHOUT the `spaces/` prefix (just the ID part)
+- You can add comments above to document what each space is
 
 ### Finding Space IDs
 
@@ -80,7 +60,7 @@ python3 scrapper.py spaces --json spaces.json
 python3 scrapper.py spaces --csv spaces.csv
 ```
 
-The output shows space IDs (like `spaces/AAAAMj0BPws`) paired with their display names, making it easy to identify which spaces to whitelist or blacklist.
+The output shows space IDs (like `spaces/AAAAMj0BPws`) paired with their display names, making it easy to identify which spaces to exclude in `.htaccess`.
 
 ## Using the Dashboard
 
@@ -131,12 +111,12 @@ Click any number in the matrix to see detailed task information, including:
 
 ## Data Flow
 
-1. **Configuration**: `config.json` filters which spaces to include
-2. **API Fetch**: Data is fetched only from filtered spaces
+1. **Configuration**: `.htaccess` IGNORE_SPACES variable filters which spaces to exclude
+2. **API Fetch**: Data is fetched from all spaces except those in IGNORE_SPACES
 3. **People Extraction**: All unique people are extracted from tasks in the filtered spaces
 4. **Client Filtering**: Users can further filter the view using checkboxes
 
-This approach ensures that blacklisted spaces never appear in the dashboard, and if you're using a whitelist, only those specific spaces are considered.
+This approach ensures that blacklisted spaces never appear in the dashboard.
 
 ## Browser Preferences
 
@@ -152,15 +132,14 @@ These preferences persist for 30 days and are saved whenever you change checkbox
 - Check browser console for errors
 - Verify `token.json` and `client_secret.json` are present
 - Ensure you have permissions to access the Google Chat spaces
-- Check that spaces aren't all blacklisted in `config.json`
+- Check that spaces aren't all excluded in `.htaccess` IGNORE_SPACES
 
 **Some spaces are missing**
-- Check `config.json` to ensure they're not blacklisted
-- If using a whitelist, ensure they're included in the whitelist
+- Check `.htaccess` to ensure they're not in IGNORE_SPACES
 - Verify you have access to those spaces in Google Chat
 
 **Performance is slow**
-- Consider blacklisting inactive or irrelevant spaces to reduce data fetching
+- Consider excluding inactive or irrelevant spaces in `.htaccess` IGNORE_SPACES
 - Use shorter time periods (Last Day instead of Last Month)
 - The initial data fetch can take time with many spaces; this is normal
 

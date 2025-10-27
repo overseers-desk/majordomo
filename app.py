@@ -40,6 +40,15 @@ def fetch_data():
     """
     Fetch all task data from Google Chat API for the specified date range.
     Expects 'start' and 'end' query parameters in RFC 3339 format.
+    
+    IMPORTANT DESIGN NOTE:
+    This API intentionally only accepts 'start' and 'end' parameters (not 'period').
+    The client calculates the actual date range and sends specific dates.
+    This prevents caching issues where 'period=last-day' would return stale data
+    as time passes and the Earth rotates - the API would cache results for
+    "last-day" but wouldn't know when "last-day" has actually changed.
+    By using explicit start/end timestamps, each request is uniquely identifiable
+    and caching works correctly.
     """
     # Get date range from query parameters
     date_start = request.args.get('start')
@@ -55,17 +64,20 @@ def fetch_data():
         service = build('chat', 'v1', credentials=creds)
         all_spaces = get_spaces(service)
         
-        # Load space filtering config
+        # Load space filtering config from environment variable (set in .htaccess)
+        # This allows Apache configuration with inline comments documenting space names
         space_whitelist = []
         space_blacklist = []
-        if os.path.exists('config.json'):
+        
+        ignore_spaces_env = os.environ.get('IGNORE_SPACES', '')
+        if ignore_spaces_env:
             try:
-                with open('config.json', 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    space_whitelist = config.get('space_whitelist', [])
-                    space_blacklist = config.get('space_blacklist', [])
-            except Exception as e:
-                print(f"Error loading config.json: {e}")
+                # Parse JSON array from environment variable
+                ignored_ids = json.loads(ignore_spaces_env)
+                # Add "spaces/" prefix to each ID
+                space_blacklist = [f"spaces/{space_id}" for space_id in ignored_ids]
+            except json.JSONDecodeError as e:
+                print(f"Error parsing IGNORE_SPACES environment variable: {e}")
         
         # Filter spaces based on whitelist/blacklist
         # If whitelist is empty, all spaces are in scope (except blacklisted ones)

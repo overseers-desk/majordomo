@@ -9,7 +9,7 @@ For information about using and configuring the web application, see `WEB_APPLIC
 - **tasks-reporter.cgi** - Main CGI script
 - **app.py** - Flask application
 - **scrapper.py** - Core functionality
-- **config.json** - Configuration file
+- **.htaccess** - Apache configuration (authentication and space filtering)
 - **token.json** - Google OAuth credentials
 - **client_secret.json** - Google API credentials
 - **requirements.txt** - Python dependencies
@@ -50,7 +50,7 @@ Upload all files to your server's cgi-bin directory:
 
 ```bash
 # Using SCP
-scp tasks-reporter.cgi app.py scrapper.py config.json token.json client_secret.json requirements.txt username@yourserver.com:~/public_html/cgi-bin/
+scp tasks-reporter.cgi app.py scrapper.py .htaccess token.json client_secret.json requirements.txt username@yourserver.com:~/public_html/cgi-bin/
 
 # Upload directories
 scp -r static templates username@yourserver.com:~/public_html/cgi-bin/
@@ -62,7 +62,7 @@ scp -r static templates username@yourserver.com:~/public_html/cgi-bin/
   ├── tasks-reporter.cgi
   ├── app.py
   ├── scrapper.py
-  ├── config.json
+  ├── .htaccess
   ├── token.json
   ├── client_secret.json
   ├── requirements.txt
@@ -137,7 +137,7 @@ ssh weiwuida@weiwu.au "ls -la /opt/alt/python38/bin/python3.8"
 # First line should be: #!/opt/alt/python38/bin/python3.8
 
 # 4. Upload files
-scp tasks-reporter.cgi app.py scrapper.py config.json token.json client_secret.json requirements.txt weiwuida@weiwu.au:~/public_html/cgi-bin/
+scp tasks-reporter.cgi app.py scrapper.py .htaccess token.json client_secret.json requirements.txt weiwuida@weiwu.au:~/public_html/cgi-bin/
 scp -r static templates weiwuida@weiwu.au:~/public_html/cgi-bin/
 
 # 5. Set permissions
