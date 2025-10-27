@@ -6,6 +6,13 @@
 // Global data storage
 let dashboardData = null;
 
+// Round date to the start of the hour for caching
+function roundToHour(date) {
+    const rounded = new Date(date);
+    rounded.setMinutes(0, 0, 0);
+    return rounded;
+}
+
 // Cookie management functions
 function setCookie(name, value, days = 30) {
     const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
@@ -64,6 +71,15 @@ function updateFilterLabels() {
         `People (${filters.people.length} of ${totalPeople} selected)`;
     document.getElementById('spaces-label').textContent = 
         `Spaces (${filters.spaces.length} of ${totalSpaces} selected)`;
+}
+
+// Display the date range from the loaded data
+function displayDateRange() {
+    if (!dashboardData) return;
+    const displayElement = document.getElementById('date-range-display');
+    if (displayElement) {
+        displayElement.textContent = `Data from: ${new Date(dashboardData.date_start).toLocaleString()} to ${new Date(dashboardData.date_end).toLocaleString()}`;
+    }
 }
 
 // Toggle filter panel visibility
@@ -202,6 +218,8 @@ function renderCheckboxes() {
 
 // Render performance matrix table
 function renderMatrix(selectedPeople, selectedSpaces) {
+    displayDateRange();
+    
     if (!dashboardData || selectedPeople.length === 0 || selectedSpaces.length === 0) {
         document.getElementById('performance-matrix').innerHTML = '<tr><td>Please select at least one person and one space</td></tr>';
         return;
@@ -517,7 +535,7 @@ async function fetchData() {
     errorMsg.style.display = 'none';
     
     try {
-        const today = new Date();
+        const today = roundToHour(new Date());
         const scriptPath = window.location.pathname.split('?')[0];
         
         // Determine if we need progressive loading
@@ -535,12 +553,14 @@ async function fetchData() {
                 // Calculate date range for this week
                 const weekEnd = new Date(today);
                 weekEnd.setDate(weekEnd.getDate() - (week * 7));
+                const weekEndRounded = roundToHour(weekEnd);
                 
-                const weekStart = new Date(weekEnd);
+                const weekStart = new Date(weekEndRounded);
                 weekStart.setDate(weekStart.getDate() - 7);
+                const weekStartRounded = roundToHour(weekStart);
                 
                 // Fetch data for this week
-                const apiUrl = `${scriptPath}/api/fetch-data?start=${encodeURIComponent(weekStart.toISOString())}&end=${encodeURIComponent(weekEnd.toISOString())}`;
+                const apiUrl = `${scriptPath}/api/fetch-data?start=${encodeURIComponent(weekStartRounded.toISOString())}&end=${encodeURIComponent(weekEndRounded.toISOString())}`;
                 const response = await fetch(apiUrl);
                 
                 if (!response.ok) {
@@ -570,8 +590,9 @@ async function fetchData() {
             
             const startDate = new Date(today);
             startDate.setDate(startDate.getDate() - daysBack);
+            const startDateRounded = roundToHour(startDate);
             
-            const apiUrl = `${scriptPath}/api/fetch-data?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(today.toISOString())}`;
+            const apiUrl = `${scriptPath}/api/fetch-data?start=${encodeURIComponent(startDateRounded.toISOString())}&end=${encodeURIComponent(today.toISOString())}`;
             const response = await fetch(apiUrl);
             
             if (!response.ok) {
