@@ -464,7 +464,16 @@ async function fetchData() {
     try {
         // Calculate date range on client side
         const today = new Date();
-        const daysBack = currentPeriod === 'last-day' ? 1 : currentPeriod === 'last-week' ? 7 : 28;
+        let daysBack;
+        if (currentPeriod === 'last-day') {
+            daysBack = 1;
+        } else if (currentPeriod === 'last-week') {
+            daysBack = 7;
+        } else if (currentPeriod === '4-weeks') {
+            daysBack = 28;
+        } else {
+            daysBack = 7; // Default to last week
+        }
         const startDate = new Date(today);
         startDate.setDate(startDate.getDate() - daysBack);
         
