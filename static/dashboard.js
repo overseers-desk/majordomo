@@ -449,47 +449,141 @@ function showTaskDetails(person, space, metric) {
     detailsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// Fetch data from API
+// Aggregate data from multiple API responses (for progressive loading)
+function aggregateData(dataArray) {
+    if (dataArray.length === 0) return null;
+    if (dataArray.length === 1) return dataArray[0];
+    
+    const aggregated = {
+        date_start: dataArray[0].date_start,
+        date_end: dataArray[dataArray.length - 1].date_end,
+        tasks: [],
+        spaces: [],
+        all_people: new Set()
+    };
+    
+    // Collect all tasks
+    dataArray.forEach(data => {
+        aggregated.tasks.push(...data.tasks);
+    });
+    
+    // Collect unique spaces (by space name)
+    const spaceMap = new Map();
+    dataArray.forEach(data => {
+        data.spaces.forEach(space => {
+            if (!spaceMap.has(space.name)) {
+                spaceMap.set(space.name, space);
+            }
+        });
+    });
+    aggregated.spaces = Array.from(spaceMap.values());
+    
+    // Collect unique people
+    dataArray.forEach(data => {
+        data.all_people.forEach(person => {
+            aggregated.all_people.add(person);
+        });
+    });
+    aggregated.all_people = Array.from(aggregated.all_people).sort();
+    
+    return aggregated;
+}
+
+// Update progress bar
+function updateProgress(current, total, message) {
+    const progressContainer = document.getElementById('progress-container');
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    
+    const percentage = Math.round((current / total) * 100);
+    progressBar.style.width = percentage + '%';
+    progressBar.textContent = percentage + '%';
+    progressText.textContent = message;
+    progressContainer.style.display = 'block';
+}
+
+// Fetch data from API (with progressive loading for 4-weeks)
 async function fetchData() {
     const fetchBtn = document.getElementById('fetch-data-btn');
     const loadingMsg = document.getElementById('loading-message');
+    const progressContainer = document.getElementById('progress-container');
     const errorMsg = document.getElementById('error-message');
     const mainContent = document.getElementById('main-content');
     
     // Show loading state
     fetchBtn.disabled = true;
     loadingMsg.style.display = 'block';
+    progressContainer.style.display = 'none';
     errorMsg.style.display = 'none';
     
     try {
-        // Calculate date range on client side
         const today = new Date();
-        let daysBack;
-        if (currentPeriod === 'last-day') {
-            daysBack = 1;
-        } else if (currentPeriod === 'last-week') {
-            daysBack = 7;
-        } else if (currentPeriod === '4-weeks') {
-            daysBack = 28;
-        } else {
-            daysBack = 7; // Default to last week
-        }
-        const startDate = new Date(today);
-        startDate.setDate(startDate.getDate() - daysBack);
-        
-        // Get the script path (e.g., /cgi-bin/tasks-reporter.cgi)
         const scriptPath = window.location.pathname.split('?')[0];
-        const apiUrl = `${scriptPath}/api/fetch-data?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(today.toISOString())}`;
-        const response = await fetch(apiUrl);
         
-        if (!response.ok) {
-            throw new Error(`Failed to fetch data: ${response.statusText} (${response.status})\nURL: ${apiUrl}`);
+        // Determine if we need progressive loading
+        if (currentPeriod === '4-weeks') {
+            // Progressive loading: fetch one week at a time
+            loadingMsg.style.display = 'none';
+            progressContainer.style.display = 'block';
+            
+            const weeklyData = [];
+            const totalWeeks = 4;
+            
+            for (let week = 0; week < totalWeeks; week++) {
+                updateProgress(week, totalWeeks, `Fetching week ${week + 1} of ${totalWeeks}...`);
+                
+                // Calculate date range for this week
+                const weekEnd = new Date(today);
+                weekEnd.setDate(weekEnd.getDate() - (week * 7));
+                
+                const weekStart = new Date(weekEnd);
+                weekStart.setDate(weekStart.getDate() - 7);
+                
+                // Fetch data for this week
+                const apiUrl = `${scriptPath}/api/fetch-data?start=${encodeURIComponent(weekStart.toISOString())}&end=${encodeURIComponent(weekEnd.toISOString())}`;
+                const response = await fetch(apiUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch week ${week + 1}: ${response.statusText} (${response.status})`);
+                }
+                
+                const weekData = await response.json();
+                weeklyData.push(weekData);
+                
+                // Update progress after successful fetch
+                updateProgress(week + 1, totalWeeks, `Week ${week + 1} of ${totalWeeks} completed`);
+            }
+            
+            // Aggregate all weekly data
+            dashboardData = aggregateData(weeklyData);
+            
+        } else {
+            // Single fetch for last-day or last-week
+            let daysBack;
+            if (currentPeriod === 'last-day') {
+                daysBack = 1;
+            } else if (currentPeriod === 'last-week') {
+                daysBack = 7;
+            } else {
+                daysBack = 7; // Default to last week
+            }
+            
+            const startDate = new Date(today);
+            startDate.setDate(startDate.getDate() - daysBack);
+            
+            const apiUrl = `${scriptPath}/api/fetch-data?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(today.toISOString())}`;
+            const response = await fetch(apiUrl);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch data: ${response.statusText} (${response.status})\nURL: ${apiUrl}`);
+            }
+            
+            dashboardData = await response.json();
         }
-        
-        dashboardData = await response.json();
         
         // Hide loading, show main content
         loadingMsg.style.display = 'none';
+        progressContainer.style.display = 'none';
         document.getElementById('fetch-section').style.display = 'none';
         mainContent.style.display = 'block';
         
@@ -515,6 +609,7 @@ async function fetchData() {
         errorMsg.textContent = `Error: ${error.message}`;
         errorMsg.style.display = 'block';
         loadingMsg.style.display = 'none';
+        progressContainer.style.display = 'none';
         fetchBtn.disabled = false;
     }
 }
