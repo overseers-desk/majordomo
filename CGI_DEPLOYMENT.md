@@ -110,14 +110,14 @@ https://yourdomain.com/cgi-bin/tasks-reporter.cgi?period=last-day
 
 **⚠️ IMPORTANT - Testing with last 24 hours:**
 - Always test with `?period=last-day` (last 24 hours) - it's much faster (seconds vs minutes)
-- Testing with `last-week` or `last-month` can take several minutes due to Google API calls
+- Testing with `last-week` or `4-weeks` can take several minutes due to Google API calls
 - The API fetches data from all Google Spaces for the entire period
 
 Other available periods:
 ```
 https://yourdomain.com/cgi-bin/tasks-reporter.cgi?period=last-day    ← Use this for testing!
 https://yourdomain.com/cgi-bin/tasks-reporter.cgi?period=last-week
-https://yourdomain.com/cgi-bin/tasks-reporter.cgi?period=last-month
+https://yourdomain.com/cgi-bin/tasks-reporter.cgi?period=4-weeks
 ```
 
 ## Complete Deployment Example (weiwu.au)
@@ -213,14 +213,14 @@ Your application will respond to these URLs:
 /cgi-bin/tasks-reporter.cgi                → Dashboard (last week)
 /cgi-bin/tasks-reporter.cgi/last-day       → Dashboard (last 24 hours)
 /cgi-bin/tasks-reporter.cgi/last-week      → Dashboard (last week)
-/cgi-bin/tasks-reporter.cgi/last-month     → Dashboard (last month)
+/cgi-bin/tasks-reporter.cgi/4-weeks        → Dashboard (4 weeks)
 /cgi-bin/tasks-reporter.cgi/api/fetch-data/last-week  → API endpoint
 ```
 
 Example for weiwu.au:
 ```
 https://weiwu.au/cgi-bin/tasks-reporter.cgi
-https://weiwu.au/cgi-bin/tasks-reporter.cgi/last-month
+https://weiwu.au/cgi-bin/tasks-reporter.cgi/4-weeks
 ```
 
 ## Security Considerations

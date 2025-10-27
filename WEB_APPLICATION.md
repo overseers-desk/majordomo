@@ -9,7 +9,7 @@ The web application provides a visual performance dashboard that displays task m
 - View task assignments, completions, and creations across multiple spaces
 - Filter by people and spaces using interactive checkboxes
 - Drill down into individual tasks by clicking on the matrix numbers
-- Track performance over different time periods (last day, last week, last month)
+- Track performance over different time periods (last day, last week, 4 weeks)
 
 ## Running the Web Application
 
@@ -69,7 +69,7 @@ The output shows space IDs (like `spaces/AAAAMj0BPws`) paired with their display
 Click on the time period tabs at the top:
 - **Last Day**: Shows tasks from the past 24 hours
 - **Last Week**: Shows tasks from the past 7 days (default)
-- **Last Month**: Shows tasks from the past 30 days
+- **4 Weeks**: Shows tasks from the past 28 days
 
 ### 2. Fetch Data
 
@@ -140,7 +140,7 @@ These preferences persist for 30 days and are saved whenever you change checkbox
 
 **Performance is slow**
 - Consider excluding inactive or irrelevant spaces in `.htaccess` IGNORE_SPACES
-- Use shorter time periods (Last Day instead of Last Month)
+- Use shorter time periods (Last Day instead of 4 Weeks)
 - The initial data fetch can take time with many spaces; this is normal
 
 ## API Rate Limits

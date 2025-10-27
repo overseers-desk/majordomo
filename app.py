@@ -28,7 +28,7 @@ def dashboard():
     period = request.args.get('period', 'last-week')
     
     # Validate period
-    if period not in ['last-day', 'last-week', 'last-month']:
+    if period not in ['last-day', 'last-week', '4-weeks']:
         period = 'last-week'
     
     # Just pass period to template, NO API calls
