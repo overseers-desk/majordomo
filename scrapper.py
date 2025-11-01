@@ -587,17 +587,14 @@ def filter_tasks(tasks: List[Dict], people: List[str], spaces: List[str]) -> Lis
             filtered_tasks.append(task)
     return filtered_tasks
 
-def generate_report(report: List[Dict], start_date: str, end_date: str, filename: str = None):
+def generate_report(report: List[Dict], start_date: str, end_date: str, filename: str):
     """Generate and save the task report as a CSV file."""
     # Convert dates to ISO format for display
     start_iso = datetime.fromisoformat(start_date.replace('Z', '')).strftime('%Y-%m-%d')
     end_iso = datetime.fromisoformat(end_date.replace('Z', '')).strftime('%Y-%m-%d')
     
-    # Use provided filename or generate default
-    if filename:
-        file_name = filename
-    else:
-        file_name = f'task_report_{start_iso}_{end_iso}.csv'
+    # Use the provided filename
+    file_name = filename
     
     # Save report using our csv-based function
     save_to_csv(report, file_name)
@@ -1027,21 +1024,14 @@ def export_messages(service, space_name: str, start_date: str, end_date: str, ou
             }
             formatted_messages.append(formatted_message)
         
-        # Use provided filename or generate default
+        # Save to the provided filename or display in terminal
         if filename:
             save_data(formatted_messages, filename, output_format.lower())
         else:
-            # Generate filename with space name and date range
-            start_iso = datetime.fromisoformat(start_date.replace('Z', '')).strftime('%Y-%m-%d')
-            end_iso = datetime.fromisoformat(end_date.replace('Z', '')).strftime('%Y-%m-%d')
-            space_display_name = space_name.split('/')[-1] if '/' in space_name else space_name
-            
-            if output_format.lower() == "csv":
-                default_filename = f'messages_export_{space_display_name}_{start_iso}_{end_iso}.csv'
-            else:  # Default to JSON
-                default_filename = f'messages_export_{space_display_name}_{start_iso}_{end_iso}.json'
-            
-            save_data(formatted_messages, default_filename, output_format.lower())
+            # Display messages without saving if no filename provided
+            import json
+            print(json.dumps(formatted_messages, indent=4, ensure_ascii=False))
+            logging.info(f"Found {len(formatted_messages)} messages (displayed, not saved)")
             
     except Exception as e:
         logging.error(f"Error exporting messages from space {space_name}: {e}")
@@ -1538,7 +1528,7 @@ def main():
         
         if args.json:
             save_data(spaces, args.json, "json")
-        if args.csv:
+        elif args.csv:
             save_data(spaces, args.csv, "csv")
         else:
             # Output space ID and space name in format "space id : space name"
@@ -1561,7 +1551,7 @@ def main():
         people = get_people(service, spaces, date_start, date_end)
         if args.json:
             save_data(people, args.json, "json")
-        if args.csv:
+        elif args.csv:
             save_data(people, args.csv, "csv")
         else:
             print(json.dumps(people, indent=4, ensure_ascii=False))
@@ -1630,7 +1620,7 @@ def main():
                 # Report is already a list of dicts, ready for JSON output
                 save_data(report, args.json, "json")
                 logging.info(f"Report saved as {args.json}")
-            if args.csv:
+            elif args.csv:
                 # Use specified CSV filename for report generation
                 generate_report(report, date_start, date_end, args.csv)
             else:
@@ -1704,7 +1694,7 @@ def main():
             if args.json:
                 save_data(all_tasks, args.json, "json")
                 logging.info(f"Saved {len(all_tasks)} tasks to {args.json}")
-            if args.csv:
+            elif args.csv:
                 save_data(all_tasks, args.csv, "csv")
                 logging.info(f"Saved {len(all_tasks)} tasks to {args.csv}")
             else:
@@ -1749,7 +1739,7 @@ def main():
             if args.json:
                 save_data(formatted_tasks, args.json, "json")
                 logging.info(f"Saved {len(formatted_tasks)} tasks to {args.json}")
-            if args.csv:
+            elif args.csv:
                 save_data(formatted_tasks, args.csv, "csv")
                 logging.info(f"Saved {len(formatted_tasks)} tasks to {args.csv}")
             else:
@@ -1777,31 +1767,11 @@ def main():
             # Export from single space
             if args.json:
                 export_messages(service, space_name, date_start, date_end, "json", args.json)
-            if args.csv:
+            elif args.csv:
                 export_messages(service, space_name, date_start, date_end, "csv", args.csv)
             else:
                 # Just display the messages without saving
-                messages = get_messages_for_space(service, space_name, date_start, date_end)
-                if messages:
-                    formatted_messages = []
-                    for message in messages:
-                        formatted_message = {
-                            'id': message.get('name', ''),
-                            'text': message.get('text', ''),
-                            'sender': message.get('sender', {}).get('displayName', 'Unknown'),
-                            'sender_id': message.get('sender', {}).get('name', ''),
-                            'space': space_name,
-                            'created_at': message.get('createTime', ''),
-                            'thread_name': message.get('thread', {}).get('name', ''),
-                            'message_type': message.get('messageType', ''),
-                            'deleted': message.get('deleted', False),
-                            'last_updated': message.get('lastUpdateTime', message.get('createTime', ''))
-                        }
-                        formatted_messages.append(formatted_message)
-                    print(json.dumps(formatted_messages, indent=4, ensure_ascii=False))
-                    logging.info(f"Found {len(formatted_messages)} messages (not saved)")
-                else:
-                    logging.info("No messages found in the specified space and date range.")
+                export_messages(service, space_name, date_start, date_end, "json", None)
         
         elif args.all_spaces:
             # Export from all public spaces
@@ -1859,31 +1829,11 @@ def main():
             # Export from selected space
             if args.json:
                 export_messages(service, space_name, date_start, date_end, "json", args.json)
-            if args.csv:
+            elif args.csv:
                 export_messages(service, space_name, date_start, date_end, "csv", args.csv)
             else:
                 # Just display the messages without saving
-                messages = get_messages_for_space(service, space_name, date_start, date_end)
-                if messages:
-                    formatted_messages = []
-                    for message in messages:
-                        formatted_message = {
-                            'id': message.get('name', ''),
-                            'text': message.get('text', ''),
-                            'sender': message.get('sender', {}).get('displayName', 'Unknown'),
-                            'sender_id': message.get('sender', {}).get('name', ''),
-                            'space': space_name,
-                            'created_at': message.get('createTime', ''),
-                            'thread_name': message.get('thread', {}).get('name', ''),
-                            'message_type': message.get('messageType', ''),
-                            'deleted': message.get('deleted', False),
-                            'last_updated': message.get('lastUpdateTime', message.get('createTime', ''))
-                        }
-                        formatted_messages.append(formatted_message)
-                    print(json.dumps(formatted_messages, indent=4, ensure_ascii=False))
-                    logging.info(f"Found {len(formatted_messages)} messages (not saved)")
-                else:
-                    logging.info("No messages found in the specified space and date range.")
+                export_messages(service, space_name, date_start, date_end, "json", None)
 
     elif args.command == "thread":
         # Retrieve messages from a specific thread
@@ -1919,7 +1869,7 @@ def main():
                 if args.json:
                     save_data(formatted_messages, args.json, "json")
                     logging.info(f"Saved {len(formatted_messages)} messages to {args.json}")
-                if args.csv:
+                elif args.csv:
                     save_data(formatted_messages, args.csv, "csv")
                     logging.info(f"Saved {len(formatted_messages)} messages to {args.csv}")
                 else:
