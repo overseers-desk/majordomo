@@ -6,15 +6,13 @@ For information about using and configuring the web application, see `WEB_APPLIC
 
 ## Files for CGI Deployment
 
-- **tasks-reporter.cgi** - Main CGI script
-- **app.py** - Flask application
-- **google_chat_reporter.py** - Core functionality
-- **.htaccess** - Apache configuration (authentication and space filtering)
-- **token.json** - Google OAuth credentials
+This is a Flask-based CGI application. All application files from the repository must be deployed to the server.
+
+**Critical files that must be present:**
+- **token.json** - Google OAuth credentials (must be generated first using `python3 google_chat_reporter.py config`)
 - **client_secret.json** - Google API credentials
-- **requirements.txt** - Python dependencies
-- **static/** - CSS and JavaScript files
-- **templates/** - HTML templates
+
+These credential files are not in the repository and must be configured separately.
 
 ## Deployment Steps
 
@@ -44,34 +42,11 @@ Edit the first line of `tasks-reporter.cgi` to match your server's Python:
 #!/opt/alt/python38/bin/python3.8
 ```
 
-### 4. Upload to Server
+### 4. Deploy Files to Server
 
-Upload all files to your server's cgi-bin directory:
+Ensure all application files are present in your server's cgi-bin directory using your preferred deployment method.
 
-```bash
-# Using SCP
-scp tasks-reporter.cgi app.py google_chat_reporter.py .htaccess token.json client_secret.json requirements.txt username@yourserver.com:~/public_html/cgi-bin/
-
-# Upload directories
-scp -r static templates username@yourserver.com:~/public_html/cgi-bin/
-```
-
-**Final server structure:**
-```
-/home/username/public_html/cgi-bin/
-  ├── tasks-reporter.cgi
-  ├── app.py
-  ├── google_chat_reporter.py
-  ├── .htaccess
-  ├── token.json
-  ├── client_secret.json
-  ├── requirements.txt
-  ├── static/
-  │   ├── style.css
-  │   └── dashboard.js
-  └── templates/
-      └── dashboard.html
-```
+Refer to the "Files for CGI Deployment" section above for critical files that must be present.
 
 ### 5. Set File Permissions
 
@@ -120,39 +95,20 @@ https://yourdomain.com/cgi-bin/tasks-reporter.cgi?period=last-week
 https://yourdomain.com/cgi-bin/tasks-reporter.cgi?period=4-weeks
 ```
 
-## Complete Deployment Example (weiwu.au)
+## Updating the Deployment
 
-Here's the complete deployment that was successfully done for weiwu.au:
+To update your deployment after making code changes:
 
-```bash
-# 1. Rename locally
-cd /home/user/Google-Spaces-Tasks-reporter
-mv app.cgi tasks-reporter.cgi
-
-# 2. Check Python version on server
-ssh weiwuida@weiwu.au "ls -la /opt/alt/python38/bin/python3.8"
-# Output: /opt/alt/python38/bin/python3.8
-
-# 3. Ensure correct shebang in tasks-reporter.cgi
-# First line should be: #!/opt/alt/python38/bin/python3.8
-
-# 4. Upload files
-scp tasks-reporter.cgi app.py google_chat_reporter.py .htaccess token.json client_secret.json requirements.txt weiwuida@weiwu.au:~/public_html/cgi-bin/
-scp -r static templates weiwuida@weiwu.au:~/public_html/cgi-bin/
-
-# 5. Set permissions
-ssh weiwuida@weiwu.au "cd ~/public_html/cgi-bin && chmod +x tasks-reporter.cgi && chmod 644 *.py *.json *.txt && chmod 755 static templates"
-
-# 6. Bootstrap pip
-ssh weiwuida@weiwu.au "curl -sS https://bootstrap.pypa.io/pip/3.8/get-pip.py | /opt/alt/python38/bin/python3.8 - --user"
-
-# 7. Install dependencies
-ssh weiwuida@weiwu.au "~/.local/bin/pip3.8 install --user -r ~/public_html/cgi-bin/requirements.txt"
-ssh weiwuida@weiwu.au "~/.local/bin/pip3.8 install --user Flask==3.0.0"
-
-# 8. Test (use last-day for faster testing!)
-curl -sL "https://weiwu.au/cgi-bin/tasks-reporter.cgi?period=last-day" | head -20
-```
+1. Ensure the updated files are present on the server
+2. If `requirements.txt` changed, reinstall dependencies:
+   ```bash
+   ssh username@yourserver.com "~/.local/bin/pip3.8 install --user -r ~/public_html/cgi-bin/requirements.txt"
+   ```
+3. If file permissions need resetting:
+   ```bash
+   ssh username@yourserver.com "cd ~/public_html/cgi-bin && chmod +x tasks-reporter.cgi && chmod 644 *.py *.json *.txt && chmod 755 static templates"
+   ```
+4. Test the updated deployment
 
 ## Troubleshooting
 
@@ -192,7 +148,7 @@ If OAuth fails:
    ```bash
    python3 google_chat_reporter.py config
    ```
-2. Upload the generated `token.json` to server
+2. Ensure the generated `token.json` is present on the server
 3. Check file permissions (should be 644 and readable by web server user)
 4. Google OAuth tokens may expire - regenerate if needed
 
@@ -215,12 +171,6 @@ Your application will respond to these URLs:
 /cgi-bin/tasks-reporter.cgi/last-week      → Dashboard (last week)
 /cgi-bin/tasks-reporter.cgi/4-weeks        → Dashboard (4 weeks)
 /cgi-bin/tasks-reporter.cgi/api/fetch-data/last-week  → API endpoint
-```
-
-Example for weiwu.au:
-```
-https://weiwu.au/cgi-bin/tasks-reporter.cgi
-https://weiwu.au/cgi-bin/tasks-reporter.cgi/4-weeks
 ```
 
 ## Security Considerations
