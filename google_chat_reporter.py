@@ -1308,7 +1308,7 @@ def main():
         "config", 
         help="Configure authentication token",
         description="Configure or refresh your Google API authentication token. Required for first-time use and when tokens expire.",
-        epilog="Example: python3 scrapper.py config"
+        epilog="Example: python3 google_chat_reporter.py config"
     )
 
     # Spaces command
@@ -1317,11 +1317,11 @@ def main():
         help="Retrieve a list of spaces",
         description="Retrieve a comprehensive list of Google Chat spaces accessible to your account. By default, only shows public spaces.",
         epilog="""Examples:
-  python3 scrapper.py spaces                           # List all public spaces
-  python3 scrapper.py spaces --json spaces.json       # Save to JSON file
-  python3 scrapper.py spaces --csv spaces.csv         # Save to CSV file
-  python3 scrapper.py spaces --include-direct-messages # Include direct messages
-  python3 scrapper.py spaces --all                    # Show all spaces and DMs"""
+  python3 google_chat_reporter.py spaces                           # List all public spaces
+  python3 google_chat_reporter.py spaces --json spaces.json       # Save to JSON file
+  python3 google_chat_reporter.py spaces --csv spaces.csv         # Save to CSV file
+  python3 google_chat_reporter.py spaces --include-direct-messages # Include direct messages
+  python3 google_chat_reporter.py spaces --all                    # Show all spaces and DMs"""
     )
     spaces_parser.add_argument("--json", metavar="FILE", 
                               help="Save the list of spaces to specified JSON file (preserves full data structure)")
@@ -1338,12 +1338,12 @@ def main():
         help="Retrieve a list of people",
         description="Extract information about individuals found within the specified spaces during a time period. Defaults to the previous calendar month if no date range is specified.",
         epilog="""Examples:
-  python3 scrapper.py people                                        # Previous month
-  python3 scrapper.py people --past-week                           # Past 7 days
-  python3 scrapper.py people --past-month                          # Past 30 days
-  python3 scrapper.py people --date-start 2024-01-01 --date-end 2024-01-31  # Custom range
-  python3 scrapper.py people --json people.json                    # Save to JSON
-  python3 scrapper.py people --csv people.csv                      # Save to CSV"""
+  python3 google_chat_reporter.py people                                        # Previous month
+  python3 google_chat_reporter.py people --past-week                           # Past 7 days
+  python3 google_chat_reporter.py people --past-month                          # Past 30 days
+  python3 google_chat_reporter.py people --date-start 2024-01-01 --date-end 2024-01-31  # Custom range
+  python3 google_chat_reporter.py people --json people.json                    # Save to JSON
+  python3 google_chat_reporter.py people --csv people.csv                      # Save to CSV"""
     )
     people_parser.add_argument("--date-start", metavar="YYYY-MM-DD",
                               help="Start date in ISO format (e.g., 2024-01-15). Must be used with --date-end")
@@ -1366,11 +1366,11 @@ def main():
         help="Generate a tasks report",
         description="Generate comprehensive task completion reports with efficiency metrics. Analyses task completion rates and exports results for further analysis. Defaults to the previous calendar month if no date range is specified.",
         epilog="""Examples:
-  python3 scrapper.py report                                       # Previous month report
-  python3 scrapper.py report --past-week --csv weekly_report.csv  # Past week to CSV
-  python3 scrapper.py report --past-month --json monthly.json     # Past month to JSON
-  python3 scrapper.py report --assignee "*ÐS" --drill-down        # Filter by name pattern with drill-down
-  python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv custom.csv"""
+  python3 google_chat_reporter.py report                                       # Previous month report
+  python3 google_chat_reporter.py report --past-week --csv weekly_report.csv  # Past week to CSV
+  python3 google_chat_reporter.py report --past-month --json monthly.json     # Past month to JSON
+  python3 google_chat_reporter.py report --assignee "*ÐS" --drill-down        # Filter by name pattern with drill-down
+  python3 google_chat_reporter.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv custom.csv"""
     )
     report_parser.add_argument("--assignee", metavar="PATTERN",
                               help="Filter report by assignee name. Supports glob patterns (e.g., '*ÐS' to match names ending with ÐS, '*john*' to match any john)")
@@ -1397,12 +1397,12 @@ def main():
         help="Retrieve task information from spaces",
         description="Retrieve detailed task information from Google Chat spaces. Can filter by assignee and supports both basic context and complete thread information. Defaults to the previous calendar month if no date range is specified.",
         epilog="""Examples:
-  python3 scrapper.py tasks                                        # All tasks, previous month
-  python3 scrapper.py tasks --assignee "John Doe"                 # Tasks for specific person
-  python3 scrapper.py tasks --assignee "*john*"                   # Tasks matching pattern
-  python3 scrapper.py tasks --space "spaces/ABC123"               # Tasks from specific space
-  python3 scrapper.py tasks --past-week --with-threads --json tasks.json  # Past week with full threads
-  python3 scrapper.py tasks --past-month --csv tasks.csv          # Past month to CSV"""
+  python3 google_chat_reporter.py tasks                                        # All tasks, previous month
+  python3 google_chat_reporter.py tasks --assignee "John Doe"                 # Tasks for specific person
+  python3 google_chat_reporter.py tasks --assignee "*john*"                   # Tasks matching pattern
+  python3 google_chat_reporter.py tasks --space "spaces/ABC123"               # Tasks from specific space
+  python3 google_chat_reporter.py tasks --past-week --with-threads --json tasks.json  # Past week with full threads
+  python3 google_chat_reporter.py tasks --past-month --csv tasks.csv          # Past month to CSV"""
     )
     tasks_parser.add_argument("--assignee", metavar="NAME", 
                              help="Filter tasks by assignee name. Supports exact match (e.g., 'Priyanka D') or glob patterns with wildcards (e.g., '*riyanka*', '?riyanka D*')")
@@ -1433,12 +1433,12 @@ def main():
         help="Export chat messages from spaces or direct messages",
         description="Export all chat messages from Google Chat spaces or direct message conversations. Supports exporting from specific spaces, all public spaces, all direct messages, or everything. Defaults to the previous calendar month if no date range is specified.",
         epilog="""Examples:
-  python3 scrapper.py messages                                     # Interactive space selection
-  python3 scrapper.py messages --space "spaces/ABC123" --json     # Specific space to JSON
-  python3 scrapper.py messages --all-spaces --csv                 # All public spaces to CSV
-  python3 scrapper.py messages --all-direct-messages --json       # All DMs to JSON
-  python3 scrapper.py messages --all --csv                        # Everything to CSV
-  python3 scrapper.py messages --past-week --json weekly_msgs.json # Past week to JSON"""
+  python3 google_chat_reporter.py messages                                     # Interactive space selection
+  python3 google_chat_reporter.py messages --space "spaces/ABC123" --json     # Specific space to JSON
+  python3 google_chat_reporter.py messages --all-spaces --csv                 # All public spaces to CSV
+  python3 google_chat_reporter.py messages --all-direct-messages --json       # All DMs to JSON
+  python3 google_chat_reporter.py messages --all --csv                        # Everything to CSV
+  python3 google_chat_reporter.py messages --past-week --json weekly_msgs.json # Past week to JSON"""
     )
     
     # Mutually exclusive group for space selection
@@ -1473,9 +1473,9 @@ def main():
         help="Retrieve messages from a specific thread",
         description="Retrieve all messages from a specific thread within a Google Chat space. Useful for detailed conversation analysis or when you need to examine the complete context of a particular discussion thread.",
         epilog="""Examples:
-  python3 scrapper.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789" --json
-  python3 scrapper.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789" --csv
-  python3 scrapper.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789"  # Display only"""
+  python3 google_chat_reporter.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789" --json
+  python3 google_chat_reporter.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789" --csv
+  python3 google_chat_reporter.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789"  # Display only"""
     )
     thread_parser.add_argument("--space", metavar="SPACE_ID", required=True, 
                               help="Space ID containing the thread (e.g., 'spaces/ABC123')")
@@ -1652,8 +1652,8 @@ def main():
             logging.error("❌ CSV format is not compatible with complete thread messages due to nested data structure.")
             logging.error("💡 Suggestion: Use --json instead for complete thread messages, or use CSV for task summaries.")
             logging.error("   Examples:")
-            logging.error("     python3 scrapper.py tasks --with-threads --json")
-            logging.error("     python3 scrapper.py tasks --csv  # includes task context by default")
+            logging.error("     python3 google_chat_reporter.py tasks --with-threads --json")
+            logging.error("     python3 google_chat_reporter.py tasks --csv  # includes task context by default")
             return
         
         # Determine thread mode: always include basic context, optionally include full threads

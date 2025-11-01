@@ -58,7 +58,7 @@ The script provides a command-line interface with several subcommands for differ
 ### Command Overview
 
 ```bash
-python3 scrapper.py [command] [options]
+python3 google_chat_reporter.py [command] [options]
 ```
 
 **Available Commands:**
@@ -74,7 +74,7 @@ python3 scrapper.py [command] [options]
 Before using the script, you'll need to configure your authentication token:
 
 ```bash
-python3 scrapper.py config
+python3 google_chat_reporter.py config
 ```
 
 This command will prompt for Google account authentication and generate user credentials stored in `token.json`. This file enables subsequent runs without repeated authentication prompts.
@@ -101,50 +101,50 @@ Advanced filtering options:
 
 #### Initial Setup
 ```bash
-python3 scrapper.py config            # Configure authentication (first time)
-python3 scrapper.py spaces --json spaces.json     # Get spaces list and save for reuse
+python3 google_chat_reporter.py config            # Configure authentication (first time)
+python3 google_chat_reporter.py spaces --json spaces.json     # Get spaces list and save for reuse
 ```
 
 #### Basic Reports
 ```bash
-python3 scrapper.py report --past-week       # Standard weekly report (display in terminal)
-python3 scrapper.py report --past-month      # Monthly report (display in terminal)
-python3 scrapper.py report --csv report.csv  # Save to CSV
+python3 google_chat_reporter.py report --past-week       # Standard weekly report (display in terminal)
+python3 google_chat_reporter.py report --past-month      # Monthly report (display in terminal)
+python3 google_chat_reporter.py report --csv report.csv  # Save to CSV
 ```
 
 #### Filtered Reports
 ```bash
 # Filter by name pattern
-python3 scrapper.py report --assignee "*Edwards" --past-month
-python3 scrapper.py report --assignee "John*" --past-week
+python3 google_chat_reporter.py report --assignee "*Edwards" --past-month
+python3 google_chat_reporter.py report --assignee "John*" --past-week
 
 # Drill down into per-person details
-python3 scrapper.py report --past-week --drill-down
+python3 google_chat_reporter.py report --past-week --drill-down
 
 # Combined: filtered + drill-down
-python3 scrapper.py report --assignee "*ÐS" --drill-down --past-month
+python3 google_chat_reporter.py report --assignee "*ÐS" --drill-down --past-month
 ```
 
 #### Task Queries
 ```bash
-python3 scrapper.py tasks --past-week --json tasks.json           # Get recent tasks
-python3 scrapper.py tasks --assignee "John*" --csv tasks.csv     # Filter by assignee
+python3 google_chat_reporter.py tasks --past-week --json tasks.json           # Get recent tasks
+python3 google_chat_reporter.py tasks --assignee "John*" --csv tasks.csv     # Filter by assignee
 ```
 
 #### Message Export
 ```bash
-python3 scrapper.py messages --space "spaces/ABC123" --past-week --json messages.json
-python3 scrapper.py messages --all-spaces --csv messages.csv        # All spaces
-python3 scrapper.py messages                           # Interactive selection (display in terminal)
+python3 google_chat_reporter.py messages --space "spaces/ABC123" --past-week --json messages.json
+python3 google_chat_reporter.py messages --all-spaces --csv messages.csv        # All spaces
+python3 google_chat_reporter.py messages                           # Interactive selection (display in terminal)
 ```
 
 #### Advanced Usage
 ```bash
 # Custom date range
-python3 scrapper.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv monthly.csv
+python3 google_chat_reporter.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv monthly.csv
 
 # Drill-down report with JSON export
-python3 scrapper.py report --assignee "Team*" --drill-down --json detailed.json
+python3 google_chat_reporter.py report --assignee "Team*" --drill-down --json detailed.json
 ```
 
 Use `--help` with any command for detailed parameter information.
