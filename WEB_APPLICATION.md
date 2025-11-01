@@ -53,11 +53,11 @@ To discover which spaces are available and find their IDs for the configuration:
 
 ```bash
 # List all spaces with their IDs and names
-python3 scrapper.py spaces
+python3 google_chat_reporter.py spaces
 
 # Save to a file for reference
-python3 scrapper.py spaces --json spaces.json
-python3 scrapper.py spaces --csv spaces.csv
+python3 google_chat_reporter.py spaces --json spaces.json
+python3 google_chat_reporter.py spaces --csv spaces.csv
 ```
 
 The output shows space IDs (like `spaces/AAAAMj0BPws`) paired with their display names, making it easy to identify which spaces to exclude in `.htaccess`.

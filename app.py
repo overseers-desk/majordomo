@@ -7,7 +7,7 @@ functionality while preserving all command-line features.
 """
 
 from flask import Flask, render_template, jsonify, request
-from scrapper import (
+from google_chat_reporter import (
     get_credentials, get_spaces, get_tasks,
     get_past_day_dates, get_past_week_dates, get_past_month_dates
 )

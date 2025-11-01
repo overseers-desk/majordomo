@@ -8,7 +8,7 @@ For information about using and configuring the web application, see `WEB_APPLIC
 
 - **tasks-reporter.cgi** - Main CGI script
 - **app.py** - Flask application
-- **scrapper.py** - Core functionality
+- **google_chat_reporter.py** - Core functionality
 - **.htaccess** - Apache configuration (authentication and space filtering)
 - **token.json** - Google OAuth credentials
 - **client_secret.json** - Google API credentials
@@ -50,7 +50,7 @@ Upload all files to your server's cgi-bin directory:
 
 ```bash
 # Using SCP
-scp tasks-reporter.cgi app.py scrapper.py .htaccess token.json client_secret.json requirements.txt username@yourserver.com:~/public_html/cgi-bin/
+scp tasks-reporter.cgi app.py google_chat_reporter.py .htaccess token.json client_secret.json requirements.txt username@yourserver.com:~/public_html/cgi-bin/
 
 # Upload directories
 scp -r static templates username@yourserver.com:~/public_html/cgi-bin/
@@ -61,7 +61,7 @@ scp -r static templates username@yourserver.com:~/public_html/cgi-bin/
 /home/username/public_html/cgi-bin/
   ├── tasks-reporter.cgi
   ├── app.py
-  ├── scrapper.py
+  ├── google_chat_reporter.py
   ├── .htaccess
   ├── token.json
   ├── client_secret.json
@@ -137,7 +137,7 @@ ssh weiwuida@weiwu.au "ls -la /opt/alt/python38/bin/python3.8"
 # First line should be: #!/opt/alt/python38/bin/python3.8
 
 # 4. Upload files
-scp tasks-reporter.cgi app.py scrapper.py .htaccess token.json client_secret.json requirements.txt weiwuida@weiwu.au:~/public_html/cgi-bin/
+scp tasks-reporter.cgi app.py google_chat_reporter.py .htaccess token.json client_secret.json requirements.txt weiwuida@weiwu.au:~/public_html/cgi-bin/
 scp -r static templates weiwuida@weiwu.au:~/public_html/cgi-bin/
 
 # 5. Set permissions
@@ -190,7 +190,7 @@ If OAuth fails:
 
 1. Ensure `token.json` was generated locally first:
    ```bash
-   python3 scrapper.py config
+   python3 google_chat_reporter.py config
    ```
 2. Upload the generated `token.json` to server
 3. Check file permissions (should be 644 and readable by web server user)
