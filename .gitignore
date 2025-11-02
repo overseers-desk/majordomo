@@ -1,3 +1,7 @@
 # Python cache files
 *.pyc
 __pycache__/
+
+# HTTP Basic Authentication files
+.htaccess
+.htpasswd
