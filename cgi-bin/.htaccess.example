@@ -1,0 +1,19 @@
+# OPTIONAL: Password protect tasks-reporter.cgi
+# This is deployment-specific - copy to .htaccess and customize for your server
+
+# AuthType Basic
+# AuthName "Tasks Reporter Access"
+# AuthUserFile /path/to/your/cgi-bin/.htpasswd
+#
+# <Files "tasks-reporter.cgi">
+#     Require valid-user
+# </Files>
+
+# Space filtering configuration for the web dashboard
+# Format: JSON array of space IDs (without "spaces/" prefix)
+SetEnv IGNORE_SPACES '[]'
+
+# Assignee filtering configuration
+# Format: JSON array of display names
+SetEnv IGNORE_ASSIGNEE '[]'
+

@@ -174,6 +174,19 @@ SetEnv IGNORE_SPACES '["AAAAMj0BPws", "AAAAfPFB3gs"]'
 - Space IDs should be listed WITHOUT the `spaces/` prefix (just the ID part)
 - You can add comments above to document what each space is
 
+### Log Configuration
+
+Logging priority: `LOG_DIR` env var → `../logs` directory → console only
+
+**CGI deployment:**
+```bash
+mkdir -p /home/username/logs
+# In .htaccess:
+SetEnv LOG_DIR /home/username/logs
+```
+
+Or create `../logs` relative to application (auto-detected). Keeps logs outside web-accessible directories.
+
 ### Finding Space IDs
 
 To discover which spaces are available and find their IDs for the configuration:
@@ -335,11 +348,29 @@ The Google Chat API has rate limits. If you encounter rate limit errors:
 
 ### CGI Deployment Security
 
-**Protect sensitive files:**
-- Config files in the `config/` directory should have restricted permissions (644)
-- The cgi-bin directory typically isn't directly web-accessible, but ensure proper permissions
+`.htaccess` protects sensitive files:
+```apache
+# Deny access to Python source files
+<FilesMatch "\.(py)$">
+    Require all denied
+</FilesMatch>
 
-**File permissions summary:**
+# Protect config directory and all its contents
+# Use Files directive to deny all files in config directory
+<Files "config/*">
+    Require all denied
+</Files>
+```
+
+**Test protection** (must fail):
+```
+https://yourdomain.com/cgi-bin/config/token.json
+https://yourdomain.com/app.py
+```
+
+If accessible, check: Apache has `AllowOverride All`, `.htaccess` is in same directory (644 permissions).
+
+**File permissions:**
 ```bash
 chmod 755 tasks-reporter.cgi   # Executable CGI script
 chmod 644 *.py *.json *.txt    # Readable but not executable

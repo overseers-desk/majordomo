@@ -1,0 +1,15 @@
+# Security configuration for CGI deployment
+# When deploying to Apache with files in document root, this protects sensitive files
+# Non-Apache deployments (WSGI, Gunicorn, Docker) will ignore this file
+
+# Deny access to Python source files
+<FilesMatch "\.(py)$">
+    Require all denied
+</FilesMatch>
+
+# Protect config directory and all its contents
+# Use Files directive to deny all files in config directory
+<Files "config/*">
+    Require all denied
+</Files>
+
