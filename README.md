@@ -68,11 +68,12 @@ python3 google_chat_reporter.py [command] [options]
 
 **Available Commands:**
 - `config` - Configure authentication token
-- `spaces` - Retrieve a list of spaces
-- `people` - Retrieve a list of people
-- `report` - Generate a tasks report
-- `tasks` - Retrieve task information from spaces
-- `messages` - Export chat messages from a specific space
+- `spaces` - List accessible Google Chat spaces
+- `people` - List people found in spaces within a date range
+- `tasks` - Export detailed task data with thread context
+- `stats` - Generate summary statistics (completion rates per assignee)
+- `messages` - Export raw chat messages (auxiliary - not task-specific)
+- `thread` - Retrieve messages from a specific thread (auxiliary)
 
 ### Initial Setup
 
@@ -88,16 +89,16 @@ This command will prompt for Google account authentication and generate user cre
 
 **Config Command**: Sets up or refreshes your Google API authentication token. This is required for first-time use and when tokens expire.
 
-**Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--json` flag to persist the results to `spaces.json` or `--csv` to save as `spaces.csv` for future reference.
+**Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--json` flag to save results to a file for reference, or `--csv` for spreadsheet analysis.
 
-**People Command**: Extracts information about individuals found within the specified spaces. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be optionally saved to `people.json` using `--json` or `people.csv` using `--csv`.
+**People Command**: Extracts information about individuals found within the specified spaces. Supports date filtering. Results can be saved using `--json` or `--csv`.
 
-**Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be saved to `tasks.json` using `--json`.
+**Tasks Command**: Exports detailed individual task records from spaces, including status, assignee, timestamps, and thread context. Use this command when specific task details are needed. Supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be saved using `--json` or `--csv`.
 
-**Report Command**: Generates comprehensive task completion reports based on collected data. This command analyses task completion rates, calculates efficiency metrics, and exports results to CSV format using `--csv filename.csv` or to JSON format using `--json filename.json`. When no output file is specified, the report is displayed in the terminal. The command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today).
+**Stats Command**: Generates aggregate task completion statistics showing tasks received, completed, and completion rates per assignee. Use this command for summary metrics; use `tasks` for detailed individual records. Exports results to CSV format using `--csv filename.csv` or to JSON format using `--json filename.json`. When no output file is specified, statistics are displayed in the terminal. Supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today).
 
-Advanced filtering options:
-- **`--assignee PATTERN`**: Filter by assignee using glob patterns (`*` = any characters, `?` = single character). Case-insensitive and Unicode-aware. Examples: `"*Edwards"` matches anyone ending with Edwards; `"Priyanka*"` matches anyone starting with Priyanka.
+Advanced filtering options for `stats`:
+- **`--assignee PATTERN`**: Filter by assignee using glob patterns (`*` = any characters, `?` = single character). Case-sensitive. Examples: `"*Edwards"` matches anyone ending with Edwards; `"Priyanka*"` matches anyone starting with Priyanka.
 - **`--drill-down`**: Drills down into per-assignee details including actual task descriptions (first thread message), tasks assigned/closed in the past week, and completion status.
 
 **Messages Command**: Exports all chat messages from a specific Google Chat space in either JSON or CSV format. This command can accept a `--space` parameter to specify the target space directly, or if no space is specified, it will present an interactive list of all available spaces for the user to choose from. The export includes comprehensive message details such as message ID, full text content, sender information, space name, creation time, last update time, thread details, message type, and deletion status. Use `--json filename.json` to save the results to a JSON file or `--csv filename.csv` to save as CSV; without either flag, messages are displayed in the terminal. The command supports efficient date filtering using Google's API with options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today), or custom date ranges with `--date-start` and `--date-end`.
@@ -106,28 +107,28 @@ Advanced filtering options:
 
 #### Initial Setup
 ```bash
-python3 google_chat_reporter.py config            # Configure authentication (first time)
-python3 google_chat_reporter.py spaces --json spaces.json     # Get spaces list and save for reuse
+python3 google_chat_reporter.py config
+python3 google_chat_reporter.py spaces
 ```
 
-#### Basic Reports
+#### Basic Statistics
 ```bash
-python3 google_chat_reporter.py report --past-week       # Standard weekly report (display in terminal)
-python3 google_chat_reporter.py report --past-month      # Monthly report (display in terminal)
-python3 google_chat_reporter.py report --csv report.csv  # Save to CSV
+python3 google_chat_reporter.py stats --past-week       # Weekly statistics (display in terminal)
+python3 google_chat_reporter.py stats --past-month      # Monthly statistics (display in terminal)
+python3 google_chat_reporter.py stats --csv stats.csv   # Save to CSV
 ```
 
-#### Filtered Reports
+#### Filtered Statistics
 ```bash
 # Filter by name pattern
-python3 google_chat_reporter.py report --assignee "*Edwards" --past-month
-python3 google_chat_reporter.py report --assignee "John*" --past-week
+python3 google_chat_reporter.py stats --assignee "*Edwards" --past-month
+python3 google_chat_reporter.py stats --assignee "John*" --past-week
 
 # Drill down into per-person details
-python3 google_chat_reporter.py report --past-week --drill-down
+python3 google_chat_reporter.py stats --past-week --drill-down
 
 # Combined: filtered + drill-down
-python3 google_chat_reporter.py report --assignee "*ÐS" --drill-down --past-month
+python3 google_chat_reporter.py stats --assignee "*ÐS" --drill-down --past-month
 ```
 
 #### Task Queries
@@ -146,10 +147,10 @@ python3 google_chat_reporter.py messages                           # Interactive
 #### Advanced Usage
 ```bash
 # Custom date range
-python3 google_chat_reporter.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv monthly.csv
+python3 google_chat_reporter.py stats --date-start 2024-01-01 --date-end 2024-01-31 --csv monthly.csv
 
-# Drill-down report with JSON export
-python3 google_chat_reporter.py report --assignee "Team*" --drill-down --json detailed.json
+# Drill-down stats with JSON export
+python3 google_chat_reporter.py stats --assignee "Team*" --drill-down --json detailed.json
 ```
 
 Use `--help` with any command for detailed parameter information.
@@ -167,15 +168,55 @@ The script provides flexible date range options across all relevant commands. Wh
 
 **Commands with Date Range Support:**
 - `people` - Extract people information with date filtering
-- `tasks` - Retrieve task information with date filtering
-- `report` - Generate task reports with date filtering
+- `tasks` - Export task data with date filtering
+- `stats` - Generate task statistics with date filtering
 - `messages` - Export messages with date filtering
 
 These date filtering options enable focused analysis of specific time periods, making it ideal for weekly reporting, monthly reporting, quarterly reviews, or targeted performance analysis. The `--past-week`, `--past-month` and `--past-year` options are particularly useful for quick analysis of recent activity without needing to calculate specific dates.
 
+### Environment Variable Configuration
+
+The tool supports filtering via environment variables for repeated usage and scripted deployments:
+
+**IGNORE_SPACES**: Blacklist specific Google Chat spaces to exclude from all operations
+- Format: JSON array of space IDs (without "spaces/" prefix)
+- Example: `export IGNORE_SPACES='["AAAAMj0BPws", "AAAAfPFB3gs"]'`
+
+**IGNORE_ASSIGNEE**: Blacklist specific people to exclude their tasks from reports
+- Format: JSON array of exact assignee names
+- Example: `export IGNORE_ASSIGNEE='["John Doe", "Jane Smith"]'`
+
+**Usage Examples:**
+
+One-time filtering:
+```bash
+IGNORE_SPACES='["AAAAMj0BPws"]' python3 google_chat_reporter.py stats --past-week
+```
+
+Persistent filtering (in shell session):
+```bash
+export IGNORE_SPACES='["AAAAMj0BPws", "AAAAfPFB3gs"]'
+export IGNORE_ASSIGNEE='["John Doe"]'
+python3 google_chat_reporter.py stats --past-week
+python3 google_chat_reporter.py tasks --past-month
+```
+
+Shell script integration:
+```bash
+#!/bin/bash
+export IGNORE_SPACES='["AAAAMj0BPws"]'
+export IGNORE_ASSIGNEE='["Test User"]'
+python3 google_chat_reporter.py stats --past-week --csv weekly_stats.csv
+```
+
+These settings apply automatically to all commands (stats, tasks, people, messages) and provide:
+- Performance optimization: Spaces are filtered before API calls
+- Simplified configuration: No separate config files to maintain
+- Automation friendly: Perfect for cron jobs and CI/CD pipelines
+
 ## Output and Data Management
 
-The script generates several output files to support different analysis needs. The `spaces.json` file contains the complete list of accessible Google Chat spaces, while `people.json` stores information about individuals found within those spaces. The `tasks.json` file maintains detailed task records, and the CSV report provides aggregated completion statistics for the specified time period.
+The script generates output files to support different analysis needs. Use `--json` or `--csv` flags with any command to save results for reference or further analysis.
 
 **Output Format Options:**
 - **JSON format** (`--json`): Available for all commands, preserves the complete data structure including nested objects and arrays
