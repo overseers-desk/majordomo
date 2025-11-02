@@ -53,8 +53,8 @@ SCOPES = [
     'https://www.googleapis.com/auth/chat.messages',
     'https://www.googleapis.com/auth/chat.messages.readonly',
 ]
-TOKEN_FILE = 'token.json'
-CREDENTIALS_FILE = 'client_secret.json'
+TOKEN_FILE = 'config/token.json'
+CREDENTIALS_FILE = 'config/client_secret.json'
 
 def setup_logging():
     """Setup logging configuration."""
