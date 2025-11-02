@@ -1,13 +1,13 @@
 #!/opt/alt/python38/bin/python3.8
 """
-CGI Script for Google Spaces Webhook Dispatcher
+CGI Script for Google Chat App
 
-This script receives webhook events from Google Spaces and dispatches
-them to the chatbot handler for processing.
+This script receives events from Google Chat and processes them
+through the chatbot handler, which logs messages and sends responses.
 
 For CGI deployment, this file should be:
 1. Placed in your web server's cgi-bin directory (or configured CGI location)
-2. Made executable (chmod +x google_space_webhook.cgi)
+2. Made executable (chmod +x google_chat_app.cgi)
 3. Have correct shebang pointing to your Python 3 interpreter
 """
 
@@ -21,7 +21,7 @@ import logging
 cgitb.enable()
 
 # Add the application directory to the Python path
-# This assumes google_space_webhook.cgi is in the same directory as the chatbot module
+# This assumes google_chat_app.cgi is in the same directory as the chatbot module
 sys.path.insert(0, os.path.dirname(__file__))
 
 # Import the chatbot handler
@@ -32,7 +32,7 @@ def main():
     """
     Main CGI handler function.
     
-    Receives webhook POST requests from Google Spaces, processes them,
+    Receives event POST requests from Google Chat, processes them,
     and returns appropriate responses.
     """
     # Setup logging
@@ -67,15 +67,15 @@ def main():
             print(json.dumps(response))
             return
         
-        # Process the webhook event through the chatbot handler
+        # Process the event through the chatbot handler
         response = process_webhook_event(event_data)
         
-        # Send response back to Google Spaces
+        # Send response back to Google Chat
         print(json.dumps(response))
         
     except Exception as e:
         # Log any unexpected errors
-        logging.error(f"Error processing webhook: {e}", exc_info=True)
+        logging.error(f"Error processing event: {e}", exc_info=True)
         
         # Return error response
         response = {"error": "Internal server error"}
