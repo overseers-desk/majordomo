@@ -14,8 +14,8 @@ import os
 from wsgiref.handlers import CGIHandler
 
 # Add the application directory to the Python path
-# This assumes tasks-reporter.cgi is in the same directory as app.py
-sys.path.insert(0, os.path.dirname(__file__))
+# This assumes tasks-reporter.cgi is in cgi-bin/ subdirectory and app.py is in parent directory
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import the Flask app
 from app import app
