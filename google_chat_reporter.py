@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 """
 Google Spaces Tasks Reporter
 
@@ -57,15 +58,57 @@ TOKEN_FILE = 'config/token.json'
 CREDENTIALS_FILE = 'config/client_secret.json'
 
 def setup_logging():
-    """Setup logging configuration."""
+    """
+    Setup logging configuration.
+    
+    Logging location priority:
+    1. If LOG_DIR environment variable is set, use that directory
+    2. If ../logs directory exists, use that
+    3. Otherwise, log to console only (stderr)
+    
+    This allows flexible deployment:
+    - Development: logs to console
+    - CGI deployment under wwwroot: logs can go to ../logs (outside wwwroot)
+    - Custom deployment: set LOG_DIR environment variable
+    """
     # Suppress specific warnings from Google API client
     logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
     logging.getLogger('googleapiclient.discovery').setLevel(logging.ERROR)
     
-    logging.basicConfig(
-        level=logging.INFO,  # Changed back to INFO from DEBUG
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+    # Determine log directory
+    log_dir = None
+    log_file = None
+    
+    # Check for environment variable first
+    if os.environ.get('LOG_DIR'):
+        log_dir = os.environ.get('LOG_DIR')
+        if os.path.isdir(log_dir):
+            log_file = os.path.join(log_dir, 'google_chat_reporter.log')
+    
+    # If no env var, check for ../logs directory
+    if not log_file:
+        parent_logs = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs')
+        if os.path.isdir(parent_logs):
+            log_dir = parent_logs
+            log_file = os.path.join(parent_logs, 'google_chat_reporter.log')
+    
+    # Configure logging
+    if log_file:
+        # Log to file
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler()  # Also log to console
+            ]
+        )
+    else:
+        # Log to console only
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
 
 def get_credentials() -> Credentials:
     """Fetch or refresh Google API credentials."""
@@ -111,7 +154,12 @@ def retry_on_error(max_retries=3, delay=30):
 
 @retry_on_error()
 def get_spaces(service) -> List[Dict]:
-    """Retrieve all spaces from Google Chat, excluding DIRECT_MESSAGE spaces."""
+    """Retrieve all spaces from Google Chat, excluding DIRECT_MESSAGE spaces.
+    
+    Respects IGNORE_SPACES environment variable for filtering.
+    IGNORE_SPACES format: JSON array of space IDs without "spaces/" prefix
+    Example: '["AAAAMj0BPws", "AAAAfPFB3gs"]'
+    """
     spaces = []
     page_token = None
     while True:
@@ -123,6 +171,19 @@ def get_spaces(service) -> List[Dict]:
         page_token = response.get('nextPageToken')
         if not page_token:
             break
+    
+    # Apply IGNORE_SPACES filtering
+    ignore_spaces_env = os.environ.get('IGNORE_SPACES', '')
+    if ignore_spaces_env:
+        try:
+            ignored_ids = json.loads(ignore_spaces_env)
+            space_blacklist = [f"spaces/{space_id}" for space_id in ignored_ids]
+            original_count = len(spaces)
+            spaces = [s for s in spaces if s['name'] not in space_blacklist]
+            logging.info(f"Filtered {original_count - len(spaces)} spaces via IGNORE_SPACES")
+        except json.JSONDecodeError as e:
+            logging.error(f"Error parsing IGNORE_SPACES: {e}")
+    
     return spaces
 
 def get_public_spaces(service) -> List[Dict]:
@@ -540,6 +601,18 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str, thread_m
         elif task_id in reopened_tasks:
             task['status'] = 'OPEN'
 
+    # Apply IGNORE_ASSIGNEE filtering
+    ignore_assignee_env = os.environ.get('IGNORE_ASSIGNEE', '')
+    if ignore_assignee_env:
+        try:
+            ignored_assignees = json.loads(ignore_assignee_env)
+            original_count = len(tasks)
+            tasks = [t for t in tasks if t.get('assignee', '').strip() not in ignored_assignees]
+            if original_count > len(tasks):
+                logging.info(f"Filtered {original_count - len(tasks)} tasks via IGNORE_ASSIGNEE")
+        except json.JSONDecodeError as e:
+            logging.error(f"Error parsing IGNORE_ASSIGNEE: {e}")
+
     return tasks
 
 def analyze_tasks(tasks: List[Dict]) -> List[Dict]:
@@ -573,19 +646,6 @@ def analyze_tasks(tasks: List[Dict]) -> List[Dict]:
         })
     
     return report
-
-def filter_tasks(tasks: List[Dict], people: List[str], spaces: List[str]) -> List[Dict]:
-    """Filter tasks to only include people and spaces listed in people.json and spaces.json."""
-    # Create lowercase sets for case-insensitive matching
-    people_lower = {person.lower() for person in people}
-    spaces_set = {space for space in spaces}
-
-    filtered_tasks = []
-    for task in tasks:
-        assignee_lower = task['assignee'].lower()
-        if assignee_lower in people_lower and task['space_name'] in spaces_set:
-            filtered_tasks.append(task)
-    return filtered_tasks
 
 def generate_report(report: List[Dict], start_date: str, end_date: str, filename: str):
     """Generate and save the task report as a CSV file."""
@@ -1314,8 +1374,8 @@ def main():
     # Spaces command
     spaces_parser = subparsers.add_parser(
         "spaces", 
-        help="Retrieve a list of spaces",
-        description="Retrieve a comprehensive list of Google Chat spaces accessible to your account. By default, only shows public spaces.",
+        help="List accessible Google Chat spaces",
+        description="List Google Chat spaces accessible to the authenticated account. By default, only shows public spaces; use flags to include direct messages.",
         epilog="""Examples:
   python3 google_chat_reporter.py spaces                           # List all public spaces
   python3 google_chat_reporter.py spaces --json spaces.json       # Save to JSON file
@@ -1335,8 +1395,8 @@ def main():
     # People command
     people_parser = subparsers.add_parser(
         "people", 
-        help="Retrieve a list of people",
-        description="Extract information about individuals found within the specified spaces during a time period. Defaults to the previous calendar month if no date range is specified.",
+        help="List people found in spaces within a date range",
+        description="Extract unique individuals who sent messages or were assigned tasks within spaces during a time period. Defaults to the previous calendar month if no date range is specified.",
         epilog="""Examples:
   python3 google_chat_reporter.py people                                        # Previous month
   python3 google_chat_reporter.py people --past-week                           # Past 7 days
@@ -1360,42 +1420,42 @@ def main():
     people_parser.add_argument("--csv", metavar="FILE", 
                               help="Save the list of people to specified CSV file")
 
-    # Report command (previously Tasks)
-    report_parser = subparsers.add_parser(
-        "report", 
-        help="Generate a tasks report",
-        description="Generate comprehensive task completion reports with efficiency metrics. Analyses task completion rates and exports results for further analysis. Defaults to the previous calendar month if no date range is specified.",
+    # Stats command - generates aggregate statistics
+    stats_parser = subparsers.add_parser(
+        "stats", 
+        help="Generate summary statistics (completion rates per assignee)",
+        description="Generate aggregate task completion statistics showing tasks received, completed, and completion rates per assignee. Use 'tasks' command for detailed individual task data. Defaults to the previous calendar month if no date range is specified.",
         epilog="""Examples:
-  python3 google_chat_reporter.py report                                       # Previous month report
-  python3 google_chat_reporter.py report --past-week --csv weekly_report.csv  # Past week to CSV
-  python3 google_chat_reporter.py report --past-month --json monthly.json     # Past month to JSON
-  python3 google_chat_reporter.py report --assignee "*ÐS" --drill-down        # Filter by name pattern with drill-down
-  python3 google_chat_reporter.py report --date-start 2024-01-01 --date-end 2024-01-31 --csv custom.csv"""
+  python3 google_chat_reporter.py stats                                       # Previous month stats
+  python3 google_chat_reporter.py stats --past-week --csv weekly_stats.csv   # Past week to CSV
+  python3 google_chat_reporter.py stats --past-month --json monthly.json     # Past month to JSON
+  python3 google_chat_reporter.py stats --assignee "*ÐS" --drill-down        # Filter by name pattern with drill-down
+  python3 google_chat_reporter.py stats --date-start 2024-01-01 --date-end 2024-01-31 --csv custom.csv"""
     )
-    report_parser.add_argument("--assignee", metavar="PATTERN",
-                              help="Filter report by assignee name. Supports glob patterns (e.g., '*ÐS' to match names ending with ÐS, '*john*' to match any john)")
-    report_parser.add_argument("--drill-down", action="store_true",
+    stats_parser.add_argument("--assignee", metavar="PATTERN",
+                              help="Filter stats by assignee name. Supports glob patterns (e.g., '*ÐS' to match names ending with ÐS, '*john*' to match any john)")
+    stats_parser.add_argument("--drill-down", action="store_true",
                               help="Drill down into per-assignee details including: tasks assigned in past week, tasks closed in past week, with task descriptions from first message")
-    report_parser.add_argument("--date-start", metavar="YYYY-MM-DD",
+    stats_parser.add_argument("--date-start", metavar="YYYY-MM-DD",
                               help="Start date in ISO format (e.g., 2024-01-15). Must be used with --date-end")
-    report_parser.add_argument("--date-end", metavar="YYYY-MM-DD",
+    stats_parser.add_argument("--date-end", metavar="YYYY-MM-DD",
                               help="End date in ISO format (e.g., 2024-01-15). Must be used with --date-start")
-    report_parser.add_argument("--past-week", action="store_true", 
-                              help="Generate report for the past 7 days (from today)")
-    report_parser.add_argument("--past-month", action="store_true", 
-                              help="Generate report for the past 30 days (from today)")
-    report_parser.add_argument("--past-year", action="store_true", 
-                              help="Generate report for the past 365 days (from today)")
-    report_parser.add_argument("--json", metavar="FILE", 
-                              help="Save the report to specified JSON file (preserves complete data)")
-    report_parser.add_argument("--csv", metavar="FILE", 
-                              help="Save the report to specified CSV file (suitable for spreadsheet analysis)")
+    stats_parser.add_argument("--past-week", action="store_true", 
+                              help="Generate stats for the past 7 days (from today)")
+    stats_parser.add_argument("--past-month", action="store_true", 
+                              help="Generate stats for the past 30 days (from today)")
+    stats_parser.add_argument("--past-year", action="store_true", 
+                              help="Generate stats for the past 365 days (from today)")
+    stats_parser.add_argument("--json", metavar="FILE", 
+                              help="Save statistics to specified JSON file (preserves complete data)")
+    stats_parser.add_argument("--csv", metavar="FILE", 
+                              help="Save statistics to specified CSV file (suitable for spreadsheet analysis)")
 
-    # New Tasks command
+    # Tasks command - exports detailed individual task data
     tasks_parser = subparsers.add_parser(
         "tasks", 
-        help="Retrieve task information from spaces",
-        description="Retrieve detailed task information from Google Chat spaces. Can filter by assignee and supports both basic context and complete thread information. Defaults to the previous calendar month if no date range is specified.",
+        help="Export detailed task data with thread context",
+        description="Export individual task records with full details including assignee, status, timestamps, and thread context. Use 'stats' command for aggregate statistics. Supports filtering by assignee and includes thread messages for context. Defaults to the previous calendar month if no date range is specified.",
         epilog="""Examples:
   python3 google_chat_reporter.py tasks                                        # All tasks, previous month
   python3 google_chat_reporter.py tasks --assignee "John Doe"                 # Tasks for specific person
@@ -1427,11 +1487,11 @@ def main():
     tasks_parser.add_argument("--csv", metavar="FILE", 
                              help="Save tasks to specified CSV file (includes task context but not full threads)")
 
-    # Messages command
+    # Messages command - auxiliary feature for raw message export
     messages_parser = subparsers.add_parser(
         "messages", 
-        help="Export chat messages from spaces or direct messages",
-        description="Export all chat messages from Google Chat spaces or direct message conversations. Supports exporting from specific spaces, all public spaces, all direct messages, or everything. Defaults to the previous calendar month if no date range is specified.",
+        help="Export raw chat messages (auxiliary - not task-specific)",
+        description="Export all chat messages from spaces or direct messages. This is an auxiliary feature for general message archival; it does not filter for tasks. For task-specific exports, use 'tasks' or 'stats' commands instead. Defaults to the previous calendar month if no date range is specified.",
         epilog="""Examples:
   python3 google_chat_reporter.py messages                                     # Interactive space selection
   python3 google_chat_reporter.py messages --space "spaces/ABC123" --json     # Specific space to JSON
@@ -1467,11 +1527,11 @@ def main():
     messages_parser.add_argument("--csv", metavar="FILE", 
                                 help="Save the exported messages to specified CSV file (suitable for spreadsheet analysis)")
 
-    # Thread command - retrieve messages from a specific thread
+    # Thread command - auxiliary feature for single thread inspection
     thread_parser = subparsers.add_parser(
         "thread", 
-        help="Retrieve messages from a specific thread",
-        description="Retrieve all messages from a specific thread within a Google Chat space. Useful for detailed conversation analysis or when you need to examine the complete context of a particular discussion thread.",
+        help="Retrieve messages from a specific thread (auxiliary)",
+        description="Retrieve all messages from a specific thread within a Google Chat space. This is an auxiliary feature for inspecting individual conversation threads; for task-related exports, use 'tasks' command instead.",
         epilog="""Examples:
   python3 google_chat_reporter.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789" --json
   python3 google_chat_reporter.py thread --space "spaces/ABC123" --thread "spaces/ABC123/threads/XYZ789" --csv
@@ -1493,13 +1553,17 @@ def main():
         parser.print_help()
         print("\nAvailable commands:")
         print("  config   - Configure authentication token")
-        print("  spaces   - Retrieve a list of spaces (use --help for options)")
-        print("  people   - Retrieve a list of people")
-        print("  report   - Generate a tasks report")
-        print("  tasks    - Retrieve task information from spaces")
-        print("  messages - Export chat messages from spaces or direct messages")
-        print("  thread   - Retrieve messages from a specific thread")
-        print("\nUse --help with any command for more information.")
+        print("  spaces   - List accessible Google Chat spaces")
+        print("  people   - List people found in spaces within a date range")
+        print("")
+        print("  Task-related commands:")
+        print("  tasks    - Export detailed task data with thread context")
+        print("  stats    - Generate summary statistics (completion rates per assignee)")
+        print("")
+        print("  Auxiliary commands (not task-specific):")
+        print("  messages - Export raw chat messages from spaces")
+        print("  thread   - Retrieve all messages from a specific thread")
+        print("\nUse '<command> --help' for detailed options.")
         return
 
     # Only get credentials when a command is actually provided
@@ -1547,7 +1611,7 @@ def main():
             logging.error(e)
             return
 
-        spaces = load_from_json("spaces.json") or get_spaces(service)
+        spaces = get_spaces(service)
         people = get_people(service, spaces, date_start, date_end)
         if args.json:
             save_data(people, args.json, "json")
@@ -1556,7 +1620,7 @@ def main():
         else:
             print(json.dumps(people, indent=4, ensure_ascii=False))
 
-    elif args.command == "report":
+    elif args.command == "stats":
         try:
             date_start, date_end = parse_date_range(args)
         except ValueError as e:
@@ -1565,8 +1629,7 @@ def main():
 
         # Always fetch fresh data based on user's date parameters
         logging.info(f"Fetching tasks from API for date range: {date_start} to {date_end}")
-        spaces = load_from_json("spaces.json") or get_spaces(service)
-        people = load_from_json("people.json") or None
+        spaces = get_spaces(service)
 
         # Get assignee filter if specified (pass to get_tasks to avoid fetching unnecessary data)
         assignee_filter = args.assignee if hasattr(args, 'assignee') and args.assignee else None
@@ -1576,10 +1639,6 @@ def main():
         for space in spaces:
             tasks = get_tasks(service, space['name'], date_start, date_end, "context", assignee_filter)
             all_tasks.extend(tasks)
-
-        # Filter tasks if people.json exists
-        if people:
-            all_tasks = filter_tasks(all_tasks, people, [space['name'] for space in spaces])
         
         if assignee_filter:
             logging.info(f"Found {len(all_tasks)} tasks matching assignee pattern: {assignee_filter}")
@@ -1664,7 +1723,7 @@ def main():
             # Search in specific space
             spaces = [{'name': args.space, 'displayName': args.space}]
         else:
-            spaces = load_from_json("spaces.json") or get_spaces(service)
+            spaces = get_spaces(service)
         
         if args.assignee:
             # Filter tasks by assignee
@@ -1821,7 +1880,7 @@ def main():
         
         else:
             # Interactive space selection (current functionality)
-            spaces = load_from_json("spaces.json") or get_spaces(service)
+            spaces = get_spaces(service)
             space_name = list_spaces_interactive(spaces)
             if not space_name:
                 return  # User cancelled

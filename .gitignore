@@ -2,6 +2,8 @@
 *.pyc
 __pycache__/
 
-# HTTP Basic Authentication files
-.htaccess
-.htpasswd
+# Working notes and planning documents (do not commit)
+ARCHITECTURE_EVALUATION.md
+ESTIMATED_DIRECTORY_STRUCTURE.md
+refactoring_plan_*.md
+test_chat_app.sh
