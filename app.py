@@ -12,8 +12,6 @@ from google_chat_reporter import (
     get_past_day_dates, get_past_week_dates, get_past_month_dates
 )
 from googleapiclient.discovery import build
-import json
-import os
 
 app = Flask(__name__)
 
@@ -62,32 +60,11 @@ def fetch_data():
         # Fetch data from Google
         creds = get_credentials()
         service = build('chat', 'v1', credentials=creds)
-        all_spaces = get_spaces(service)
-        
-        # Load space filtering config from environment variable (set in .htaccess)
-        # This allows Apache configuration with inline comments documenting space names
-        space_whitelist = []
-        space_blacklist = []
-        
-        ignore_spaces_env = os.environ.get('IGNORE_SPACES', '')
-        if ignore_spaces_env:
-            try:
-                # Parse JSON array from environment variable
-                ignored_ids = json.loads(ignore_spaces_env)
-                # Add "spaces/" prefix to each ID
-                space_blacklist = [f"spaces/{space_id}" for space_id in ignored_ids]
-            except json.JSONDecodeError as e:
-                print(f"Error parsing IGNORE_SPACES environment variable: {e}")
-        
-        # Filter spaces based on whitelist/blacklist
-        # If whitelist is empty, all spaces are in scope (except blacklisted ones)
-        # If whitelist is not empty, only whitelisted spaces are in scope (and not blacklisted)
-        if space_whitelist:
-            spaces = [s for s in all_spaces if s['name'] in space_whitelist and s['name'] not in space_blacklist]
-        else:
-            spaces = [s for s in all_spaces if s['name'] not in space_blacklist]
-        
-        # Fetch all tasks from filtered spaces
+
+        # get_spaces() and get_tasks() now handle filtering internally via IGNORE_SPACES/IGNORE_ASSIGNEE
+        spaces = get_spaces(service)
+
+        # Fetch all tasks from spaces
         all_tasks = []
         for space in spaces:
             try:
@@ -97,23 +74,7 @@ def fetch_data():
                 # Log error but continue with other spaces
                 print(f"Error fetching tasks from space {space['name']}: {e}")
                 continue
-        
-        # Load assignee filtering config from environment variable (set in .htaccess)
-        # This allows filtering out tasks assigned to specific people
-        ignored_assignees = []
-        ignore_assignee_env = os.environ.get('IGNORE_ASSIGNEE', '')
-        if ignore_assignee_env:
-            try:
-                # Parse JSON array from environment variable
-                ignored_assignees = json.loads(ignore_assignee_env)
-            except json.JSONDecodeError as e:
-                print(f"Error parsing IGNORE_ASSIGNEE environment variable: {e}")
-        
-        # Filter out tasks assigned to ignored assignees
-        if ignored_assignees:
-            all_tasks = [task for task in all_tasks 
-                        if task.get('assignee', '').strip() not in ignored_assignees]
-        
+
         # Extract all unique people from tasks
         all_people = set()
         for task in all_tasks:
