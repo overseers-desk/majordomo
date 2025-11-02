@@ -8,6 +8,8 @@
 </FilesMatch>
 
 # Protect config directory and all its contents
-<DirectoryMatch "^.*/config/?">
+# Use Files directive to deny all files in config directory
+<Files "config/*">
     Require all denied
-</DirectoryMatch>
+</Files>
+
