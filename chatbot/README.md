@@ -1,27 +1,66 @@
-# Chatbot Module
+# Google Chat App Handler
 
 ## Overview
 
-This module handles incoming webhook events from Google Spaces. The chatbot dispatcher receives messages posted in Google Spaces, logs key information, and provides a foundation for future chatbot response functionality.
+This module handles incoming events from Google Chat. The Chat App receives messages posted in Google Chat, logs key information, and responds with "Hey, hello" to all messages.
+
+## Prerequisites
+
+Before using the Chat App, you need to configure it in Google Cloud Console:
+
+### Google Cloud Console Configuration
+
+1. Navigate to the [Google Cloud Console](https://console.cloud.google.com/) > APIs & Services > Chat API > Configuration
+2. Configure the Chat app:
+   - **App name**: "Google Spaces Tasks Assistant" (or your preferred name)
+   - **Avatar URL**: (optional)
+   - **Description**: "Task tracking and chat assistant"
+   - **Interactive features**: 
+     - ✅ Enable this option
+     - **HTTP endpoint URL**: `https://weiwu.au/cgi-bin/google_chat_app.cgi`
+   - **Functionality**: 
+     - ✅ Enable "Receive 1:1 messages" 
+     - ✅ Enable "Join spaces and group conversations"
+   - **Permissions**: Verify these scopes are present (should already exist from OAuth setup):
+     - `https://www.googleapis.com/auth/chat.spaces`
+     - `https://www.googleapis.com/auth/chat.messages`
+     - `https://www.googleapis.com/auth/chat.messages.readonly`
+3. **Visibility**: 
+   - Select "Make this chat app available to specific people and groups in your domain"
+   - Add email addresses of users who should be able to install the app
+4. Save the configuration
+
+### Installing the App in a Space
+
+After Cloud Console configuration:
+
+1. Go to your Google Chat space
+2. Click the space name at the top
+3. Select "Apps & integrations" → "Add apps"
+4. Your app should now appear in the list
+5. Click to add it to the space
+
+The app will start receiving messages and responding immediately.
 
 ## Architecture
 
-The webhook system consists of two main components:
+The Chat App system consists of two main components:
 
-1. **`google_space_webhook.cgi`** (top-level): CGI dispatcher that receives HTTP POST requests from Google Spaces
-2. **`chatbot/handler.py`**: Python module that processes webhook events and logs information
+1. **`google_chat_app.cgi`** (top-level): CGI dispatcher that receives HTTP POST requests from Google Chat
+2. **`chatbot/handler.py`**: Python module that processes Chat events, logs information, and sends responses
 
 ### How It Works
 
-1. Google Spaces sends a webhook POST request when a message is posted
-2. The CGI script (`google_space_webhook.cgi`) receives the request
+1. Google Chat sends an event POST request when a message is posted
+2. The CGI script (`google_chat_app.cgi`) receives the request
 3. The request is forwarded to `chatbot.handler.process_webhook_event()`
 4. Key information is logged: event type, sender name, and message preview
-5. An acknowledgment response is sent back to Google Spaces
+5. A "Hey, hello" response is sent back using the Chat API
+6. An acknowledgment response is sent back to Google Chat
 
 ## Current Functionality
 
-The chatbot currently **logs only** and does not respond to messages. This is intentional as we're building in small steps.
+The Chat App logs all messages and responds with "Hey, hello" to every message.
 
 ### What Gets Logged
 
@@ -30,11 +69,20 @@ Each incoming message logs:
 - **Sender name**: Display name of the person who posted
 - **Message preview**: First 10 words of the message
 
+### What Gets Responded
+
+For every MESSAGE event:
+- Sends "Hey, hello" as a response
+- Posts in the same thread to maintain conversation context
+- Uses OAuth credentials to authenticate with Chat API
+
 ### Log Format
 
 ```
 2025-11-02 12:00:00 - INFO - Event: MESSAGE | From: John Doe | Message: Hello team, I wanted to discuss...
+2025-11-02 12:00:01 - INFO - Response sent successfully to spaces/ABC123
 2025-11-02 12:01:15 - INFO - Event: MESSAGE | From: Jane Smith | Message: Quick question about...
+2025-11-02 12:01:16 - INFO - Response sent successfully to spaces/ABC123
 2025-11-02 12:02:30 - INFO - Event: ADDED_TO_SPACE | From: Unknown | Message: (no message text)
 ```
 
@@ -47,18 +95,18 @@ Logs are written to: `logs/chatbot.log`
 The easiest way to test is using the provided test script:
 
 ```bash
-chmod +x test_webhook.sh
-./test_webhook.sh
+chmod +x test_chat_app.sh
+./test_chat_app.sh
 ```
 
-This script sends several test payloads to the webhook endpoint and verifies the system is working.
+This script sends several test payloads to the Chat App endpoint and verifies the system is working.
 
 ### Manual Testing
 
 You can also send individual test requests:
 
 ```bash
-curl -X POST http://localhost/google_space_webhook.cgi \
+curl -X POST http://localhost/google_chat_app.cgi \
   -H "Content-Type: application/json" \
   -d '{
     "type": "MESSAGE",
@@ -109,37 +157,24 @@ Or view all logs:
 cat logs/chatbot.log
 ```
 
-## Google Spaces Configuration
+## Testing
 
-To connect your Google Space to this webhook:
+### Testing the Chat App in Google Chat
 
-1. Open your Google Space
-2. Click the space name at the top
-3. Select "Apps & integrations"
-4. Click "Manage webhooks"
-5. Click "Add webhook"
-6. Provide:
-   - **Name**: Choose a descriptive name (e.g., "Chatbot Dispatcher")
-   - **Avatar URL**: (optional)
-   - **Webhook URL**: `https://your-server.com/google_space_webhook.cgi`
-7. Click "Save"
+After configuration and deployment:
 
-### Testing the Google Spaces Integration
-
-After configuration:
-
-1. Post a message in the Space
-2. Check `logs/chatbot.log` for the logged entry
-3. You should see an entry with your message preview
-
-Example:
+1. Post a message in the space where the app is installed
+2. The app should respond with "Hey, hello"
+3. Check `logs/chatbot.log` for the logged entry and response confirmation
+4. You should see entries like:
 ```
-2025-11-02 14:30:15 - INFO - Event: MESSAGE | From: Alice | Message: Testing the new webhook integration...
+2025-11-02 14:30:15 - INFO - Event: MESSAGE | From: Alice | Message: Testing the new app...
+2025-11-02 14:30:16 - INFO - Response sent successfully to spaces/ABC123
 ```
 
-## Webhook Payload Structure
+## Event Payload Structure
 
-Google Spaces sends webhooks with the following structure:
+Google Chat sends events with the following structure:
 
 ### MESSAGE Event
 ```json
@@ -188,7 +223,7 @@ Google Spaces sends webhooks with the following structure:
 
 1. Check that the CGI script is executable:
    ```bash
-   ls -l google_space_webhook.cgi
+   ls -l google_chat_app.cgi
    # Should show: -rwxr-xr-x
    ```
 
@@ -199,6 +234,20 @@ Google Spaces sends webhooks with the following structure:
    ```
 
 3. Check web server error logs for CGI errors
+
+### No Response in Chat
+
+1. Verify OAuth credentials exist:
+   ```bash
+   ls -la config/token.json config/client_secret.json
+   ```
+
+2. Check the log file for API errors:
+   ```bash
+   grep "error" logs/chatbot.log
+   ```
+
+3. Ensure the Chat API scopes include `chat.messages`
 
 ### JSON Decode Errors
 
@@ -220,20 +269,20 @@ chmod 644 logs/chatbot.log
 
 ## Development Roadmap
 
-Future enhancements (not yet implemented):
+Future enhancements:
 
-- **Message parsing**: Extract intent and entities from messages
-- **Response generation**: Reply to messages based on content
+- **Intent recognition**: Parse messages to understand user intent
+- **Context-aware responses**: Reply based on message content
 - **Task integration**: Connect with the existing task reporter functionality
-- **Authentication**: Verify webhook requests are from Google
+- **Request verification**: Verify requests are from Google Chat
 - **Rate limiting**: Prevent abuse
-- **Message threading**: Maintain conversation context
+- **Rich formatting**: Use cards and interactive elements
 
 ## Files
 
 - `chatbot/__init__.py`: Module initialisation
-- `chatbot/handler.py`: Webhook event processing and logging
-- `google_space_webhook.cgi`: Top-level CGI dispatcher
-- `test_webhook.sh`: Test script for local verification
+- `chatbot/handler.py`: Event processing, logging, and response sending
+- `google_chat_app.cgi`: Top-level CGI dispatcher
+- `test_chat_app.sh`: Test script for local verification
 - `logs/chatbot.log`: Log file (created automatically)
 
