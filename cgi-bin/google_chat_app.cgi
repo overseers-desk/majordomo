@@ -21,8 +21,11 @@ import logging
 cgitb.enable()
 
 # Add the application directory to the Python path
-# This assumes google_chat_app.cgi is in the same directory as the chatbot module
-sys.path.insert(0, os.path.dirname(__file__))
+# This assumes google_chat_app.cgi is in cgi-bin/ subdirectory and chatbot module is in parent directory
+script_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(script_dir)
+sys.path.insert(0, parent_dir)
+os.chdir(parent_dir)
 
 # Import the chatbot handler
 from chatbot.handler import setup_logging, process_webhook_event
