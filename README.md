@@ -20,7 +20,7 @@ Begin by creating a project in the [Google Cloud Console](https://console.cloud.
 
 Create an OAuth2 client within your project, selecting the "Desktop" application type for optimal compatibility. When naming the client, "Google-Spaces-Tasks-reporter" works well. In the Credentials section, ensure you add `http://localhost:7276/` to the authorised redirect URIs to enable local authentication.
 
-Download the generated JSON credential file and rename it to `client_secret.json`, placing it in your project's root directory. This file contains the necessary authentication credentials for the script to interact with Google's services.
+Download the generated JSON credential file and rename it to `client_secret.json`, placing it in the `config/` directory. This file contains the necessary authentication credentials for the script to interact with Google's services.
 
 ### Google Chat App Configuration
 
@@ -77,7 +77,7 @@ Before using the script, you'll need to configure your authentication token:
 python3 google_chat_reporter.py config
 ```
 
-This command will prompt for Google account authentication and generate user credentials stored in `token.json`. This file enables subsequent runs without repeated authentication prompts.
+This command will prompt for Google account authentication and generate user credentials stored in `config/token.json`. This file enables subsequent runs without repeated authentication prompts.
 
 ### Core Commands
 
