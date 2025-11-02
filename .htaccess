@@ -8,8 +8,5 @@
 </FilesMatch>
 
 # Protect config directory and all its contents
-# Use Files directive to deny all files in config directory
-<Files "config/*">
-    Require all denied
-</Files>
+# Protection is enforced by a separate .htaccess file inside config/
 
