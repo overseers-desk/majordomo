@@ -2,7 +2,7 @@
 
 ## Overview
 
-This module handles incoming events from Google Chat. The Chat App receives messages posted in Google Chat, logs key information, and responds with "Hey, hello" to all messages.
+This module handles incoming events from Google Chat. The Chat App receives messages where it is @mentioned, logs key information, and responds with "Hey, hello".
 
 ## Prerequisites
 
@@ -19,7 +19,6 @@ Before using the Chat App, you need to configure it in Google Cloud Console:
      - ✅ Enable this option
      - **HTTP endpoint URL**: `https://weiwu.au/cgi-bin/google_chat_app.cgi`
    - **Functionality**: 
-     - ✅ Enable "Receive 1:1 messages" 
      - ✅ Enable "Join spaces and group conversations"
    - **Permissions**: Verify these scopes are present (should already exist from OAuth setup):
      - `https://www.googleapis.com/auth/chat.spaces`
@@ -60,7 +59,7 @@ The Chat App system consists of two main components:
 
 ## Current Functionality
 
-The Chat App logs all messages and responds with "Hey, hello" to every message.
+The Chat App logs messages where it is @mentioned and responds with "Hey, hello" to those messages.
 
 ### What Gets Logged
 
@@ -71,7 +70,7 @@ Each incoming message logs:
 
 ### What Gets Responded
 
-For every MESSAGE event:
+For MESSAGE events (when @mentioned):
 - Sends "Hey, hello" as a response
 - Posts in the same thread to maintain conversation context
 - Uses OAuth credentials to authenticate with Chat API
