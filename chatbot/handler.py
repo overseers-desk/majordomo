@@ -48,38 +48,48 @@ def process_webhook_event(event_data):
     """
     Process an incoming event from Google Chat and send a response.
     
-    This function extracts key information from the event payload, logs it,
-    and sends "Hey, hello" as a response to all messages.
-    
-    Args:
-        event_data (dict): The event payload from Google Chat
-        
-    Returns:
-        dict: A simple acknowledgment response
-        
-    Raises:
-        Exception: If there's an error processing the event
+    Google Chat Apps receive events in a different structure than webhooks.
+    The message is wrapped in chat.messagePayload.message.
     """
     try:
-        # Extract event type
-        event_type = event_data.get('type', 'UNKNOWN')
+        # Log raw event data for debugging
+        logging.info(f"Raw event data: {json.dumps(event_data)}")
         
-        # Extract message information
-        message = event_data.get('message', {})
-        sender = message.get('sender', {})
-        sender_name = sender.get('displayName', 'Unknown')
-        message_text = message.get('text', '')
+        # Google Chat Apps receive events wrapped in 'chat' -> 'messagePayload'
+        chat_data = event_data.get('chat', {})
+        message_payload = chat_data.get('messagePayload', {})
+        message = message_payload.get('message', {})
         
-        # Get first few words (10-15 words) for the log
+        # If there's a message, this is a MESSAGE event
+        if message:
+            event_type = 'MESSAGE'
+            sender = message.get('sender', {})
+            sender_name = sender.get('displayName', 'Unknown')
+            message_text = message.get('text', '')
+            
+            # Get space information
+            space = message.get('space', {})
+            space_name = space.get('name', '')
+            
+            # Get thread information
+            thread = message.get('thread', {})
+            thread_name = thread.get('name', '')
+        else:
+            # Handle other event types
+            event_type = event_data.get('type', 'UNKNOWN')
+            sender_name = 'Unknown'
+            message_text = ''
+            space_name = ''
+            thread_name = ''
+        
+        # Get first few words for the log
         words = message_text.split()
         max_words = 10
         message_preview = ' '.join(words[:max_words])
         
-        # Add ellipsis if message was truncated
         if len(words) > max_words:
             message_preview += '...'
         
-        # Handle empty messages (e.g., ADDED_TO_SPACE events)
         if not message_preview:
             message_preview = '(no message text)'
         
@@ -88,46 +98,37 @@ def process_webhook_event(event_data):
             f"Event: {event_type} | From: {sender_name} | Message: {message_preview}"
         )
         
-        # Send response for MESSAGE events
-        if event_type == 'MESSAGE':
+        # For MESSAGE events, send response asynchronously via API
+        # Return empty response immediately to avoid timeout
+        if event_type == 'MESSAGE' and space_name:
+            # Send response in background (don't wait for it)
             try:
-                send_response(event_data)
+                send_response_async(space_name, thread_name)
             except Exception as e:
                 logging.error(f"Failed to send response: {e}")
-                # Continue even if response fails
         
-        # Return a simple acknowledgment
-        return {
-            "text": "Message received"
-        }
+        # Return immediately - empty response for Chat to acknowledge quickly
+        return {}
         
     except Exception as e:
-        # Log the error
         logging.error(f"Error processing event: {e}")
         logging.error(f"Event data: {json.dumps(event_data, indent=2)}")
         raise
 
 
-def send_response(event_data):
+def send_response_async(space_name, thread_name):
     """
-    Send a "Hey, hello" response to the message.
+    Send a "Hey, hello" response to the message asynchronously.
     
     Uses the Chat API with OAuth credentials to post a response
     in the same thread as the original message.
     
     Args:
-        event_data (dict): The event payload from Google Chat
+        space_name (str): The space name (e.g., spaces/ABC123)
+        thread_name (str): The thread name (optional)
     """
-    # Extract space and thread information
-    space = event_data.get('space', {})
-    space_name = space.get('name')
-    
-    message = event_data.get('message', {})
-    thread = message.get('thread', {})
-    thread_name = thread.get('name')
-    
     if not space_name:
-        logging.error("No space name in event data, cannot send response")
+        logging.error("No space name provided, cannot send response")
         return
     
     try:
