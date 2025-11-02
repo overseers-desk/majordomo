@@ -88,9 +88,9 @@ This command will prompt for Google account authentication and generate user cre
 
 **Config Command**: Sets up or refreshes your Google API authentication token. This is required for first-time use and when tokens expire.
 
-**Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--json` flag to persist the results to `spaces.json` or `--csv` to save as `spaces.csv` for future reference.
+**Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--json` flag to save results to a file for reference, or `--csv` for spreadsheet analysis.
 
-**People Command**: Extracts information about individuals found within the specified spaces. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be optionally saved to `people.json` using `--json` or `people.csv` using `--csv`.
+**People Command**: Extracts information about individuals found within the specified spaces. Supports date filtering. Results can be saved using `--json` or `--csv`.
 
 **Tasks Command**: Collects detailed task information from spaces, including status, assignee, and completion details. This command supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be saved to `tasks.json` using `--json`.
 
@@ -106,8 +106,8 @@ Advanced filtering options:
 
 #### Initial Setup
 ```bash
-python3 google_chat_reporter.py config            # Configure authentication (first time)
-python3 google_chat_reporter.py spaces --json spaces.json     # Get spaces list and save for reuse
+python3 google_chat_reporter.py config
+python3 google_chat_reporter.py spaces
 ```
 
 #### Basic Reports
@@ -173,9 +173,49 @@ The script provides flexible date range options across all relevant commands. Wh
 
 These date filtering options enable focused analysis of specific time periods, making it ideal for weekly reporting, monthly reporting, quarterly reviews, or targeted performance analysis. The `--past-week`, `--past-month` and `--past-year` options are particularly useful for quick analysis of recent activity without needing to calculate specific dates.
 
+### Environment Variable Configuration
+
+The tool supports filtering via environment variables for repeated usage and scripted deployments:
+
+**IGNORE_SPACES**: Blacklist specific Google Chat spaces to exclude from all operations
+- Format: JSON array of space IDs (without "spaces/" prefix)
+- Example: `export IGNORE_SPACES='["AAAAMj0BPws", "AAAAfPFB3gs"]'`
+
+**IGNORE_ASSIGNEE**: Blacklist specific people to exclude their tasks from reports
+- Format: JSON array of exact assignee names
+- Example: `export IGNORE_ASSIGNEE='["John Doe", "Jane Smith"]'`
+
+**Usage Examples:**
+
+One-time filtering:
+```bash
+IGNORE_SPACES='["AAAAMj0BPws"]' python3 google_chat_reporter.py report --past-week
+```
+
+Persistent filtering (in shell session):
+```bash
+export IGNORE_SPACES='["AAAAMj0BPws", "AAAAfPFB3gs"]'
+export IGNORE_ASSIGNEE='["John Doe"]'
+python3 google_chat_reporter.py report --past-week
+python3 google_chat_reporter.py tasks --past-month
+```
+
+Shell script integration:
+```bash
+#!/bin/bash
+export IGNORE_SPACES='["AAAAMj0BPws"]'
+export IGNORE_ASSIGNEE='["Test User"]'
+python3 google_chat_reporter.py report --past-week --csv weekly_report.csv
+```
+
+These settings apply automatically to all commands (report, tasks, people, messages) and provide:
+- Performance optimization: Spaces are filtered before API calls
+- Simplified configuration: No separate config files to maintain
+- Automation friendly: Perfect for cron jobs and CI/CD pipelines
+
 ## Output and Data Management
 
-The script generates several output files to support different analysis needs. The `spaces.json` file contains the complete list of accessible Google Chat spaces, while `people.json` stores information about individuals found within those spaces. The `tasks.json` file maintains detailed task records, and the CSV report provides aggregated completion statistics for the specified time period.
+The script generates output files to support different analysis needs. Use `--json` or `--csv` flags with any command to save results for reference or further analysis.
 
 **Output Format Options:**
 - **JSON format** (`--json`): Available for all commands, preserves the complete data structure including nested objects and arrays

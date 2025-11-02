@@ -111,7 +111,12 @@ def retry_on_error(max_retries=3, delay=30):
 
 @retry_on_error()
 def get_spaces(service) -> List[Dict]:
-    """Retrieve all spaces from Google Chat, excluding DIRECT_MESSAGE spaces."""
+    """Retrieve all spaces from Google Chat, excluding DIRECT_MESSAGE spaces.
+    
+    Respects IGNORE_SPACES environment variable for filtering.
+    IGNORE_SPACES format: JSON array of space IDs without "spaces/" prefix
+    Example: '["AAAAMj0BPws", "AAAAfPFB3gs"]'
+    """
     spaces = []
     page_token = None
     while True:
@@ -123,6 +128,19 @@ def get_spaces(service) -> List[Dict]:
         page_token = response.get('nextPageToken')
         if not page_token:
             break
+    
+    # Apply IGNORE_SPACES filtering
+    ignore_spaces_env = os.environ.get('IGNORE_SPACES', '')
+    if ignore_spaces_env:
+        try:
+            ignored_ids = json.loads(ignore_spaces_env)
+            space_blacklist = [f"spaces/{space_id}" for space_id in ignored_ids]
+            original_count = len(spaces)
+            spaces = [s for s in spaces if s['name'] not in space_blacklist]
+            logging.info(f"Filtered {original_count - len(spaces)} spaces via IGNORE_SPACES")
+        except json.JSONDecodeError as e:
+            logging.error(f"Error parsing IGNORE_SPACES: {e}")
+    
     return spaces
 
 def get_public_spaces(service) -> List[Dict]:
@@ -540,6 +558,18 @@ def get_tasks(service, space_name: str, start_date: str, end_date: str, thread_m
         elif task_id in reopened_tasks:
             task['status'] = 'OPEN'
 
+    # Apply IGNORE_ASSIGNEE filtering
+    ignore_assignee_env = os.environ.get('IGNORE_ASSIGNEE', '')
+    if ignore_assignee_env:
+        try:
+            ignored_assignees = json.loads(ignore_assignee_env)
+            original_count = len(tasks)
+            tasks = [t for t in tasks if t.get('assignee', '').strip() not in ignored_assignees]
+            if original_count > len(tasks):
+                logging.info(f"Filtered {original_count - len(tasks)} tasks via IGNORE_ASSIGNEE")
+        except json.JSONDecodeError as e:
+            logging.error(f"Error parsing IGNORE_ASSIGNEE: {e}")
+
     return tasks
 
 def analyze_tasks(tasks: List[Dict]) -> List[Dict]:
@@ -573,19 +603,6 @@ def analyze_tasks(tasks: List[Dict]) -> List[Dict]:
         })
     
     return report
-
-def filter_tasks(tasks: List[Dict], people: List[str], spaces: List[str]) -> List[Dict]:
-    """Filter tasks to only include people and spaces listed in people.json and spaces.json."""
-    # Create lowercase sets for case-insensitive matching
-    people_lower = {person.lower() for person in people}
-    spaces_set = {space for space in spaces}
-
-    filtered_tasks = []
-    for task in tasks:
-        assignee_lower = task['assignee'].lower()
-        if assignee_lower in people_lower and task['space_name'] in spaces_set:
-            filtered_tasks.append(task)
-    return filtered_tasks
 
 def generate_report(report: List[Dict], start_date: str, end_date: str, filename: str):
     """Generate and save the task report as a CSV file."""
@@ -1547,7 +1564,7 @@ def main():
             logging.error(e)
             return
 
-        spaces = load_from_json("spaces.json") or get_spaces(service)
+        spaces = get_spaces(service)
         people = get_people(service, spaces, date_start, date_end)
         if args.json:
             save_data(people, args.json, "json")
@@ -1565,8 +1582,7 @@ def main():
 
         # Always fetch fresh data based on user's date parameters
         logging.info(f"Fetching tasks from API for date range: {date_start} to {date_end}")
-        spaces = load_from_json("spaces.json") or get_spaces(service)
-        people = load_from_json("people.json") or None
+        spaces = get_spaces(service)
 
         # Get assignee filter if specified (pass to get_tasks to avoid fetching unnecessary data)
         assignee_filter = args.assignee if hasattr(args, 'assignee') and args.assignee else None
@@ -1576,10 +1592,6 @@ def main():
         for space in spaces:
             tasks = get_tasks(service, space['name'], date_start, date_end, "context", assignee_filter)
             all_tasks.extend(tasks)
-
-        # Filter tasks if people.json exists
-        if people:
-            all_tasks = filter_tasks(all_tasks, people, [space['name'] for space in spaces])
         
         if assignee_filter:
             logging.info(f"Found {len(all_tasks)} tasks matching assignee pattern: {assignee_filter}")
@@ -1664,7 +1676,7 @@ def main():
             # Search in specific space
             spaces = [{'name': args.space, 'displayName': args.space}]
         else:
-            spaces = load_from_json("spaces.json") or get_spaces(service)
+            spaces = get_spaces(service)
         
         if args.assignee:
             # Filter tasks by assignee
@@ -1821,7 +1833,7 @@ def main():
         
         else:
             # Interactive space selection (current functionality)
-            spaces = load_from_json("spaces.json") or get_spaces(service)
+            spaces = get_spaces(service)
             space_name = list_spaces_interactive(spaces)
             if not space_name:
                 return  # User cancelled
