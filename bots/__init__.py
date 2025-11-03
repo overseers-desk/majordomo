@@ -55,11 +55,11 @@ def setup_logging():
         # Ensure logs directory exists
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
     
-    # Configure logging
+    # Configure logging with source identifier
     logging.basicConfig(
         filename=log_file,
         level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
+        format='%(asctime)s - [%(name)s] - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 

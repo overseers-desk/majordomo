@@ -10,6 +10,9 @@ import json
 import os
 from bots import setup_logging, send_response_async
 
+# Create logger with source identifier
+logger = logging.getLogger('bot raven')
+
 
 def _load_config():
     """
@@ -32,7 +35,7 @@ def _load_config():
                 if content:
                     config = json.loads(content)
         except (json.JSONDecodeError, IOError) as e:
-            logging.warning(f"Could not read Raven config from {config_file}: {e}")
+            logger.warning(f"Could not read Raven config from {config_file}: {e}")
     
     return config
 
@@ -55,7 +58,7 @@ def process_event(event_data):
         config = _load_config()
         
         # Log raw event data for debugging
-        logging.info(f"Raw event data: {json.dumps(event_data)}")
+        logger.info(f"Raw event data: {json.dumps(event_data)}")
         
         # Google Chat Apps receive events wrapped in 'chat' -> 'messagePayload'
         chat_data = event_data.get('chat', {})
@@ -96,7 +99,7 @@ def process_event(event_data):
             message_preview = '(no message text)'
         
         # Log the key information
-        logging.info(
+        logger.info(
             f"Event: {event_type} | From: {sender_name} | Message: {message_preview}"
         )
         
@@ -107,13 +110,13 @@ def process_event(event_data):
             try:
                 send_response_async(space_name, thread_name, "hi I'm raven", bot_name='raven')
             except Exception as e:
-                logging.error(f"Failed to send response: {e}")
+                logger.error(f"Failed to send response: {e}")
         
         # Return immediately - empty response for Chat to acknowledge quickly
         return {}
         
     except Exception as e:
-        logging.error(f"Error processing event: {e}")
-        logging.error(f"Event data: {json.dumps(event_data, indent=2)}")
+        logger.error(f"Error processing event: {e}")
+        logger.error(f"Event data: {json.dumps(event_data, indent=2)}")
         raise
 
