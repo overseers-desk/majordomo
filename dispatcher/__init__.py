@@ -1,29 +1,66 @@
-#!/usr/bin/env python3
 """
-Create Workspace Events API Subscription
+Dispatcher utilities for managing Workspace Events API subscriptions.
 
-One-time script to create a subscription for a Google Chat space to receive
-all message events via Pub/Sub.
+Provides CLI interface for creating and listing Google Chat event subscriptions.
+Can be called from command line: python3 -m dispatcher [options]
 """
 
 import argparse
 import sys
-from google_chat_reporter import get_credentials, setup_logging
+import os
+import json
+from google_chat_reporter import get_credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 
-def create_message_subscription(space_name, pubsub_topic):
+def _load_config():
+    """
+    Load dispatcher configuration from config/dispatcher.json.
+    
+    Returns:
+        dict: Configuration with project_id, topic_name, subscriptions
+    """
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_file = os.path.join(project_root, 'config', 'dispatcher.json')
+    
+    # Default config
+    default_config = {
+        'project_id': 'project-y-433100',
+        'topic_name': 'chat-message-events',
+        'subscriptions': []
+    }
+    
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+                # Merge with defaults
+                default_config.update(config)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Warning: Could not read dispatcher config from {config_file}: {e}")
+            print(f"Using defaults: {default_config}")
+    
+    return default_config
+
+
+def create_message_subscription(space_name, pubsub_topic=None):
     """
     Create a subscription to receive all message events in a space.
     
     Args:
         space_name (str): Space name (e.g., 'spaces/ABC123')
-        pubsub_topic (str): Full Pub/Sub topic name
+        pubsub_topic (str, optional): Full Pub/Sub topic name. 
+                                     If None, uses config defaults.
     
     Returns:
         dict: Created subscription details
     """
+    # Load config if topic not provided
+    if not pubsub_topic:
+        config = _load_config()
+        pubsub_topic = f"projects/{config['project_id']}/topics/{config['topic_name']}"
+    
     creds = get_credentials()
     service = build('workspaceevents', 'v1', credentials=creds)
     
@@ -75,7 +112,8 @@ def list_subscriptions():
 
 
 def main():
-    setup_logging()
+    """CLI entry point for dispatcher utilities."""
+    config = _load_config()
     
     parser = argparse.ArgumentParser(
         description='Manage Workspace Events API subscriptions for Google Chat'
@@ -86,13 +124,13 @@ def main():
     )
     parser.add_argument(
         '--project',
-        default='project-y-433100',
-        help='GCP project ID (default: project-y-433100)'
+        default=config['project_id'],
+        help=f"GCP project ID (default: {config['project_id']})"
     )
     parser.add_argument(
         '--topic',
-        default='chat-message-events',
-        help='Pub/Sub topic name (default: chat-message-events)'
+        default=config['topic_name'],
+        help=f"Pub/Sub topic name (default: {config['topic_name']})"
     )
     parser.add_argument(
         '--list',
@@ -111,9 +149,9 @@ def main():
         parser.print_help()
         print("\nExamples:")
         print("  List subscriptions:")
-        print("    python3 create_subscription.py --list")
+        print("    python3 -m dispatcher --list")
         print("\n  Create subscription for a space:")
-        print("    python3 create_subscription.py --space spaces/ABC123")
+        print("    python3 -m dispatcher --space spaces/ABC123")
 
 
 if __name__ == '__main__':
