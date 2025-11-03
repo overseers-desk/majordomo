@@ -26,9 +26,6 @@ def process_event(event_data):
         dict: Empty response dict for Google Chat acknowledgment
     """
     try:
-        # Log raw event data for debugging
-        logger.info(f"Raw event data: {json.dumps(event_data)}")
-        
         # Google Chat Apps receive events wrapped in 'chat' -> 'messagePayload'
         chat_data = event_data.get('chat', {})
         message_payload = chat_data.get('messagePayload', {})
