@@ -105,7 +105,7 @@ def process_event(event_data):
         if event_type == 'MESSAGE' and space_name:
             # Send response in background (don't wait for it)
             try:
-                send_response_async(space_name, thread_name, "hi I'm raven")
+                send_response_async(space_name, thread_name, "hi I'm raven", bot_name='raven')
             except Exception as e:
                 logging.error(f"Failed to send response: {e}")
         
