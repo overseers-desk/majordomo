@@ -4,6 +4,7 @@ CGI Script for Google Chat Events (Pub/Sub Push)
 
 Receives all message events from Google Chat via Pub/Sub push subscription.
 Logs all messages and distinguishes between @mentions and regular monitoring.
+Uses unified logging from bots package.
 """
 
 import sys
@@ -22,48 +23,7 @@ parent_dir = os.path.dirname(script_dir)
 sys.path.insert(0, parent_dir)
 os.chdir(parent_dir)
 
-
-def setup_logging():
-    """
-    Configure logging for events.
-    
-    Logging location priority:
-    1. If LOG_DIR environment variable is set, use that directory
-    2. If ../logs directory exists (relative to public_html), use that
-    3. Otherwise, log to console only (stderr)
-    """
-    log_dir = None
-    log_file = None
-    
-    # Check for environment variable first
-    if os.environ.get('LOG_DIR'):
-        log_dir = os.environ.get('LOG_DIR')
-        if os.path.isdir(log_dir):
-            log_file = os.path.join(log_dir, 'events.log')
-    
-    # If no env var, check for ../logs directory (parent of public_html)
-    if not log_file:
-        parent_logs = os.path.join(os.path.dirname(parent_dir), 'logs')
-        if os.path.isdir(parent_logs):
-            log_dir = parent_logs
-            log_file = os.path.join(parent_logs, 'events.log')
-    
-    # Configure logging
-    if log_file:
-        logging.basicConfig(
-            filename=log_file,
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-    else:
-        # Log to console only
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S',
-            stream=sys.stderr
-        )
+from bots import setup_logging
 
 
 def is_bot_mentioned(message):
@@ -163,4 +123,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
