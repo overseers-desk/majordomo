@@ -60,7 +60,7 @@ Using Google Cloud Console:
    - Click on existing `chat-message-events-sub` subscription
    - Click "Edit" at the top
    - Change "Delivery type" from "Pull" to "Push"
-   - Set "Endpoint URL" to: `https://weiwu.au/cgi-bin/chat_events.cgi`
+   - Set "Endpoint URL" to: `https://example.com/cgi-bin/chat_events.cgi`
    - Leave "Enable authentication" unchecked for now (can add later)
    - Click "Update"
 
@@ -69,7 +69,7 @@ Using Google Cloud Console:
    - Subscription ID: `chat-message-events-push`
    - Select topic: `chat-message-events`
    - Delivery type: **Push**
-   - Endpoint URL: `https://weiwu.au/cgi-bin/chat_events.cgi`
+   - Endpoint URL: `https://example.com/cgi-bin/chat_events.cgi`
    - Leave authentication disabled for now
    - Click "Create"
 
@@ -141,7 +141,6 @@ Expected behaviour:
 ## File Structure
 
 ```
-/home/weiwu/code/Google-Spaces-Tasks-reporter.web/
 ├── cgi-bin/
 │   ├── google_chat_app.cgi       (EXISTING - @mention bot)
 │   └── chat_events.cgi           (NEW - receives all messages)
@@ -185,7 +184,7 @@ tail -f logs/chatbot.log
 1. Verify Pub/Sub subscription is configured as Push:
    ```
    Go to Cloud Console > Pub/Sub > Subscriptions
-   Check that endpoint URL is: https://weiwu.au/cgi-bin/chat_events.cgi
+   Check that endpoint URL is: https://example.com/cgi-bin/chat_events.cgi
    ```
 
 2. Check CGI script permissions:
@@ -198,7 +197,7 @@ tail -f logs/chatbot.log
 
 4. Test CGI endpoint manually:
    ```bash
-   curl -X POST https://weiwu.au/cgi-bin/chat_events.cgi \
+   curl -X POST https://example.com/cgi-bin/chat_events.cgi \
      -H "Content-Type: application/json" \
      -d '{"message": {"data": "eyJ0ZXN0IjogInRlc3QifQ=="}}'
    ```
