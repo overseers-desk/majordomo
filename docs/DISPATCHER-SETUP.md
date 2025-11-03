@@ -101,9 +101,9 @@ python3 google_chat_reporter.py spaces
 python3 -m dispatcher --space spaces/YOUR_SPACE_ID
 ```
 
-Or with explicit project/topic:
+Or with explicit topic (full path):
 ```bash
-python3 -m dispatcher --space spaces/YOUR_SPACE_ID --project project-y-433100 --topic chat-message-events
+python3 -m dispatcher --space spaces/YOUR_SPACE_ID --topic projects/project-y-433100/topics/chat-message-events
 ```
 
 This creates a Workspace Events API subscription that tells Google Chat to send all message events from that space to your Pub/Sub topic, which then pushes them to your CGI endpoint.
@@ -227,13 +227,15 @@ The @mention bots (`chatbot.cgi`) and Events API (`dispatcher.cgi`) are separate
 
 ### Config file issues
 
-The dispatcher reads from `config/dispatcher.json`. If missing, it uses defaults:
-- `project_id`: "project-y-433100"
-- `topic_name`: "chat-message-events"
+The dispatcher reads from `config/dispatcher.json`. If missing, it uses defaults with full paths:
+- `pubsub_topic`: "projects/project-y-433100/topics/chat-message-events"
+- `pubsub_subscription`: "projects/project-y-433100/subscriptions/chat-message-events-sub"
 
-You can override these with command-line flags:
+Note: Workspace Events subscriptions are fetched from Google via `--list`, so they are not stored in config.
+
+You can override the topic with command-line flag:
 ```bash
-python3 -m dispatcher --space spaces/ABC123 --project my-project --topic my-topic
+python3 -m dispatcher --space spaces/ABC123 --topic projects/my-project/topics/my-topic
 ```
 
 ## Next Steps (Future Phases)

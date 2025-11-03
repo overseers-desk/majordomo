@@ -19,16 +19,15 @@ def _load_config():
     Load dispatcher configuration from config/dispatcher.json.
     
     Returns:
-        dict: Configuration with project_id, topic_name, subscriptions
+        dict: Configuration with pubsub_topic (full path) and optionally pubsub_subscription
     """
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config_file = os.path.join(project_root, 'config', 'dispatcher.json')
     
-    # Default config
+    # Default config - use full paths
     default_config = {
-        'project_id': 'project-y-433100',
-        'topic_name': 'chat-message-events',
-        'subscriptions': []
+        'pubsub_topic': 'projects/project-y-433100/topics/chat-message-events',
+        'pubsub_subscription': 'projects/project-y-433100/subscriptions/chat-message-events-sub'
     }
     
     if os.path.exists(config_file):
@@ -59,7 +58,7 @@ def create_message_subscription(space_name, pubsub_topic=None):
     # Load config if topic not provided
     if not pubsub_topic:
         config = _load_config()
-        pubsub_topic = f"projects/{config['project_id']}/topics/{config['topic_name']}"
+        pubsub_topic = config['pubsub_topic']
     
     creds = get_credentials()
     service = build('workspaceevents', 'v1', credentials=creds)
@@ -123,14 +122,9 @@ def main():
         help='Space name to monitor (e.g., spaces/ABC123)'
     )
     parser.add_argument(
-        '--project',
-        default=config['project_id'],
-        help=f"GCP project ID (default: {config['project_id']})"
-    )
-    parser.add_argument(
         '--topic',
-        default=config['topic_name'],
-        help=f"Pub/Sub topic name (default: {config['topic_name']})"
+        default=config.get('pubsub_topic'),
+        help=f"Full Pub/Sub topic path (default: {config.get('pubsub_topic')})"
     )
     parser.add_argument(
         '--list',
@@ -143,7 +137,7 @@ def main():
     if args.list:
         list_subscriptions()
     elif args.space:
-        pubsub_topic = f'projects/{args.project}/topics/{args.topic}'
+        pubsub_topic = args.topic or config['pubsub_topic']
         create_message_subscription(args.space, pubsub_topic)
     else:
         parser.print_help()
