@@ -1,6 +1,13 @@
-# Google Workspace Events API Setup
+# Google Workspace Events API Setup - Monitor All Messages
 
-This document describes how to set up the Google Workspace Events API integration to receive all Google Chat messages via Push subscription.
+This document describes how to set up the Google Workspace Events API integration to receive **all Google Chat messages** (not just @mentions) via Push subscription.
+
+**Use Case**: This setup is for scenarios where you need to monitor all messages in a space proactively, such as:
+- Task tracking and compliance monitoring
+- Automated logging and analytics
+- Context-aware bot responses based on conversation flow
+
+**Note**: If you only need the bot to respond when @mentioned, you don't need this setup - the standard bot configuration (google_chat_app.cgi) already handles that.
 
 ## Architecture
 
@@ -37,8 +44,17 @@ Using Google Cloud Console:
 1. Navigate to "Pub/Sub" > "Topics"
 2. Verify or create topic: `chat-message-events`
 3. Click on the topic
-4. Go to "Subscriptions" tab
-5. Configure Push subscription:
+4. **Grant Google Workspace permission to publish** (CRITICAL STEP):
+   - Click the "SHOW INFO PANEL" button on the right side of the screen
+   - In the info panel, find the "Permissions" section
+   - Click "ADD PRINCIPAL"
+   - Add principal: `chat-api-push@system.gserviceaccount.com`
+   - Role: **Pub/Sub Publisher**
+   - Click "Save"
+   - Note: This is the Google Workspace service account that publishes events to your topic
+
+5. Go to "Subscriptions" tab
+6. Configure Push subscription:
 
 **Option A: Edit existing subscription**
    - Click on existing `chat-message-events-sub` subscription
