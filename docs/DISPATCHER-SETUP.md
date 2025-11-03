@@ -7,22 +7,22 @@ This document describes how to set up the Google Workspace Events API integratio
 - Automated logging and analytics
 - Context-aware bot responses based on conversation flow
 
-**Note**: If you only need the bot to respond when @mentioned, you don't need this setup - the standard bot configuration (google_chat_app.cgi) already handles that.
+**Note**: If you only need the bots to respond when @mentioned, you don't need this setup - the standard bot configuration (`chatbot.cgi`) already handles that.
 
 ## Architecture
 
 **Push Subscription Model:**
 ```
-Google Chat → Events API → Pub/Sub Topic → Push to → chat_events.cgi → Logs
+Google Chat → Events API → Pub/Sub Topic → Push to → dispatcher.cgi → Logs
 ```
 
-No daemon needed - Pub/Sub pushes events to your existing CGI infrastructure (just like the @mention bot).
+No daemon needed - Pub/Sub pushes events to your existing CGI infrastructure (just like the @mention bots).
 
 ## Prerequisites & Infrastructure Setup
 
 ### Step 1: Google Cloud Console Configuration
 
-1. Navigate to [Google Cloud Console](https://console.cloud.google.com) for project `project-y-433100`
+1. Navigate to [Google Cloud Console](https://console.cloud.google.com) for project `project-y-433100` (or your configured project)
 
 2. Enable Google Workspace Events API:
    - Go to "APIs & Services" > "Library"
@@ -57,10 +57,10 @@ Using Google Cloud Console:
 6. Configure Push subscription:
 
 **Option A: Edit existing subscription**
-   - Click on existing `chat-message-events-sub` subscription
+   - Click on existing subscription (e.g., `chat-message-events-sub`)
    - Click "Edit" at the top
    - Change "Delivery type" from "Pull" to "Push"
-   - Set "Endpoint URL" to: `https://example.com/cgi-bin/chat_events.cgi`
+   - Set "Endpoint URL" to: `https://example.com/cgi-bin/dispatcher.cgi`
    - Leave "Enable authentication" unchecked for now (can add later)
    - Click "Update"
 
@@ -69,7 +69,7 @@ Using Google Cloud Console:
    - Subscription ID: `chat-message-events-push`
    - Select topic: `chat-message-events`
    - Delivery type: **Push**
-   - Endpoint URL: `https://example.com/cgi-bin/chat_events.cgi`
+   - Endpoint URL: `https://example.com/cgi-bin/dispatcher.cgi`
    - Leave authentication disabled for now
    - Click "Create"
 
@@ -85,7 +85,7 @@ You only need OAuth credentials (already in `config/token.json`) for creating Wo
 
 The CGI script is already created and executable:
 ```bash
-ls -l cgi-bin/chat_events.cgi
+ls -l cgi-bin/dispatcher.cgi
 # Should show: -rwxr-xr-x (executable)
 ```
 
@@ -97,32 +97,36 @@ For each Google Chat space you want to monitor:
 # List available spaces first
 python3 google_chat_reporter.py spaces
 
-# Create subscription for a space
-python3 create_subscription.py --space spaces/YOUR_SPACE_ID
+# Create subscription for a space (using dispatcher module)
+python3 -m dispatcher --space spaces/YOUR_SPACE_ID
+```
+
+Or with explicit project/topic:
+```bash
+python3 -m dispatcher --space spaces/YOUR_SPACE_ID --project project-y-433100 --topic chat-message-events
 ```
 
 This creates a Workspace Events API subscription that tells Google Chat to send all message events from that space to your Pub/Sub topic, which then pushes them to your CGI endpoint.
 
 ### Step 3: Test the Integration
 
-1. Post a message in the subscribed space (without @mentioning the bot)
-2. Check the events log:
+1. Post a message in the subscribed space (without @mentioning any bot)
+2. Check the unified log file:
    ```bash
-   tail -f logs/events.log
+   tail -f ../logs/google-chatbot.log
    ```
 3. You should see:
    ```
    2025-11-02 15:30:00 - INFO - Space: Team Space | From: John Doe | Bot mentioned: False | Message: Testing the event system
    ```
 
-4. Now @mention the bot in a message:
+4. Now @mention a bot in a message:
    ```
-   @taskbot hello
+   @Tachy hello
    ```
-5. Check both logs:
+5. Check the unified log:
    ```bash
-   tail -f logs/events.log    # Events API sees it
-   tail -f logs/chatbot.log   # Bot endpoint also sees it
+   tail -f ../logs/google-chatbot.log    # All events and bot responses in one file
    ```
 
 ### Step 4: Verify Everything Works
@@ -130,26 +134,28 @@ This creates a Workspace Events API subscription that tells Google Chat to send 
 Expected behaviour:
 
 - **Regular messages** (no @mention):
-  - Logged in `logs/events.log` with "Bot mentioned: False"
-  - NOT sent to `logs/chatbot.log` (bot endpoint not called)
+  - Logged in `../logs/google-chatbot.log` with "Bot mentioned: False"
+  - NOT sent to bot endpoints (bots only respond when @mentioned)
   
 - **@mention messages**:
-  - Logged in `logs/events.log` with "Bot mentioned: True"
-  - ALSO logged in `logs/chatbot.log` (bot endpoint called)
-  - Bot responds with "Hey, hello"
+  - Logged in `../logs/google-chatbot.log` with "Bot mentioned: True"
+  - ALSO processed by the bot endpoint (bot responds with its message)
+  - Bot response is also logged in the same file
 
 ## File Structure
 
 ```
 ├── cgi-bin/
-│   ├── google_chat_app.cgi       (EXISTING - @mention bot)
-│   └── chat_events.cgi           (NEW - receives all messages)
-├── create_subscription.py        (NEW - creates Events API subscriptions)
-├── logs/
-│   ├── chatbot.log               (EXISTING - @mention bot logs)
-│   └── events.log                (NEW - all message events)
-└── config/
-    └── token.json                (EXISTING - OAuth credentials)
+│   ├── chatbot.cgi           (Multi-bot router for @mention bots)
+│   └── dispatcher.cgi       (Receives all messages via Pub/Sub)
+├── dispatcher/
+│   └── __init__.py          (CLI utilities for creating subscriptions)
+├── config/
+│   ├── dispatcher.json       (Dispatcher config: project_id, topic_name)
+│   └── token.json           (OAuth credentials)
+└── [parent directory]/
+    └── logs/
+        └── google-chatbot.log    (Unified log for all components)
 ```
 
 ## Usage
@@ -157,39 +163,36 @@ Expected behaviour:
 ### List Active Subscriptions
 
 ```bash
-python3 create_subscription.py --list
+python3 -m dispatcher --list
 ```
 
 ### Create Subscription for Additional Spaces
 
 ```bash
 # Get space ID from google_chat_reporter.py spaces command
-python3 create_subscription.py --space spaces/ANOTHER_SPACE_ID
+python3 -m dispatcher --space spaces/ANOTHER_SPACE_ID
 ```
 
 ### Monitor Logs
 
 ```bash
-# Watch all events (including non-mentions)
-tail -f logs/events.log
-
-# Watch bot responses (only @mentions)
-tail -f logs/chatbot.log
+# Watch all events (including non-mentions) and bot responses in unified log
+tail -f ../logs/google-chatbot.log
 ```
 
 ## Troubleshooting
 
-### No events appearing in logs/events.log
+### No events appearing in logs/google-chatbot.log
 
 1. Verify Pub/Sub subscription is configured as Push:
    ```
    Go to Cloud Console > Pub/Sub > Subscriptions
-   Check that endpoint URL is: https://example.com/cgi-bin/chat_events.cgi
+   Check that endpoint URL is: https://example.com/cgi-bin/dispatcher.cgi
    ```
 
 2. Check CGI script permissions:
    ```bash
-   ls -l cgi-bin/chat_events.cgi
+   ls -l cgi-bin/dispatcher.cgi
    # Should be executable: -rwxr-xr-x
    ```
 
@@ -197,7 +200,7 @@ tail -f logs/chatbot.log
 
 4. Test CGI endpoint manually:
    ```bash
-   curl -X POST https://example.com/cgi-bin/chat_events.cgi \
+   curl -X POST https://example.com/cgi-bin/dispatcher.cgi \
      -H "Content-Type: application/json" \
      -d '{"message": {"data": "eyJ0ZXN0IjogInRlc3QifQ=="}}'
    ```
@@ -220,21 +223,31 @@ The data field contains base64-encoded Chat event JSON.
 
 ### Bot not responding to @mentions
 
-The @mention bot (`google_chat_app.cgi`) and Events API (`chat_events.cgi`) are separate systems. The Events API just logs; the bot still needs to be @mentioned to respond.
+The @mention bots (`chatbot.cgi`) and Events API (`dispatcher.cgi`) are separate systems. The Events API just logs; the bots still need to be @mentioned to respond.
+
+### Config file issues
+
+The dispatcher reads from `config/dispatcher.json`. If missing, it uses defaults:
+- `project_id`: "project-y-433100"
+- `topic_name`: "chat-message-events"
+
+You can override these with command-line flags:
+```bash
+python3 -m dispatcher --space spaces/ABC123 --project my-project --topic my-topic
+```
 
 ## Next Steps (Future Phases)
 
-Phase 2 complete provides:
+Current setup provides:
 - ✅ Receive all messages in real-time
 - ✅ Distinguish @mentions from regular messages
-- ✅ Log all activity
+- ✅ Unified logging for all components
+- ✅ Multi-bot support (Tachy and Raven)
 
-Phase 3 will add:
+Future phases will add:
 - Filter messages for task-related keywords
 - Extract task information
 - Integration with task tracking
-
-Phase 4 will add:
 - External system webhooks
 - Proactive task reminders
 - Advanced filtering logic
