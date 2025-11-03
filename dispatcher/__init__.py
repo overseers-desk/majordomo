@@ -9,9 +9,82 @@ import argparse
 import sys
 import os
 import json
-from google_chat_reporter import get_credentials
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
+
+# Scopes needed for Workspace Events API
+SCOPES = [
+    'https://www.googleapis.com/auth/chat.spaces',
+    'https://www.googleapis.com/auth/chat.messages',
+    'https://www.googleapis.com/auth/chat.messages.readonly',
+]
+
+
+def _get_credentials_paths():
+    """
+    Get credential file paths, checking dispatcher-specific location first, then fallback.
+    
+    Returns:
+        tuple: (token_file, credentials_file) paths
+    """
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # Priority 1: config/dispatcher/ (dispatcher-specific credentials)
+    dispatcher_token = os.path.join(project_root, 'config', 'dispatcher', 'token.json')
+    dispatcher_secret = os.path.join(project_root, 'config', 'dispatcher', 'client_secret.json')
+    
+    # Priority 2: config/ (top-level fallback)
+    top_level_token = os.path.join(project_root, 'config', 'token.json')
+    top_level_secret = os.path.join(project_root, 'config', 'client_secret.json')
+    
+    # Priority: dispatcher-specific > top-level > dispatcher (for new files)
+    if os.path.exists(dispatcher_token) and os.path.exists(dispatcher_secret):
+        # Both dispatcher files exist, use them
+        return dispatcher_token, dispatcher_secret
+    elif os.path.exists(dispatcher_secret):
+        # Dispatcher secret exists but not token - use dispatcher location (will create token there)
+        return dispatcher_token, dispatcher_secret
+    elif os.path.exists(top_level_token) and os.path.exists(top_level_secret):
+        # Both top-level files exist, use them as fallback
+        return top_level_token, top_level_secret
+    elif os.path.exists(top_level_secret):
+        # Top-level secret exists but not token - use top-level location
+        return top_level_token, top_level_secret
+    else:
+        # No credentials found - default to dispatcher location (will prompt user to create)
+        return dispatcher_token, dispatcher_secret
+
+
+def get_credentials() -> Credentials:
+    """
+    Fetch or refresh Google API credentials for dispatcher.
+    
+    Checks config/dispatcher/ first, then falls back to config/.
+    """
+    token_file, credentials_file = _get_credentials_paths()
+    
+    creds = None
+    if os.path.exists(token_file):
+        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            if not os.path.exists(credentials_file):
+                raise FileNotFoundError(
+                    f"Credentials file not found. Expected at: {credentials_file}\n"
+                    f"Or fallback location: {os.path.join(os.path.dirname(os.path.dirname(credentials_file)), 'client_secret.json')}"
+                )
+            flow = InstalledAppFlow.from_client_secrets_file(credentials_file, SCOPES)
+            creds = flow.run_local_server(port=7276, access_type="offline", prompt='consent')
+        with open(token_file, 'w') as token:
+            token.write(creds.to_json())
+
+    return creds
 
 
 def _load_config():
