@@ -25,6 +25,8 @@ os.chdir(parent_dir)
 
 from bots import setup_logging
 
+# Create logger with source identifier
+logger = logging.getLogger('dispatcher')
 
 def is_bot_mentioned(message):
     """Check if the bot was @mentioned in the message."""
@@ -40,7 +42,7 @@ def is_bot_mentioned(message):
     return False
 
 
-def process_pubsub_event(pubsub_message):
+def process_pubsub_event(pubsub_message, subscription='unknown'):
     """Process incoming Pub/Sub message containing Chat event."""
     try:
         # Pub/Sub sends data as base64-encoded JSON
@@ -51,32 +53,30 @@ def process_pubsub_event(pubsub_message):
         else:
             event_data = pubsub_message
         
-        # Extract message from event
+        # Extract message from event data
         message = event_data.get('message', {})
-        if not message:
-            logging.warning("No message in event data")
-            return
         
-        # Extract key information
-        sender = message.get('sender', {})
-        sender_name = sender.get('displayName', 'Unknown')
+        # Extract available fields
+        space_name = message.get('space', {}).get('name', '')
         message_text = message.get('text', '')
+        sender_id = message.get('sender', {}).get('name', '')
         
-        space = message.get('space', {})
-        space_display = space.get('displayName', 'Unknown Space')
+        # Build log with available fields
+        log_parts = []
+        if space_name:
+            log_parts.append(f"Space: {space_name}")
+        if sender_id:
+            log_parts.append(f"From: {sender_id}")
+        if message_text:
+            log_parts.append(f"Message: {message_text[:100]}")
+        else:
+            log_parts.append("Message: (no text)")
         
-        # Check if bot was mentioned
-        mentioned = is_bot_mentioned(message)
-        
-        # Log the message
-        logging.info(
-            f"Space: {space_display} | From: {sender_name} | "
-            f"Bot mentioned: {mentioned} | Message: {message_text[:100]}"
-        )
+        logger.info(" | ".join(log_parts) if log_parts else "Event received")
         
     except Exception as e:
-        logging.error(f"Error processing event: {e}")
-        logging.error(f"Event data: {json.dumps(pubsub_message, indent=2)}")
+        logger.error(f"Error processing event: {e}")
+        logger.error(f"Event data: {json.dumps(pubsub_message, indent=2)}")
 
 
 def main():
@@ -93,7 +93,7 @@ def main():
         content_length = int(os.environ.get('CONTENT_LENGTH', 0))
         
         if content_length == 0:
-            logging.warning("Received request with no content")
+            logger.warning("Received request with no content")
             print(json.dumps({}))
             return
         
@@ -104,20 +104,21 @@ def main():
         
         # Pub/Sub push format: {"message": {...}, "subscription": "..."}
         pubsub_message = push_request.get('message', {})
+        subscription = push_request.get('subscription', 'unknown')
         
         if pubsub_message:
-            process_pubsub_event(pubsub_message)
+            process_pubsub_event(pubsub_message, subscription)
         else:
-            logging.warning("No message in Pub/Sub push request")
+            logger.warning("No message in Pub/Sub push request")
         
         # Acknowledge receipt
         print(json.dumps({}))
         
     except json.JSONDecodeError as e:
-        logging.error(f"JSON decode error: {e}")
+        logger.error(f"JSON decode error: {e}")
         print(json.dumps({}))
     except Exception as e:
-        logging.error(f"Error in main: {e}", exc_info=True)
+        logger.error(f"Error in main: {e}", exc_info=True)
         print(json.dumps({}))
 
 
