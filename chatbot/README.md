@@ -17,7 +17,7 @@ Before using the Chat App, you need to configure it in Google Cloud Console:
    - **Description**: "Task tracking and chat assistant"
    - **Interactive features**: 
      - ✅ Enable this option
-     - **HTTP endpoint URL**: `https://weiwu.au/cgi-bin/google_chat_app.cgi`
+     - **HTTP endpoint URL**: `https://example.com/cgi-bin/google_chat_app.cgi`
    - **Functionality**: 
      - ✅ Enable "Join spaces and group conversations"
    - **Permissions**: Verify these scopes are present (should already exist from OAuth setup):
