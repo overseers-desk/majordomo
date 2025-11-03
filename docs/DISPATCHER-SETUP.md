@@ -13,7 +13,7 @@ This document describes how to set up the Google Workspace Events API integratio
 
 **Push Subscription Model:**
 ```
-Google Chat → Events API → Pub/Sub Topic → Push to → dispatcher.cgi → Logs
+Google Chat → Events API → Pub/Sub Topic → Push to → chat_events.cgi → Logs
 ```
 
 No daemon needed - Pub/Sub pushes events to your existing CGI infrastructure (just like the @mention bots).
@@ -60,7 +60,7 @@ Using Google Cloud Console:
    - Click on existing subscription (e.g., `chat-message-events-sub`)
    - Click "Edit" at the top
    - Change "Delivery type" from "Pull" to "Push"
-   - Set "Endpoint URL" to: `https://example.com/cgi-bin/dispatcher.cgi`
+   - Set "Endpoint URL" to: `https://example.com/cgi-bin/chat_events.cgi`
    - Leave "Enable authentication" unchecked for now (can add later)
    - Click "Update"
 
@@ -85,7 +85,7 @@ You only need OAuth credentials (already in `config/token.json`) for creating Wo
 
 The CGI script is already created and executable:
 ```bash
-ls -l cgi-bin/dispatcher.cgi
+ls -l cgi-bin/chat_events.cgi
 # Should show: -rwxr-xr-x (executable)
 ```
 
@@ -147,7 +147,7 @@ Expected behaviour:
 ```
 ├── cgi-bin/
 │   ├── chatbot.cgi           (Multi-bot router for @mention bots)
-│   └── dispatcher.cgi       (Receives all messages via Pub/Sub)
+│   └── chat_events.cgi      (Receives all messages via Pub/Sub)
 ├── dispatcher/
 │   └── __init__.py          (CLI utilities for creating subscriptions)
 ├── config/
@@ -187,12 +187,12 @@ tail -f ../logs/google-chatbot.log
 1. Verify Pub/Sub subscription is configured as Push:
    ```
    Go to Cloud Console > Pub/Sub > Subscriptions
-   Check that endpoint URL is: https://example.com/cgi-bin/dispatcher.cgi
+   Check that endpoint URL is: https://example.com/cgi-bin/chat_events.cgi
    ```
 
 2. Check CGI script permissions:
    ```bash
-   ls -l cgi-bin/dispatcher.cgi
+   ls -l cgi-bin/chat_events.cgi
    # Should be executable: -rwxr-xr-x
    ```
 
@@ -200,7 +200,7 @@ tail -f ../logs/google-chatbot.log
 
 4. Test CGI endpoint manually:
    ```bash
-   curl -X POST https://example.com/cgi-bin/dispatcher.cgi \
+   curl -X POST https://example.com/cgi-bin/chat_events.cgi \
      -H "Content-Type: application/json" \
      -d '{"message": {"data": "eyJ0ZXN0IjogInRlc3QifQ=="}}'
    ```
@@ -223,7 +223,7 @@ The data field contains base64-encoded Chat event JSON.
 
 ### Bot not responding to @mentions
 
-The @mention bots (`chatbot.cgi`) and Events API (`dispatcher.cgi`) are separate systems. The Events API just logs; the bots still need to be @mentioned to respond.
+The @mention bots (`chatbot.cgi`) and Events API (`chat_events.cgi`) are separate systems. The Events API just logs; the bots still need to be @mentioned to respond.
 
 ### Config file issues
 
