@@ -57,9 +57,6 @@ def process_event(event_data):
         # Load config (placeholder for future use)
         config = _load_config()
         
-        # Log raw event data for debugging
-        logger.info(f"Raw event data: {json.dumps(event_data)}")
-        
         # Google Chat Apps receive events wrapped in 'chat' -> 'messagePayload'
         chat_data = event_data.get('chat', {})
         message_payload = chat_data.get('messagePayload', {})
