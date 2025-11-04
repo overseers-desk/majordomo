@@ -153,17 +153,21 @@ def process_event(event_data):
     logger.info(f"=== RAVEN PROCESS_EVENT CALLED ===")
     logger.info(f"Event data keys: {list(event_data.keys())}")
     try:
-        # Load config (placeholder for future use)
+        # Load config
         config = _load_config()
         
-        # Google Chat Apps receive events wrapped in 'chat' -> 'messagePayload'
-        # This is the same structure that Tachy uses (and it works!)
-        chat_data = event_data.get('chat', {})
-        logger.info(f"chat_data keys: {list(chat_data.keys()) if chat_data else 'NONE'}")
-        message_payload = chat_data.get('messagePayload', {})
-        logger.info(f"message_payload keys: {list(message_payload.keys()) if message_payload else 'NONE'}")
-        message = message_payload.get('message', {})
-        logger.info(f"message keys: {list(message.keys()) if message else 'NONE'}")
+        # Google Chat sends events in TWO different structures:
+        # 1. New format (what Raven receives): event_data['message'] directly
+        # 2. Old format (what Tachy receives): event_data['chat']['messagePayload']['message']
+        
+        # Try new format first (direct message)
+        message = event_data.get('message', {})
+        
+        if not message:
+            # Fallback to old format
+            chat_data = event_data.get('chat', {})
+            message_payload = chat_data.get('messagePayload', {})
+            message = message_payload.get('message', {})
         
         # If there's a message, this is a MESSAGE event
         if message:
