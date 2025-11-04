@@ -154,10 +154,18 @@ def process_event(event_data):
         # Load config (placeholder for future use)
         config = _load_config()
         
-        # Google Chat Apps receive events wrapped in 'chat' -> 'messagePayload'
-        chat_data = event_data.get('chat', {})
-        message_payload = chat_data.get('messagePayload', {})
-        message = message_payload.get('message', {})
+        # Debug: Log the full event structure
+        logger.debug(f"Received event structure: {json.dumps(event_data, indent=2)}")
+        
+        # Google Chat Apps receive events in different structures
+        # Try the new structure first (direct message object)
+        message = event_data.get('message', {})
+        
+        # If not found, try the old structure (chat.messagePayload.message)
+        if not message:
+            chat_data = event_data.get('chat', {})
+            message_payload = chat_data.get('messagePayload', {})
+            message = message_payload.get('message', {})
         
         # If there's a message, this is a MESSAGE event
         if message:
