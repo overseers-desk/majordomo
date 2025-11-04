@@ -155,7 +155,7 @@ def process_event(event_data):
         config = _load_config()
         
         # Debug: Log the full event structure
-        logger.debug(f"Received event structure: {json.dumps(event_data, indent=2)}")
+        logger.info(f"DEBUG - Received event structure: {json.dumps(event_data, indent=2)}")
         
         # Google Chat Apps receive events in different structures
         # Try the new structure first (direct message object)
