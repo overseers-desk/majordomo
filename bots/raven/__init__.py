@@ -155,7 +155,12 @@ def process_event(event_data):
         config = _load_config()
         
         # Debug: Log the full event structure
-        logger.info(f"DEBUG - Received event structure: {json.dumps(event_data, indent=2)}")
+        try:
+            event_json = json.dumps(event_data, indent=2)
+            logger.info(f"DEBUG - Received event structure: {event_json}")
+        except Exception as e:
+            logger.error(f"Failed to serialize event data: {e}")
+            logger.info(f"DEBUG - Event data keys: {list(event_data.keys())}")
         
         # Google Chat Apps receive events in different structures
         # Try the new structure first (direct message object)
