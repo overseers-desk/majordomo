@@ -150,6 +150,7 @@ def process_event(event_data):
     Returns:
         dict: Empty response dict for Google Chat acknowledgment
     """
+    logger.info(f"=== RAVEN PROCESS_EVENT CALLED ===")
     try:
         # Load config (placeholder for future use)
         config = _load_config()
