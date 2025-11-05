@@ -244,7 +244,7 @@ Current setup provides:
 - ✅ Receive all messages in real-time
 - ✅ Distinguish @mentions from regular messages
 - ✅ Unified logging for all components
-- ✅ Multi-bot support (Tachy and Raven)
+- ✅ Multi-bot support (Tachy and Orcal)
 
 Future phases will add:
 - Filter messages for task-related keywords

@@ -1,5 +1,5 @@
 """
-Raven Bot - Package format
+Orcal Bot - Package format
 
 AI-powered bot that answers questions about the Google-Spaces-Tasks-reporter repository.
 Uses DeepSeek API to provide intelligent responses based on repo documentation and code.
@@ -12,20 +12,20 @@ import requests
 from bots import setup_logging, send_response_async
 
 # Create logger with source identifier
-logger = logging.getLogger('bot raven')
+logger = logging.getLogger('bot orcal')
 
 
 def _load_config():
     """
-    Load Raven bot configuration.
+    Load Orcal bot configuration.
     
-    Reads config/bots/raven/deepseek.json (even if empty, as placeholder).
+    Reads config/bots/orcal/deepseek.json (even if empty, as placeholder).
     
     Returns:
         dict: Configuration dict (empty if file doesn't exist or is empty)
     """
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    config_file = os.path.join(project_root, 'config', 'bots', 'raven', 'deepseek.json')
+    config_file = os.path.join(project_root, 'config', 'bots', 'orcal', 'deepseek.json')
     
     config = {}
     
@@ -36,7 +36,7 @@ def _load_config():
                 if content:
                     config = json.loads(content)
         except (json.JSONDecodeError, IOError) as e:
-            logger.warning(f"Could not read Raven config from {config_file}: {e}")
+            logger.warning(f"Could not read Orcal config from {config_file}: {e}")
     
     return config
 
@@ -83,7 +83,7 @@ def _ask_deepseek(question, config):
         str: AI response or error message
     """
     if not config.get('api_key'):
-        return "⚠️ DeepSeek API key not configured. Please add it to config/bots/raven/deepseek.json"
+        return "⚠️ DeepSeek API key not configured. Please add it to config/bots/orcal/deepseek.json"
     
     api_base = config.get('api_base', 'https://api.deepseek.com')
     model = config.get('model', 'deepseek-chat')
@@ -98,7 +98,7 @@ def _ask_deepseek(question, config):
     context = _get_repo_context()
     
     # Build the prompt
-    system_prompt = """You are Raven, a helpful AI assistant for the Google-Spaces-Tasks-reporter project. 
+    system_prompt = """You are Orcal, a helpful AI assistant for the Google-Spaces-Tasks-reporter project. 
 You answer questions about the codebase, setup, configuration, and functionality.
 Provide concise, accurate answers based on the repository documentation.
 If you're unsure, say so rather than making up information."""
@@ -150,14 +150,14 @@ def process_event(event_data):
     Returns:
         dict: Empty response dict for Google Chat acknowledgment
     """
-    logger.info(f"=== RAVEN PROCESS_EVENT CALLED ===")
+    logger.info(f"=== ORCAL PROCESS_EVENT CALLED ===")
     logger.info(f"Event data keys: {list(event_data.keys())}")
     try:
         # Load config
         config = _load_config()
         
         # Google Chat sends events in TWO different structures:
-        # 1. New format (what Raven receives): event_data['message'] directly
+        # 1. New format (what Orcal receives): event_data['message'] directly
         # 2. Old format (what Tachy receives): event_data['chat']['messagePayload']['message']
         
         # Try new format first (direct message)
@@ -217,17 +217,17 @@ def process_event(event_data):
                 question = message_text.strip()
                 
                 # Remove common bot mention patterns
-                question = question.replace('@Raven', '').replace('Raven', '').strip()
+                question = question.replace('@Orcal', '').replace('Orcal', '').strip()
                 
                 if not question or question.lower() in ['hi', 'hello', 'hey']:
                     # Simple greeting - use default response
-                    response_text = "Hi! I'm Raven, your AI assistant for this repository. Ask me anything about the Google-Spaces-Tasks-reporter codebase!"
+                    response_text = "Hi! I'm Orcal, your AI assistant for this repository. Ask me anything about the Google-Spaces-Tasks-reporter codebase!"
                 else:
                     # Use DeepSeek to answer the question
                     logger.info(f"Processing question from {sender_name}: {question[:100]}")
                     response_text = _ask_deepseek(question, config)
                 
-                send_response_async(space_name, thread_name, response_text, bot_name='raven')
+                send_response_async(space_name, thread_name, response_text, bot_name='orcal')
             except Exception as e:
                 logger.error(f"Failed to send response: {e}")
         
