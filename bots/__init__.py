@@ -68,11 +68,11 @@ def load_bot(bot_name):
     """
     Load a bot module or package dynamically.
     
-    Works for both module format (bots/tachy.py) and package format (bots/raven/__init__.py).
+    Works for both module format (bots/tachy.py) and package format (bots/orcal/__init__.py).
     The bot must export a `process_event(event_data)` function.
     
     Args:
-        bot_name (str): Name of the bot (e.g., 'tachy', 'raven')
+        bot_name (str): Name of the bot (e.g., 'tachy', 'orcal')
     
     Returns:
         module: The loaded bot module/package
@@ -106,7 +106,7 @@ def _get_bot_credentials_paths(bot_name):
     Bots MUST use credentials from their bot-specific directory: config/bots/{bot_name}/
     
     Args:
-        bot_name (str): Name of the bot (e.g., 'tachy', 'raven')
+        bot_name (str): Name of the bot (e.g., 'tachy', 'orcal')
     
     Returns:
         tuple: (token_file, credentials_file) paths
@@ -128,7 +128,7 @@ def get_bot_credentials(bot_name) -> Credentials:
     No fallback to top-level config - bot credentials must be in bot directory.
     
     Args:
-        bot_name (str): Name of the bot (e.g., 'tachy', 'raven')
+        bot_name (str): Name of the bot (e.g., 'tachy', 'orcal')
     
     Returns:
         Credentials: Google API credentials object

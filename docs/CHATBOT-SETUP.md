@@ -2,9 +2,9 @@
 
 ## Overview
 
-This system supports multiple bots (Tachy and Raven) that respond to Google Chat messages when @mentioned. Each bot has its own identity and response message:
+This system supports multiple bots (Tachy and Orcal) that respond to Google Chat messages when @mentioned. Each bot has its own identity and response message:
 - **Tachy**: Responds with "hi I'm techy"
-- **Raven**: Responds with "hi I'm raven"
+- **Orcal**: Responds with "hi I'm orcal"
 
 Both bots use path-based routing via `chatbot.cgi` and share unified logging.
 
@@ -35,16 +35,16 @@ Before using the Chat Apps, you need to configure each bot in Google Cloud Conso
    - Add email addresses of users who should be able to install the app
 4. Save the configuration
 
-#### For Raven Bot:
+#### For Orcal Bot:
 
 1. In the same Google Cloud Console > APIs & Services > Chat API > Configuration
-2. Create a **separate** Chat App "Raven":
-   - **App name**: "Raven" (or your preferred name)
+2. Create a **separate** Chat App "Orcal":
+   - **App name**: "Orcal" (or your preferred name)
    - **Avatar URL**: (optional)
-   - **Description**: "Raven bot assistant"
+   - **Description**: "Orcal bot assistant"
    - **Interactive features**: 
      - ✅ Enable this option
-     - **HTTP endpoint URL**: `https://example.com/cgi-bin/chatbot.cgi/raven`
+     - **HTTP endpoint URL**: `https://example.com/cgi-bin/chatbot.cgi/orcal`
    - **Functionality**: 
      - ✅ Enable "Join spaces and group conversations"
    - **Permissions**: Verify these scopes are present (same as Tachy)
@@ -60,7 +60,7 @@ After Cloud Console configuration:
 1. Go to your Google Chat space
 2. Click the space name at the top
 3. Select "Apps & integrations" → "Add apps"
-4. Both "Tachy" and "Raven" should now appear in the list
+4. Both "Tachy" and "Orcal" should now appear in the list
 5. Click to add each bot to the space as needed
 
 The bots will start receiving messages and responding immediately when @mentioned.
@@ -69,15 +69,15 @@ The bots will start receiving messages and responding immediately when @mentione
 
 The multi-bot system consists of:
 
-1. **`chatbot.cgi`**: CGI dispatcher that receives HTTP POST requests from Google Chat and routes to appropriate bot based on path (`/tachy` or `/raven`)
+1. **`chatbot.cgi`**: CGI dispatcher that receives HTTP POST requests from Google Chat and routes to appropriate bot based on path (`/tachy` or `/orcal`)
 2. **`bots/__init__.py`**: Common utilities, unified logging, and bot loader
 3. **`bots/tachy.py`**: Tachy bot (module format) - responds "hi I'm techy"
-4. **`bots/raven/__init__.py`**: Raven bot (package format) - responds "hi I'm raven"
+4. **`bots/orcal/__init__.py`**: Orcal bot (package format) - responds "hi I'm orcal"
 
 ### How It Works
 
 1. Google Chat sends an event POST request when a message is posted where a bot is @mentioned
-2. The request URL includes the bot path (e.g., `/chatbot.cgi/tachy` or `/chatbot.cgi/raven`)
+2. The request URL includes the bot path (e.g., `/chatbot.cgi/tachy` or `/chatbot.cgi/orcal`)
 3. The CGI script (`chatbot.cgi`) extracts the bot name from the path
 4. The bot loader (`bots.load_bot()`) dynamically loads the appropriate bot module/package
 5. The request is forwarded to `bot.process_event(event_data)`
@@ -89,7 +89,7 @@ The multi-bot system consists of:
 
 Each bot logs messages where it is @mentioned and responds with its unique message:
 - **Tachy**: "hi I'm techy"
-- **Raven**: "hi I'm raven"
+- **Orcal**: "hi I'm orcal"
 
 ### What Gets Logged
 
@@ -102,7 +102,7 @@ Each incoming message logs:
 
 For MESSAGE events (when @mentioned):
 - Tachy sends "hi I'm techy" as a response
-- Raven sends "hi I'm raven" as a response
+- Orcal sends "hi I'm orcal" as a response
 - Posts in the same thread to maintain conversation context
 - Uses OAuth credentials to authenticate with Chat API
 
@@ -112,7 +112,7 @@ For MESSAGE events (when @mentioned):
 2025-11-02 12:00:00 - INFO - Event: MESSAGE | From: John Doe | Message: Hello team, I wanted to discuss...
 2025-11-02 12:00:01 - INFO - Response sent successfully to spaces/ABC123: hi I'm techy
 2025-11-02 12:01:15 - INFO - Event: MESSAGE | From: Jane Smith | Message: Quick question about...
-2025-11-02 12:01:16 - INFO - Response sent successfully to spaces/ABC123: hi I'm raven
+2025-11-02 12:01:16 - INFO - Response sent successfully to spaces/ABC123: hi I'm orcal
 2025-11-02 12:02:30 - INFO - Event: ADDED_TO_SPACE | From: Unknown | Message: (no message text)
 ```
 
@@ -141,9 +141,9 @@ curl -X POST http://localhost/cgi-bin/chatbot.cgi/tachy \
   }'
 ```
 
-Test Raven bot:
+Test Orcal bot:
 ```bash
-curl -X POST http://localhost/cgi-bin/chatbot.cgi/raven \
+curl -X POST http://localhost/cgi-bin/chatbot.cgi/orcal \
   -H "Content-Type: application/json" \
   -d '{
     "type": "MESSAGE",
@@ -151,7 +151,7 @@ curl -X POST http://localhost/cgi-bin/chatbot.cgi/raven \
       "messagePayload": {
         "message": {
           "sender": {"displayName": "Test User"},
-          "text": "Test message for Raven",
+          "text": "Test message for Orcal",
           "space": {"name": "spaces/ABC123"},
           "thread": {"name": "spaces/ABC123/threads/THREAD123"}
         }
@@ -277,12 +277,12 @@ Google Chat sends events with the following structure:
 
 4. Verify the correct callback URL is configured in Google Cloud Console:
    - Tachy: `https://example.com/cgi-bin/chatbot.cgi/tachy`
-   - Raven: `https://example.com/cgi-bin/chatbot.cgi/raven`
+   - Orcal: `https://example.com/cgi-bin/chatbot.cgi/orcal`
 
 ### Wrong Bot Responding
 
 - Check that each bot has a separate Chat App configuration in Google Cloud Console
-- Verify each bot's callback URL includes the correct path (`/tachy` or `/raven`)
+- Verify each bot's callback URL includes the correct path (`/tachy` or `/orcal`)
 - Ensure you're @mentioning the correct bot in the space
 
 ### JSON Decode Errors
@@ -308,7 +308,7 @@ chmod 644 ../logs/google-chatbot.log
 
 - `bots/__init__.py`: Common utilities, unified logging, and bot loader
 - `bots/tachy.py`: Tachy bot (module format)
-- `bots/raven/__init__.py`: Raven bot (package format)
+- `bots/orcal/__init__.py`: Orcal bot (package format)
 - `chatbot.cgi`: Multi-bot CGI dispatcher
 - `../logs/google-chatbot.log`: Unified log file (created automatically)
 
