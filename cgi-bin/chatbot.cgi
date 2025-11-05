@@ -3,7 +3,7 @@
 CGI Script for Chat Bot (Multi-Bot Router)
 
 This script receives events from Google Chat and routes them to the appropriate bot
-based on the path (e.g., /chatbot.cgi/tachy or /chatbot.cgi/raven).
+based on the path (e.g., /chatbot.cgi/tachy or /chatbot.cgi/orcal).
 """
 
 import sys
@@ -42,7 +42,7 @@ def main():
     try:
         # Extract bot name from PATH_INFO
         # Examples: /chatbot.cgi/tachy -> PATH_INFO = '/tachy'
-        #           /chatbot.cgi/raven -> PATH_INFO = '/raven'
+        #           /chatbot.cgi/orcal -> PATH_INFO = '/orcal'
         path_info = os.environ.get('PATH_INFO', '')
         bot_name = path_info.strip('/').split('/')[0] if path_info else 'tachy'
         
