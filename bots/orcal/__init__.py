@@ -98,12 +98,24 @@ def _ask_deepseek(question, config):
     context = _get_repo_context()
     
     # Build the prompt
-    system_prompt = """You are Orcal, a helpful AI assistant for the Google-Spaces-Tasks-reporter project. 
-You answer questions about the codebase, setup, configuration, and functionality.
-Provide concise, accurate answers based on the repository documentation.
-If you're unsure, say so rather than making up information."""
+    system_prompt = """You are Orcal, a helpful AI assistant.
+
+Primary role: Answer questions about the Google-Spaces-Tasks-reporter project (codebase, setup, configuration, functionality).
+Secondary role: Answer general questions on any topic when asked.
+
+When answering repository questions, use the provided context. For general questions, use your knowledge.
+Be concise, accurate, and helpful."""
     
-    user_message = f"Repository Context:\n{context}\n\nUser Question: {question}\n\nPlease provide a helpful answer."
+    # Only include repository context if the question seems related to the project
+    repo_keywords = ['repo', 'code', 'bot', 'setup', 'config', 'deploy', 'install', 'tachy', 'orcal', 'google chat', 'task', 'space', 'cgi', 'deepseek', 'dispatcher', 'api']
+    question_lower = question.lower()
+    
+    if any(keyword in question_lower for keyword in repo_keywords):
+        # Repo-related question - include context
+        user_message = f"Repository Context:\n{context}\n\nUser Question: {question}\n\nPlease provide a helpful answer."
+    else:
+        # General question - no need for repo context
+        user_message = question
     
     payload = {
         "model": model,
