@@ -83,7 +83,7 @@ The `google-` prefix is avoided as a brand choice. In the apt ecosystem `google-
 
 ### crude and mailroom
 
-majordomo is an information-flow connector, not an object-edit tool and not a cache-first one, so it lives in neither of the user's neighbouring accessors. crude (`SmartLayer/crude`) is rejected as a home: its `<resource> <verb>` CRUD grammar fits editable server-side records, not a read-mostly message flow whose tasks are reconstructed rather than stored. mailroom (`SmartLayer/mailroom`) is the architectural template, not the host: its two-front-door shape, its sieve, and its provenance-tagged local-cache-with-live-fallback carry across, but its cache is email-specific (maildir + mu) and cannot be inherited, so any chat cache is an optional, deferred layer majordomo would own. `DATA-MODEL.md` holds the full reasoning.
+majordomo is an information-flow connector, not an object-edit tool and not a cache-first one, so it lives in neither of the user's neighbouring accessors. crude (`SmartLayer/crude`) is rejected as a home: its `<resource> <verb>` CRUD grammar fits editable server-side records, not a read-mostly message flow whose tasks are reconstructed rather than stored. mailroom (`SmartLayer/mailroom`) is the architectural template, not the host: its sieve and its provenance-tagged local-cache-with-live-fallback carry across, but its cache is email-specific (maildir + mu) and cannot be inherited, so majordomo builds its own. That cache is mandatory, not optional: Google throttles live reads, so a hundred-plus-item scan can take minutes and users expect mailroom speed. How it is served, a CLI over a cron-synced store or a caching daemon over REST in the Evolution API style, is open. `DATA-MODEL.md` holds the full reasoning.
 
 ### gchat-cli
 
@@ -120,7 +120,7 @@ Decided:
 - Task reconstruction from chat messages as the core capability.
 - Sieve enforced in the core, never only in a front door.
 - Orchestration kept external.
-- The accessor's data model is an information flow, not object-edit (crude) or cache-first (mailroom); a local cache is an optional, deferred layer (`DATA-MODEL.md`).
+- The accessor's data model is an information flow backed by a mandatory local cache (Google throttles live reads); crude's object-edit model is rejected. Delivery, a CLI over a cron-synced store versus a caching daemon over REST, is open (`DATA-MODEL.md`).
 
 Open:
 
