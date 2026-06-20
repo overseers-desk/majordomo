@@ -4,7 +4,7 @@ A shorter forward plan, with the decided-and-open scope as a checklist, lives al
 
 ## What majordomo is
 
-majordomo is a command-line tool that reads Google Chat and reports on it. The command line is the primary interface; an MCP server is a secondary interface for AI agents. Both are thin front doors over one shared core, and the core is written so the same design can later reach sources other than Google.
+majordomo is a command-line tool that reads Google Chat and reports on it. The command line is the front door for people, scripts, and AI agents alike; an AI agent drives it through a skill that carries the usage recipes. The command line is a thin layer over one shared core, and the core is written so the same design can later reach sources other than Google.
 
 Its name is the household steward who runs a principal's affairs and decides what reaches them. The choice points at the access filter described below, and the word is unclaimed on PyPI and apt as of 2026-05-22. Names beginning with `google-` are avoided because that namespace reads as official Google software, and `gchat` and `gchat-cli` are already taken and imply a generic chat client rather than this reporter.
 
@@ -24,7 +24,7 @@ The sieve subsumes the present `IGNORE_SPACES` and `IGNORE_ASSIGNEE` environment
 
 ## Capabilities
 
-All capabilities are reachable through both front doors:
+All capabilities are reachable from the command line, and so from the skill that drives it:
 
 - List spaces the account belongs to.
 - Read messages from a space over a date range, paginated to completeness so reconstruction over long windows works.
@@ -39,16 +39,19 @@ All capabilities are reachable through both front doors:
 
 ### Core
 
-One importable Python package holds the entire business behaviour: the Google Chat client wrapping the official API, the configuration loader, the sieve, task reconstruction, reporting, multi-account credential management, and the People-API name resolver. The core has no command-line parsing and no MCP protocol code; it exposes functions and types that any caller can use.
+One importable Python package holds the entire business behaviour: the Google Chat client wrapping the official API, the configuration loader, the sieve, task reconstruction, reporting, multi-account credential management, and the People-API name resolver. The core has no command-line parsing; it exposes functions and types that any caller can use.
 
-### Front doors
+### The command line, and the skill that drives it
 
-Two front doors call the core and add no logic of their own:
+The command line is the one front door. It calls the core and adds no logic of its own: it parses arguments, calls core functions, and prints a result, human-readable by default and JSON under `--format json`. A person types it at a terminal, a cron entry or systemd timer triggers it, an automation script drives it, and an AI agent drives it through a skill.
 
-- The command-line interface is the primary one. It is what a person types at a terminal, what a cron entry or systemd timer triggers, and what an automation script drives.
-- The MCP server is the secondary one. It exposes the same operations as MCP tools so AI agents can call them through that protocol.
+The skill is the AI's bridge to the command line. It carries the usage recipes (which subcommand answers which question, how to chain a name lookup into a task query, how to read the JSON) so the agent runs the right invocation. The skill holds knowledge, not logic; the logic stays in the core. Because majordomo emits its own clean JSON, the agent reads structured output directly, with none of the proto-unwrapping or field-digging that a foreign API would force into the skill.
 
-Because the sieve and the credentials live in the core, behaviour stays consistent across every front door, a single change reaches all of them, and no front door can bypass the access gate by accident.
+### Why not an MCP server, for now
+
+An MCP server is the usual second front door for AI agents, and it is deliberately not built here. It earns its place only when an operation is genuinely code-shaped, something a skill keeps getting wrong that deterministic code would get right: in practice, fuzzy name resolution and unwrapping a foreign wire format. majordomo has neither. It resolves names through the People API and can match an assignee by substring as a command-line flag, and it owns its output format, so there is no wire format to unwrap. The skill-over-command-line path covers the agent need without an MCP surface to build and maintain. MCP stays an escalation: if a specific operation proves code-shaped and the skill cannot carry it reliably, that one operation can be promoted into a thin MCP tool, not the whole interface. The one case that would change this is an AI host with no shell access, where the command line cannot be reached and MCP becomes the only option.
+
+Because the sieve and the credentials live in the core, behaviour stays consistent however the core is reached, a single change reaches every caller, and nothing can bypass the access gate by accident.
 
 ## Configuration
 
@@ -69,9 +72,9 @@ Credentials are keyed by identity, so several Google accounts can be addressed b
 
 ## The sieve
 
-The sieve is an allow-list and block-list of spaces. Its purpose is to keep certain conversations out of the agent's view: a user who chats with the tool through MCP should not have private spaces returned by `list_spaces` or scanned by `read_messages`. The lists live in the human-authored TOML, are loaded at the start of every call, and are applied inside the core before any space identifier or message reaches the caller.
+The sieve is an allow-list and block-list of spaces. Its purpose is to keep certain conversations out of the agent's view: an AI agent driving the command line should not have private spaces returned by a list-spaces call or scanned by a read-messages call. The lists live in the human-authored TOML, are loaded at the start of every call, and are applied inside the core before any space identifier or message reaches the caller.
 
-Placing it in the core, not in a wrapper, means any front door (and any future front door) inherits it for free; a future automation that talks to the core directly cannot work around a wrapper-only gate.
+Placing it in the core, not in the command-line layer, means any caller (including a future front door) inherits it for free; a future automation that talks to the core directly cannot work around a command-line-only gate.
 
 ## Naming and packaging convention
 
@@ -89,17 +92,17 @@ majordomo is an information-flow connector, not an object-edit tool and not a ca
 
 `gchat-cli` (the project `chadsaun/gchat`, MIT) already implements the accessor layer majordomo needs: OAuth with multi-account support, TOML configuration, listing spaces, reading and searching messages, sending, and JSON output. It is a single-author build of about twenty hours from January 2026 with no activity or users since, so it is best treated as MIT source to fork and own rather than as a maintained dependency.
 
-What it does not do is exactly what majordomo is for: task reconstruction from chat messages, assignee reporting, the sieve, an MCP interface, and automation. Rebuilding the accessor layer that gchat-cli already demonstrates would be duplication; building the task-and-sieve layer on top is the genuine work.
+What it does not do is exactly what majordomo is for: task reconstruction from chat messages, assignee reporting, the sieve, the skill-driven agent interface, and automation. Rebuilding the accessor layer that gchat-cli already demonstrates would be duplication; building the task-and-sieve layer on top is the genuine work.
 
 The pending check before adopting gchat-cli is whether its read and search return the complete message history over a date window, since task reconstruction needs every message in range and the simple read path appears to cap at recent messages.
 
 ### Relationship to the present reporter
 
-The present `google_chat_reporter.py` in this repository is majordomo's starting point: its `spaces`, `people`, `stats`, `tasks`, `messages`, and `thread` subcommands are the capability list above, minus the sieve, the MCP front door, and multi-account by identity. The task-reconstruction logic, the People-API name resolution, and the date-range handling carry across; the environment-variable filters fold into the sieve; the single-account `config/token.json` is replaced by the identity-keyed scheme. The CLI shape stays close enough that present invocations have a direct majordomo equivalent.
+The present `google_chat_reporter.py` in this repository is majordomo's starting point: its `spaces`, `people`, `stats`, `tasks`, `messages`, and `thread` subcommands are the capability list above, minus the sieve, the skill-driven agent interface, and multi-account by identity. The task-reconstruction logic, the People-API name resolution, and the date-range handling carry across; the environment-variable filters fold into the sieve; the single-account `config/token.json` is replaced by the identity-keyed scheme. The CLI shape stays close enough that present invocations have a direct majordomo equivalent.
 
 ## Orchestration
 
-Whatever schedules or triggers majordomo lives outside it. The cheapest option is a cron entry or a systemd timer. A workflow engine (Prefect, Dagster, Airflow, or n8n) can drive the command line through an Execute Command node or a `BashOperator`, and through MCP via a client node where the engine has one. The choice of driver is a deployment decision to make when a concrete recurring need appears.
+Whatever schedules or triggers majordomo lives outside it. The cheapest option is a cron entry or a systemd timer. A workflow engine (Prefect, Dagster, Airflow, or n8n) can drive the command line through an Execute Command node or a `BashOperator`. The choice of driver is a deployment decision to make when a concrete recurring need appears.
 
 The intended automatic processing has a particular shape that informs this choice: a long tail of many distinct processes, each occurring a few times a week and needing a judgement per message (recognising a trusted sender asking for a date of birth, checking whether a document has reached a cloud drive, classifying an inbound request and routing it). The profile is not a few processes at high volume. That shape favours an agent driving the command line over a fixed workflow graph, because a static graph rewards a small number of well-defined flows that run often enough to amortise the cost of authoring them, while many low-frequency processes are cheaper to express as tool calls by a model that already understands the message.
 
@@ -113,8 +116,9 @@ majordomo is packaged for `pip` (PyPI) and for Debian (a `.deb`), following the 
 
 Decided:
 
-- Name `majordomo`; a command-line-first accessor with an MCP interface, written to extend beyond Google.
-- A core that holds the Google Chat logic, the configuration, and the sieve, with thin front doors.
+- Name `majordomo`; a command-line accessor that AI agents drive through a skill, written to extend beyond Google.
+- A core that holds the Google Chat logic, the configuration, and the sieve, with a thin command-line layer over it.
+- The command line is the one front door; a skill carries the agent's usage recipes. An MCP server is not built now, and stays an escalation for any single operation that proves code-shaped.
 - The two-file configuration split: TOML for what a person edits, JSON for what the program rewrites.
 - Credentials keyed by identity.
 - Task reconstruction from chat messages as the core capability.
