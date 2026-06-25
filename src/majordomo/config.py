@@ -68,3 +68,11 @@ def require_user_id(config: dict) -> str:
 
 def block_spaces(config: dict) -> list[str]:
     return list((config.get("sieve") or {}).get("block_spaces") or [])
+
+
+def live_token_file(config: dict) -> str:
+    return (config.get("live") or {}).get("token_file") or str(CONFIG_DIR / "token.json")
+
+
+def live_client_file(config: dict) -> str:
+    return (config.get("live") or {}).get("client_file") or str(CONFIG_DIR / "client_secret.json")
