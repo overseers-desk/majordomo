@@ -40,7 +40,13 @@ def get_credentials(cfg: dict):
     creds = Credentials.from_authorized_user_file(token_file)
     if not creds.valid:
         if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as exc:
+                raise SystemExit(
+                    f"majordomo: live token refresh failed — {exc}. "
+                    f"The OAuth client may be revoked; re-authorize and replace {token_file}."
+                )
             with open(token_file, "w") as fh:
                 fh.write(creds.to_json())
         else:
