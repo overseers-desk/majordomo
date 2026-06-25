@@ -1,9 +1,10 @@
 """majordomo MCP server — the secondary front door (mirrors mailroom's shape).
 
-Exposes the same reports as the CLI, over MCP, by calling the same ``reports``
-core. The sieve is applied there, so a tool cannot bypass it any more than the
-CLI can. Optional: needs the ``mcp`` extra (``pip install 'majordomo[mcp]'``).
-Launched by ``majordomo mcp`` (stdio).
+Exposes the same reports as the CLI, over MCP, by going through the same reader
+seam (`readers.make_reader`). The sieve is applied in the reader, so a tool
+cannot bypass it. Each tool takes an optional `source` ("cache" | "live"); the
+default is the cache fast path with a live fallback. Needs the `mcp` extra;
+launched by `majordomo mcp` (stdio).
 """
 
 from __future__ import annotations
@@ -13,40 +14,39 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from . import config, db, dates, models, reports
+from . import config, dates, readers
 
 
 def _jsonable(rows: list[dict]) -> list[dict]:
-    """Flatten datetimes so the result serialises over MCP, matching --json."""
     out = []
     for row in rows:
         out.append({k: (v.isoformat() if isinstance(v, (datetime, date)) else v) for k, v in row.items()})
     return out
 
 
-def _envelope(rows: list[dict]) -> dict:
-    return {"source": models.SOURCE_CACHE, "count": len(rows), "rows": _jsonable(rows)}
-
-
-def _open() -> tuple[dict, object, list[str]]:
+def _reader(source: Optional[str]):
     cfg = config.load_config()
-    return cfg, db.connect(), config.block_spaces(cfg)
+    return cfg, readers.make_reader(cfg, source)
+
+
+def _envelope(reader, rows: list[dict]) -> dict:
+    return {"source": reader.source, "count": len(rows), "rows": _jsonable(rows)}
 
 
 def create_server() -> FastMCP:
     server = FastMCP("majordomo")
 
     @server.tool()
-    def spaces() -> dict:
-        """List Google Chat spaces with their task counts (sieve applied)."""
-        _cfg, conn, blocked = _open()
-        return _envelope(reports.spaces(conn, blocked))
+    def spaces(source: Optional[str] = None) -> dict:
+        """List Google Chat spaces with task counts. source: cache | live (default auto)."""
+        _cfg, reader = _reader(source)
+        return _envelope(reader, reader.spaces())
 
     @server.tool()
-    def people() -> dict:
-        """List task assignees: users/<id>, display name, and task count."""
-        _cfg, conn, blocked = _open()
-        return _envelope(reports.people(conn, blocked))
+    def people(source: Optional[str] = None) -> dict:
+        """List task assignees: users/<id>, display name, task count."""
+        _cfg, reader = _reader(source)
+        return _envelope(reader, reader.people())
 
     @server.tool()
     def tasks(
@@ -57,19 +57,18 @@ def create_server() -> FastMCP:
         window: str = "month",
         since: Optional[str] = None,
         until: Optional[str] = None,
-        limit: int = reports.TASK_LIMIT,
+        limit: int = readers.reports.TASK_LIMIT,
+        source: Optional[str] = None,
     ) -> dict:
-        """Report tasks filtered by assignee/space/date. to_me/by_me need [me].user_id.
+        """Report tasks by assignee/space/date. to_me/by_me need [me].user_id.
 
         window is one of 7d, 30d, month, all; since/until are ISO dates that
-        override the window.
+        override the window. source: cache | live (default auto).
         """
-        cfg, conn, blocked = _open()
+        cfg, reader = _reader(source)
         me = config.require_user_id(cfg) if (to_me or by_me) else None
         start, end = dates.resolve(window, since, until)
-        rows = reports.tasks(
-            conn,
-            blocked,
+        rows = reader.tasks(
             to_user=me if to_me else None,
             by_user=me if by_me else None,
             assignee=assignee,
@@ -78,7 +77,7 @@ def create_server() -> FastMCP:
             end=end,
             limit=limit,
         )
-        return _envelope(rows)
+        return _envelope(reader, rows)
 
     @server.tool()
     def messages(
@@ -86,12 +85,13 @@ def create_server() -> FastMCP:
         window: str = "month",
         since: Optional[str] = None,
         until: Optional[str] = None,
-        limit: int = reports.MESSAGE_LIMIT,
+        limit: int = readers.reports.MESSAGE_LIMIT,
+        source: Optional[str] = None,
     ) -> dict:
-        """Report messages in a space over a date range."""
-        _cfg, conn, blocked = _open()
+        """Report messages in a space over a date range. source: cache | live (default auto)."""
+        _cfg, reader = _reader(source)
         start, end = dates.resolve(window, since, until)
-        return _envelope(reports.messages(conn, blocked, space=space, start=start, end=end, limit=limit))
+        return _envelope(reader, reader.messages(space, start=start, end=end, limit=limit))
 
     return server
 

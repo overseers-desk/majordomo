@@ -18,6 +18,11 @@ dependencies = [
 mcp = [
     "mcp>=1.0.0",
 ]
+live = [
+    "google-api-python-client>=2",
+    "google-auth-oauthlib>=1",
+    "google-auth>=2",
+]
 dev = [
     "pytest>=8.0.0",
 ]
