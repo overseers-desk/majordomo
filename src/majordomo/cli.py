@@ -34,17 +34,11 @@ def _warn_if_capped(rows: list, limit: int) -> None:
 
 
 def _me(cfg: dict) -> str:
-    uid = config.me_user_id(cfg)
-    if uid:
-        return uid
-    email = config.me_google_id(cfg)
-    hint = f" (config has [me].google_id={email!r}, an email, which v1 cannot resolve)" if email else ""
-    typer.echo(
-        f"majordomo: --to-me/--by-me need [me].user_id in config{hint}.\n"
-        "Run `majordomo people` to find your users/<id>, then add it as [me].user_id.",
-        err=True,
-    )
-    raise typer.Exit(2)
+    try:
+        return config.require_user_id(cfg)
+    except ValueError as exc:
+        typer.echo(f"majordomo: {exc}", err=True)
+        raise typer.Exit(2)
 
 
 @app.command()
@@ -106,3 +100,14 @@ def messages(
     rows = reports.messages(conn, blocked, space=space, start=start, end=end, limit=limit)
     emit(rows, models.MESSAGE_COLUMNS, models.SOURCE_CACHE, json_out)
     _warn_if_capped(rows, limit)
+
+
+@app.command()
+def mcp() -> None:
+    """Run the MCP server (stdio) — the secondary front door. Needs the `mcp` extra."""
+    try:
+        from .mcp_server import main as mcp_main
+    except ImportError:
+        typer.echo("majordomo: MCP support needs the extra — pip install 'majordomo[mcp]'.", err=True)
+        raise typer.Exit(1)
+    mcp_main()

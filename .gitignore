@@ -2,6 +2,15 @@
 *.pyc
 __pycache__/
 
+# Virtualenvs and build artifacts
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
 # Working notes and planning documents (do not commit)
 ARCHITECTURE_EVALUATION.md
 ESTIMATED_DIRECTORY_STRUCTURE.md
