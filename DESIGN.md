@@ -14,7 +14,7 @@ Its name is the household steward who runs a principal's affairs and decides wha
 
 When a Google Chat user creates a task through "Create a task for @Person (via Tasks)", that task cannot be retrieved through the Google Tasks API; the API returns nothing for tasks created this way. The only durable signal is the chat message "Created a task for @Person (via Tasks)". `GOOGLE_CHAT_TASKS_LIMITATIONS.md` documents the investigation behind that finding.
 
-majordomo reconstructs task activity by reading chat messages and parsing those task-creation patterns, then reports who holds which tasks across spaces over a date range. Reconstruction from messages, not from a tasks API, is the core value, and no off-the-shelf tool does it.
+Task activity therefore has to be reconstructed from chat messages by parsing those task-creation patterns, then reported by who holds which tasks across spaces over a date range. The BI platform already does this reconstruction server-side (a `coord_tasks` table over a `googlechat` mirror); majordomo reports over it when that backend is present and runs its own message decoder when it is not. Which source serves which path is in `DATA-MODEL.md`.
 
 ### Privacy gating
 
@@ -27,8 +27,8 @@ The sieve subsumes the present `IGNORE_SPACES` and `IGNORE_ASSIGNEE` environment
 All capabilities are reachable through both front doors:
 
 - List spaces the account belongs to.
-- Read messages from a space over a date range, paginated to completeness so reconstruction over long windows works.
-- Reconstruct task activity from message patterns: creation, assignment, and other lifecycle signals the chat carries.
+- Read messages and spaces over a date range — from the BI platform's cache as the fast path, or a live Chat read paginated to completeness when that backend is absent.
+- Report task activity (creation, assignment, and other lifecycle signals): from the BI platform's `coord_tasks` reconstruction when present, from majordomo's own message decoder when standalone.
 - Report tasks by assignee, by space, and by date range.
 - Resolve user identifiers to display names via the People API, so reports name people rather than opaque IDs.
 - Apply the sieve, dropping blocked spaces from every output path.
@@ -39,7 +39,7 @@ All capabilities are reachable through both front doors:
 
 ### Core
 
-One importable Python package holds the entire business behaviour: the Google Chat client wrapping the official API, the configuration loader, the sieve, task reconstruction, reporting, multi-account credential management, and the People-API name resolver. The core has no command-line parsing and no MCP protocol code; it exposes functions and types that any caller can use.
+One importable Python package holds the entire business behaviour: a reader for the BI platform's cache (the fast path) and a Google Chat client wrapping the official API (the standalone path), the configuration loader, the sieve, the task decoder, reporting, multi-account credential management, and the People-API name resolver. The cache reader is the primary source and the live client its fallback; the backend accelerates, it does not gate. The core has no command-line parsing and no MCP protocol code; it exposes functions and types that any caller can use.
 
 ### Front doors
 
@@ -89,13 +89,13 @@ majordomo is an information-flow reader and reporter, not an object-edit tool, s
 
 `gchat-cli` (the project `chadsaun/gchat`, MIT) already implements the accessor layer majordomo needs: OAuth with multi-account support, TOML configuration, listing spaces, reading and searching messages, sending, and JSON output. It is a single-author build of about twenty hours from January 2026 with no activity or users since, so it is best treated as MIT source to fork and own rather than as a maintained dependency.
 
-What it does not do is exactly what majordomo is for: task reconstruction from chat messages, assignee reporting, the sieve, an MCP interface, and automation. Rebuilding the accessor layer that gchat-cli already demonstrates would be duplication; building the task-and-sieve layer on top is the genuine work.
+gchat-cli matters only for majordomo's standalone live read, the fallback when the BI cache is absent, not the fast path, which reads the existing mirror. Forking its accessor for that fallback would save rebuilding OAuth, multi-account, and paginated message reads; what it does not do is majordomo's own work either way: assignee reporting, the sieve, the MCP interface, identity-keyed reporting, and automation.
 
-The pending check before adopting gchat-cli is whether its read and search return the complete message history over a date window, since task reconstruction needs every message in range and the simple read path appears to cap at recent messages.
+The pending check before adopting gchat-cli for that fallback is whether its read and search return the complete message history over a date window, since a standalone reconstruction needs every message in range and the simple read path appears to cap at recent messages.
 
 ### Relationship to the present reporter
 
-The present `google_chat_reporter.py` in this repository is majordomo's starting point: its `spaces`, `people`, `stats`, `tasks`, `messages`, and `thread` subcommands are the capability list above, minus the sieve, the MCP front door, and multi-account by identity. The task-reconstruction logic, the People-API name resolution, and the date-range handling carry across; the environment-variable filters fold into the sieve; the single-account `config/token.json` is replaced by the identity-keyed scheme. The CLI shape stays close enough that present invocations have a direct majordomo equivalent.
+The present `google_chat_reporter.py` in this repository is majordomo's starting point: its `spaces`, `people`, `stats`, `tasks`, `messages`, and `thread` subcommands are the capability list above, minus the sieve, the MCP front door, and multi-account by identity. The task-reconstruction logic (becoming majordomo's standalone decoder), the People-API name resolution, and the date-range handling carry across; the environment-variable filters fold into the sieve; the single-account `config/token.json` is replaced by the identity-keyed scheme. The CLI shape stays close enough that present invocations have a direct majordomo equivalent.
 
 ## Orchestration
 
@@ -117,7 +117,7 @@ Decided:
 - A core that holds the Google Chat logic, the configuration, and the sieve, with thin front doors.
 - The two-file configuration split: TOML for what a person edits, JSON for what the program rewrites.
 - Credentials keyed by identity.
-- Task reconstruction from chat messages as the core capability.
+- Task activity reported from the BI platform's reconstruction (`coord_tasks`) when present, from majordomo's own message decoder when standalone; the decoder is retained so majordomo runs without that backend.
 - Sieve enforced in the core, never only in a front door.
 - Orchestration kept external.
 - The accessor's data model is an information flow (crude's object-edit model is rejected). The fast path reads the BI platform's existing cache and reconstructed tasks, mandatory cache-first because Google throttles live reads, while majordomo keeps its own live read and decoder to run standalone. Delivery (query CLI versus REST daemon) is open (`DATA-MODEL.md`).
