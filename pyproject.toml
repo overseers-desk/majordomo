@@ -14,8 +14,21 @@ dependencies = [
     "pymysql>=1.0",
 ]
 
+[project.optional-dependencies]
+mcp = [
+    "mcp>=1.0.0",
+]
+dev = [
+    "pytest>=8.0.0",
+]
+
 [project.scripts]
 majordomo = "majordomo.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"

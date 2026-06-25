@@ -48,5 +48,23 @@ def me_google_id(config: dict) -> str | None:
     return (config.get("me") or {}).get("google_id")
 
 
+def require_user_id(config: dict) -> str:
+    """The configured subject's ``users/<id>``, or raise ValueError with guidance.
+
+    v1 has no live People API, so the email (``google_id``) cannot be resolved to
+    an id; ``user_id`` must be set explicitly. Both front doors call this, so the
+    rule lives in one place.
+    """
+    uid = me_user_id(config)
+    if uid:
+        return uid
+    email = me_google_id(config)
+    hint = f" (config has [me].google_id={email!r}, an email, which v1 cannot resolve)" if email else ""
+    raise ValueError(
+        f"--to-me/--by-me need [me].user_id in config{hint}. "
+        "Run `majordomo people` to find your users/<id>, then add it as [me].user_id."
+    )
+
+
 def block_spaces(config: dict) -> list[str]:
     return list((config.get("sieve") or {}).get("block_spaces") or [])
