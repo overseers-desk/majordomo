@@ -83,7 +83,7 @@ The `google-` prefix is avoided as a brand choice. In the apt ecosystem `google-
 
 ### crude and mailroom
 
-majordomo is an information-flow connector, not an object-edit tool and not a cache-first one, so it lives in neither of the user's neighbouring accessors. crude (`SmartLayer/crude`) is rejected as a home: its `<resource> <verb>` CRUD grammar fits editable server-side records, not a read-mostly message flow whose tasks are reconstructed rather than stored. mailroom (`SmartLayer/mailroom`) is the architectural template, not the host: its sieve and its provenance-tagged local-cache-with-live-fallback carry across, but its cache is email-specific (maildir + mu) and cannot be inherited, so majordomo builds its own. That cache is mandatory, not optional: Google throttles live reads, so a hundred-plus-item scan can take minutes and users expect mailroom speed. How it is served, a CLI over a cron-synced store or a caching daemon over REST in the Evolution API style, is open. `DATA-MODEL.md` holds the full reasoning.
+majordomo is an information-flow reader and reporter, not an object-edit tool, so it lives in neither of the user's neighbouring accessors. crude (`SmartLayer/crude`) is rejected as a home: its CRUD/object grammar does not fit a read-mostly message flow whose tasks are reconstructed, not stored. mailroom (`SmartLayer/mailroom`) is the architectural template, not the host: its sieve and provenance-tagged cache-with-live-fallback carry across, but its email-specific maildir+mu cache does not. The cache is mandatory, since Google throttles live reads (a hundred-plus-item scan can take minutes, and users expect mailroom speed), but majordomo does not build it: it reads the BI platform's existing server-side `googlechat` mirror and `coord_tasks` reconstruction (direct DB first, an API later), keeping its own live read and task decoder to run without that backend. How it serves callers, a query CLI or a daemon over REST in the Evolution API style, is open. `DATA-MODEL.md` holds the full reasoning.
 
 ### gchat-cli
 
@@ -120,7 +120,7 @@ Decided:
 - Task reconstruction from chat messages as the core capability.
 - Sieve enforced in the core, never only in a front door.
 - Orchestration kept external.
-- The accessor's data model is an information flow backed by a mandatory local cache (Google throttles live reads); crude's object-edit model is rejected. Delivery, a CLI over a cron-synced store versus a caching daemon over REST, is open (`DATA-MODEL.md`).
+- The accessor's data model is an information flow (crude's object-edit model is rejected). The fast path reads the BI platform's existing cache and reconstructed tasks, mandatory cache-first because Google throttles live reads, while majordomo keeps its own live read and decoder to run standalone. Delivery (query CLI versus REST daemon) is open (`DATA-MODEL.md`).
 
 Open:
 
