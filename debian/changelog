@@ -1,3 +1,11 @@
+majordomo (0.1.1) unstable; urgency=medium
+
+  * Register a Claude Code command, kept current on every run
+    (`majordomo install-claude-command` writes ~/.claude/commands/majordomo.md;
+    a same-named skill supersedes it).
+
+ -- Weiwu Zhang <a@colourful.land>  Mon, 29 Jun 2026 00:07:58 +1000
+
 majordomo (0.1.0) unstable; urgency=medium
 
   * Initial release. Read and report Google Chat task activity: tasks by
