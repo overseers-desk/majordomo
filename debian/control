@@ -1,0 +1,39 @@
+Source: majordomo
+Section: utils
+Priority: optional
+Maintainer: Weiwu Zhang <a@colourful.land>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ pybuild-plugin-pyproject,
+ python3-all,
+ python3-setuptools,
+Standards-Version: 4.6.2
+Homepage: https://github.com/SmartLayer/majordomo
+Rules-Requires-Root: no
+
+Package: majordomo
+Architecture: all
+Depends:
+ ${python3:Depends},
+ ${misc:Depends},
+ python3 (>= 3.11),
+ python3-typer,
+ python3-rich,
+ python3-pymysql,
+ python3-googleapi,
+ python3-google-auth,
+ python3-google-auth-oauthlib,
+Description: read and report Google Chat task activity
+ majordomo reads Google Chat and reports task activity reconstructed from the
+ "Created a task for @Person (via Tasks)" messages that the Google Tasks API
+ does not return. It reports tasks by assignee, space, and date, and lists
+ spaces, people, messages, and threads.
+ .
+ A fast path reads an existing server-side cache of Chat; a live path reads the
+ Chat API directly and decodes tasks itself, so the tool also works without the
+ cache. A privacy sieve drops blocked spaces and assignees in the core.
+ .
+ The command line is the primary interface. An MCP server (majordomo mcp) is a
+ secondary interface for AI agents; it needs the mcp Python package, which is
+ not yet available as a Debian package, so install it through pip for that mode.

@@ -16,3 +16,12 @@ ARCHITECTURE_EVALUATION.md
 ESTIMATED_DIRECTORY_STRUCTURE.md
 refactoring_plan_*.md
 test_chat_app.sh
+
+# Debian build artifacts
+debian/files
+debian/*.substvars
+debian/*.debhelper
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/majordomo/
+.pybuild/

@@ -1,0 +1,8 @@
+majordomo (0.1.0) unstable; urgency=medium
+
+  * Initial release. Read and report Google Chat task activity: tasks by
+    assignee, space, and date; spaces, people, messages, and threads. A cache
+    fast path with a live Chat-API fallback, a privacy sieve, and an optional
+    MCP front door.
+
+ -- Weiwu Zhang <a@colourful.land>  Sun, 28 Jun 2026 17:19:15 +1000
