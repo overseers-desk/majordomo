@@ -43,16 +43,22 @@ def create_server() -> FastMCP:
         return _envelope(reader, reader.spaces())
 
     @server.tool()
-    def people(source: Optional[str] = None) -> dict:
-        """List task assignees: users/<id>, display name, task count."""
+    def people(window: str = "year", since: Optional[str] = None, until: Optional[str] = None,
+               source: Optional[str] = None) -> dict:
+        """List participants (senders and assignees) with message and task counts.
+
+        window is one of 7d, 30d, month, year, all; since/until are ISO dates.
+        """
         _cfg, reader = _reader(source)
-        return _envelope(reader, reader.people())
+        start, end = dates.resolve(window, since, until)
+        return _envelope(reader, reader.people(start=start, end=end))
 
     @server.tool()
     def tasks(
         to_me: bool = False,
         by_me: bool = False,
         assignee: Optional[str] = None,
+        assignee_name: Optional[str] = None,
         space: Optional[str] = None,
         window: str = "month",
         since: Optional[str] = None,
@@ -62,8 +68,8 @@ def create_server() -> FastMCP:
     ) -> dict:
         """Report tasks by assignee/space/date. to_me/by_me need [me].user_id.
 
-        window is one of 7d, 30d, month, all; since/until are ISO dates that
-        override the window. source: cache | live (default auto).
+        assignee_name is a glob over the prose @name; window is one of 7d, 30d,
+        month, year, all; since/until are ISO dates. source: cache | live.
         """
         cfg, reader = _reader(source)
         me = config.require_user_id(cfg) if (to_me or by_me) else None
@@ -72,6 +78,7 @@ def create_server() -> FastMCP:
             to_user=me if to_me else None,
             by_user=me if by_me else None,
             assignee=assignee,
+            assignee_name=assignee_name,
             space=space,
             start=start,
             end=end,
@@ -81,17 +88,18 @@ def create_server() -> FastMCP:
 
     @server.tool()
     def messages(
-        space: str,
+        space: Optional[str] = None,
+        thread: Optional[str] = None,
         window: str = "month",
         since: Optional[str] = None,
         until: Optional[str] = None,
         limit: int = readers.reports.MESSAGE_LIMIT,
         source: Optional[str] = None,
     ) -> dict:
-        """Report messages in a space over a date range. source: cache | live (default auto)."""
+        """Report messages in a space or thread over a date range. Needs space or thread."""
         _cfg, reader = _reader(source)
         start, end = dates.resolve(window, since, until)
-        return _envelope(reader, reader.messages(space, start=start, end=end, limit=limit))
+        return _envelope(reader, reader.messages(space, thread=thread, start=start, end=end, limit=limit))
 
     return server
 

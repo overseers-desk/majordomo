@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-WINDOWS = ("7d", "30d", "month", "all")
+WINDOWS = ("7d", "30d", "month", "year", "all")
 
 
 def _now_utc() -> datetime:
@@ -40,6 +40,8 @@ def resolve(
         return (now - timedelta(days=7), None)
     if window == "30d":
         return (now - timedelta(days=30), None)
+    if window == "year":
+        return (now - timedelta(days=365), None)
     if window == "month":
         first_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         first_prev = (first_this - timedelta(days=1)).replace(day=1)

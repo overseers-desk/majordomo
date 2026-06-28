@@ -70,6 +70,11 @@ def block_spaces(config: dict) -> list[str]:
     return list((config.get("sieve") or {}).get("block_spaces") or [])
 
 
+def block_assignees(config: dict) -> list[str]:
+    """Assignees (users/<id> or prose @name) to drop from every output."""
+    return list((config.get("sieve") or {}).get("block_assignees") or [])
+
+
 def live_token_file(config: dict) -> str:
     return (config.get("live") or {}).get("token_file") or str(CONFIG_DIR / "token.json")
 

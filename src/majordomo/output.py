@@ -6,7 +6,9 @@ JSON wraps the rows in an envelope carrying the provenance ``source`` and a
 
 from __future__ import annotations
 
+import csv as _csv
 import json
+import sys
 
 from rich.console import Console
 from rich.table import Table
@@ -21,9 +23,16 @@ def _cell(row: dict, key) -> str:
     return "" if value is None else str(value)
 
 
-def emit(rows: list[dict], columns: list[Column], source: str, output_json: bool) -> None:
+def emit(rows: list[dict], columns: list[Column], source: str,
+         output_json: bool = False, output_csv: bool = False) -> None:
     if output_json:
         print(json.dumps({"source": source, "count": len(rows), "rows": rows}, indent=2, default=str))
+        return
+    if output_csv:
+        writer = _csv.writer(sys.stdout)
+        writer.writerow([header for header, _ in columns])
+        for row in rows:
+            writer.writerow([_cell(row, key) for _, key in columns])
         return
     table = Table(show_header=True, header_style="bold cyan")
     for header, _ in columns:

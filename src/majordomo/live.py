@@ -1,22 +1,25 @@
 """Live Google Chat reader — the BI-less path. Reads the Chat API directly via
 OAuth and decodes tasks itself (decoder.py), so majordomo works without the BI
 backend. Needs the `live` extra (google-api-python-client, google-auth). All
-records are tagged ``source = "live"``; the sieve is applied here too.
-
-It reuses an existing chat-scoped ``token.json`` (and ``client_secret.json``)
-under ``~/.config/majordomo/`` — majordomo does not run an OAuth flow itself.
-Names come from the API and the prose @name (no People API). Live is windowed
-and slow under Google's read quota.
+records are tagged ``source = "live"``; the sieve (spaces + assignees) is applied
+here too. `login` mints the token. Names come from the API and the prose @name
+(no People API). Live is windowed and slow under Google's read quota.
 """
 
 from __future__ import annotations
 
+import fnmatch
 import os
 from datetime import datetime
 
 from . import config, decoder, sieve
 
 PEOPLE_LIMIT = 1000
+# Read-only scopes for a freshly-minted token.
+LOGIN_SCOPES = [
+    "https://www.googleapis.com/auth/chat.spaces.readonly",
+    "https://www.googleapis.com/auth/chat.messages.readonly",
+]
 
 
 def _require_google():
@@ -29,13 +32,34 @@ def _require_google():
     return Credentials, Request, build
 
 
+def login(cfg: dict) -> str:
+    """Mint a token via the browser OAuth flow, write it, return its path."""
+    try:
+        from google_auth_oauthlib.flow import InstalledAppFlow
+    except ImportError as exc:
+        raise SystemExit("majordomo: login needs the extra — pip install 'majordomo[live]'.") from exc
+    client_file = os.path.expanduser(config.live_client_file(cfg))
+    token_file = os.path.expanduser(config.live_token_file(cfg))
+    if not os.path.exists(client_file):
+        raise SystemExit(
+            f"majordomo: no OAuth client at {client_file}. Create a Desktop OAuth "
+            "client in Google Cloud (Chat API enabled) and save it there."
+        )
+    flow = InstalledAppFlow.from_client_secrets_file(client_file, LOGIN_SCOPES)
+    creds = flow.run_local_server(port=7276, access_type="offline", prompt="consent")
+    os.makedirs(os.path.dirname(token_file), exist_ok=True)
+    with open(token_file, "w") as fh:
+        fh.write(creds.to_json())
+    os.chmod(token_file, 0o600)
+    return token_file
+
+
 def get_credentials(cfg: dict):
     Credentials, Request, _ = _require_google()
     token_file = os.path.expanduser(config.live_token_file(cfg))
     if not os.path.exists(token_file):
         raise SystemExit(
-            f"majordomo: no live token at {token_file}. Copy a chat-scoped token.json "
-            "(and client_secret.json) there, or use the cache path."
+            f"majordomo: no live token at {token_file}. Run `majordomo login` first."
         )
     creds = Credentials.from_authorized_user_file(token_file)
     if not creds.valid:
@@ -45,12 +69,12 @@ def get_credentials(cfg: dict):
             except Exception as exc:
                 raise SystemExit(
                     f"majordomo: live token refresh failed — {exc}. "
-                    f"The OAuth client may be revoked; re-authorize and replace {token_file}."
+                    f"Re-run `majordomo login` (the OAuth client may be revoked)."
                 )
             with open(token_file, "w") as fh:
                 fh.write(creds.to_json())
         else:
-            raise SystemExit(f"majordomo: live token at {token_file} is invalid and cannot refresh.")
+            raise SystemExit(f"majordomo: live token at {token_file} is invalid; run `majordomo login`.")
     return creds
 
 
@@ -76,11 +100,16 @@ def _parse_dt(iso: str | None) -> datetime | None:
         return None
 
 
+def _space_of(thread_key: str) -> str | None:
+    return "/".join(thread_key.split("/")[:2]) if thread_key.startswith("spaces/") else None
+
+
 class LiveReader:
     source = "live"
 
-    def __init__(self, creds=None, blocked: list[str] | None = None, service=None):
+    def __init__(self, creds=None, blocked=None, blocked_assignees=None, service=None):
         self.blocked = blocked or []
+        self.blocked_assignees = blocked_assignees or []
         if service is not None:
             self.chat = service  # injected (tests)
         else:
@@ -89,10 +118,8 @@ class LiveReader:
         self._spaces: list[dict] | None = None
 
     @classmethod
-    def from_config(cls, cfg: dict, blocked: list[str]) -> "LiveReader":
-        return cls(get_credentials(cfg), blocked)
-
-    # --- raw API, sieve-aware ---
+    def from_config(cls, cfg: dict, blocked: list[str], blocked_assignees: list[str] | None = None) -> "LiveReader":
+        return cls(get_credentials(cfg), blocked, blocked_assignees)
 
     def _all_spaces(self) -> list[dict]:
         if self._spaces is None:
@@ -125,15 +152,13 @@ class LiveReader:
                 break
         return out
 
-    # --- reports (same shapes as the cache reader) ---
-
     def spaces(self) -> list[dict]:
         rows = [{"space_name": s.get("name"), "space_display": s.get("displayName"),
                  "space_type": s.get("spaceType"), "tasks": None} for s in self._all_spaces()]
         return sieve.filter_rows(self.blocked, rows)
 
-    def tasks(self, *, to_user=None, by_user=None, assignee=None, space=None,
-              start=None, end=None, limit=1000) -> list[dict]:
+    def tasks(self, *, to_user=None, by_user=None, assignee=None, assignee_name=None,
+              space=None, start=None, end=None, limit=1000) -> list[dict]:
         targets = [space] if space else [s.get("name") for s in self._all_spaces()]
         out: list[dict] = []
         for sp in targets:
@@ -145,8 +170,10 @@ class LiveReader:
             sender_of = {m.get("name"): (m.get("sender") or {}).get("name") for m in msgs}
             disp = self._space_display(sp)
             for t in decoded:
-                aid = t["assignee_user_name"]
+                aid, adisp = t["assignee_user_name"], t["assignee_display"]
                 if (to_user and aid != to_user) or (assignee and aid != assignee):
+                    continue
+                if assignee_name and not (adisp and fnmatch.fnmatch(adisp, assignee_name)):
                     continue
                 if by_user and sender_of.get(t["source_message_name"]) != by_user:
                     continue
@@ -155,34 +182,51 @@ class LiveReader:
                     "space_name": t["space_name"],
                     "space_display": disp,
                     "assignee_user_name": aid,
-                    "assignee": t["assignee_display"],
+                    "assignee": adisp,
                     "title": t["title"],
                     "created_at": _parse_dt(t["created_at"]),
                     "status": "open",
                 })
         out.sort(key=lambda r: r["created_at"] or datetime.min, reverse=True)
-        return sieve.filter_rows(self.blocked, out)[:limit]
+        out = sieve.filter_rows(self.blocked, out)
+        out = sieve.filter_assignees(self.blocked_assignees, out)
+        return out[:limit]
 
-    def people(self) -> list[dict]:
+    def people(self, *, start=None, end=None) -> list[dict]:
         by_id: dict[str, dict] = {}
         for s in self._all_spaces():
-            for m in self._messages(s.get("name"), None, None):
+            for m in self._messages(s.get("name"), start, end):
+                sender = (m.get("sender") or {}).get("name")
+                if sender:
+                    by_id.setdefault(sender, {"user_id": sender, "display": None, "msgs": 0, "tasks": 0})["msgs"] += 1
                 t = decoder.decode_task(m, s.get("name"))
                 if t and t["assignee_user_name"]:
                     e = by_id.setdefault(t["assignee_user_name"],
-                                         {"user_id": t["assignee_user_name"], "display": t["assignee_display"], "tasks": 0})
+                                         {"user_id": t["assignee_user_name"], "display": None, "msgs": 0, "tasks": 0})
                     e["tasks"] += 1
                     if not e["display"]:
                         e["display"] = t["assignee_display"]
-        return sorted(by_id.values(), key=lambda r: r["tasks"], reverse=True)[:PEOPLE_LIMIT]
+        rows = sorted(by_id.values(), key=lambda r: r["msgs"] + r["tasks"], reverse=True)[:PEOPLE_LIMIT]
+        return sieve.filter_assignees(self.blocked_assignees, rows, id_key="user_id", name_key="display")
 
-    def messages(self, space: str, *, start=None, end=None, limit=2000) -> list[dict]:
-        if not sieve.allows(self.blocked, space):
+    def messages(self, space: str | None = None, *, thread=None, start=None, end=None, limit=2000) -> list[dict]:
+        if thread:
+            key = thread.split(".")[0]
+            sp = _space_of(key)
+            targets = [sp] if sp else [s.get("name") for s in self._all_spaces()]
+        elif space:
+            targets = [space]
+        else:
             return []
-        disp = self._space_display(space)
-        rows = [{"name": m.get("name"), "space_name": space, "space_display": disp,
-                 "sender_name": (m.get("sender") or {}).get("name"),
-                 "sender_type": (m.get("sender") or {}).get("type"),
-                 "create_time": _parse_dt(m.get("createTime")), "text": m.get("text")}
-                for m in self._messages(space, start, end)]
+        rows: list[dict] = []
+        for sp in targets:
+            if sp and not sieve.allows(self.blocked, sp):
+                continue
+            for m in self._messages(sp, start, end):
+                if thread and m.get("name", "").split(".")[0] != key:
+                    continue
+                rows.append({"name": m.get("name"), "space_name": sp, "space_display": self._space_display(sp),
+                             "sender_name": (m.get("sender") or {}).get("name"),
+                             "sender_type": (m.get("sender") or {}).get("type"),
+                             "create_time": _parse_dt(m.get("createTime")), "text": m.get("text")})
         return sieve.filter_rows(self.blocked, rows)[:limit]
