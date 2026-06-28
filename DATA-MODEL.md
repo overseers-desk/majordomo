@@ -6,8 +6,8 @@ A decision record for **majordomo**, the command-line tool that reads Google Cha
 
 majordomo reads Google Chat and reports task activity. The accessor layer it needs — OAuth, list spaces, read and search messages over a date window, paginate to completeness, emit JSON — is generic plumbing that two of the user's existing tools already resemble:
 
-- **crude** (`SmartLayer/crude`): a monorepo of per-site CLIs under one grammar, `crude-<site> <resource> <verb>`, for read/write access to your own data on sites that lack a usable public API (ATDW, Skål, Rezdy, Deputy).
-- **mailroom** (`SmartLayer/mailroom`): a CLI-and-MCP accessor over IMAP email, with an optional local cache for fast archive-grade search, a privacy sieve, and identity-keyed multi-account.
+- **crude**: a monorepo of per-site CLIs under one grammar, `crude-<site> <resource> <verb>`, for read/write access to your own data on sites that lack a usable public API (ATDW, Skål, Rezdy, Deputy).
+- **mailroom**: a CLI-and-MCP accessor over IMAP email, with an optional local cache for fast archive-grade search, a privacy sieve, and identity-keyed multi-account.
 
 So the accessor could be a third crude site, a standalone tool (the `DESIGN.md` plan), or an extension folded into mailroom. Underneath that placement question sits a data-model question that decides it: is conversation access fundamentally an **object-edit** problem (crude's model), an **information-flow** problem (a stream of messages over time), or an **information-repository** problem (a locally cached, queryable mirror, mailroom's model)?
 

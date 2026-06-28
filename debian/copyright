@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: majordomo
-Upstream-Contact: https://github.com/SmartLayer/majordomo/issues
-Source: https://github.com/SmartLayer/majordomo
+Upstream-Contact: https://github.com/overseers-desk/majordomo/issues
+Source: https://github.com/overseers-desk/majordomo
 
 Files: *
 Copyright: 2026 Weiwu Zhang
