@@ -11,7 +11,7 @@ from typing import Optional
 
 import typer
 
-from . import config, dates, models, readers
+from . import _claude_command, config, dates, models, readers
 from .output import emit
 
 app = typer.Typer(
@@ -33,6 +33,7 @@ def _root(
         typer.echo("majordomo: use only one of --live / --cache.", err=True)
         raise typer.Exit(2)
     ctx.obj = {"source": "live" if live else "cache" if cache else None}
+    _claude_command.refresh()
 
 
 def _open(ctx: typer.Context):
@@ -149,6 +150,16 @@ def messages(
     rows = reader.messages(space, thread=thread, start=start, end=end, limit=limit)
     emit(rows, models.MESSAGE_COLUMNS, reader.source, json_out, csv_out)
     _warn_if_capped(rows, limit)
+
+
+@app.command("install-claude-command")
+def install_claude_command() -> None:
+    """(Re)write the majordomo command into ~/.claude/commands/majordomo.md.
+
+    Every run already keeps that file current silently; this writes it
+    explicitly and reports where, for a first install or a forced refresh.
+    """
+    _claude_command.install(typer.echo)
 
 
 @app.command()
