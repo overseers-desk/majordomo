@@ -152,9 +152,12 @@ class LiveReader:
                 break
         return out
 
-    def spaces(self) -> list[dict]:
+    def spaces(self, minimal_messages: int = 1) -> list[dict]:
+        # The live API gives no message count cheaply, so minimal_messages is not
+        # applied here (the CLI notes the filter is cache-only).
         rows = [{"space_name": s.get("name"), "space_display": s.get("displayName"),
-                 "space_type": s.get("spaceType"), "tasks": None} for s in self._all_spaces()]
+                 "space_type": s.get("spaceType"), "messages": None, "tasks": None}
+                for s in self._all_spaces()]
         return sieve.filter_rows(self.blocked, rows)
 
     def tasks(self, *, to_user=None, by_user=None, assignee=None, assignee_name=None,

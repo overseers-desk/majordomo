@@ -20,18 +20,22 @@ def _glob_to_like(pattern: str) -> str:
     return out.replace("*", "%").replace("?", "_")
 
 
-def spaces(conn, blocked: list[str]) -> list[dict]:
+def spaces(conn, blocked: list[str], *, minimal_messages: int = 1) -> list[dict]:
+    """Spaces with at least `minimal_messages` mirrored messages (default 1, so
+    Google's auto-created empty meeting groups drop out; 0 shows them)."""
     clause, params = sieve.clause(blocked, "s.name")
     rows = db.query(
         conn,
         f"""
         SELECT s.name AS space_name, s.display_name AS space_display, s.space_type,
+               (SELECT COUNT(*) FROM googlechat_messages m WHERE m.space_name = s.name) AS messages,
                (SELECT COUNT(*) FROM coord_tasks t WHERE t.space_name = s.name) AS tasks
           FROM googlechat_spaces s
          WHERE {clause}
+           AND (SELECT COUNT(*) FROM googlechat_messages m WHERE m.space_name = s.name) >= %s
          ORDER BY (s.display_name IS NULL), s.display_name, s.name
         """,
-        params,
+        params + [minimal_messages],
     )
     return sieve.filter_rows(blocked, rows)
 

@@ -30,6 +30,7 @@ TASK_COLUMNS: list[Column] = [
 SPACE_COLUMNS: list[Column] = [
     ("Space", _space_label),
     ("Type", "space_type"),
+    ("Msgs", "messages"),
     ("Tasks", "tasks"),
     ("ID", "space_name"),
 ]

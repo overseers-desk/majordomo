@@ -25,8 +25,8 @@ class CacheReader:
         self.blocked = blocked
         self.blocked_assignees = blocked_assignees or []
 
-    def spaces(self) -> list[dict]:
-        return reports.spaces(self.conn, self.blocked)
+    def spaces(self, minimal_messages: int = 1) -> list[dict]:
+        return reports.spaces(self.conn, self.blocked, minimal_messages=minimal_messages)
 
     def people(self, **kw) -> list[dict]:
         rows = reports.people(self.conn, self.blocked, **kw)

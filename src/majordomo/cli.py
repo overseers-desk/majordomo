@@ -67,12 +67,21 @@ def login() -> None:
 @app.command()
 def spaces(
     ctx: typer.Context,
+    minimal_messages: int = typer.Option(
+        1, "--minimal-messages", help="Hide spaces with fewer than N messages (0 shows all)."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
     csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
-    """List spaces with their task counts."""
+    """List spaces with their message and task counts."""
     _cfg, reader = _open(ctx)
-    emit(reader.spaces(), models.SPACE_COLUMNS, reader.source, json_out, csv_out)
+    rows = reader.spaces(minimal_messages=minimal_messages)
+    emit(rows, models.SPACE_COLUMNS, reader.source, json_out, csv_out)
+    if reader.source == "cache" and minimal_messages > 0 and not (json_out or csv_out):
+        typer.echo(
+            f"majordomo: hiding spaces with < {minimal_messages} message(s) "
+            "(Google auto-creates an empty group per meeting); --minimal-messages=0 shows all.",
+            err=True,
+        )
 
 
 @app.command()
