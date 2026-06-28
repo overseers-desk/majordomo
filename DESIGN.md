@@ -20,7 +20,7 @@ Task activity therefore has to be reconstructed from chat messages by parsing th
 
 When an AI agent uses the tool, some spaces must remain invisible to it. majordomo applies an access filter, called the sieve, that drops blocked spaces before any caller sees them. The sieve sits in the core, so every interface inherits it and none can bypass the gate.
 
-The sieve subsumes the present `IGNORE_SPACES` and `IGNORE_ASSIGNEE` environment variables in `google_chat_reporter.py`: the same allow-and-block intent, moved into the TOML config and applied in the core rather than read per-process from the environment.
+The sieve's two block lists (`block_spaces` and `block_assignees`) live in the human-authored TOML and are applied in the core, so every front door inherits them.
 
 ## Capabilities
 
@@ -92,10 +92,6 @@ majordomo is an information-flow reader and reporter, not an object-edit tool, s
 gchat-cli matters only for majordomo's standalone live read, the fallback when the BI cache is absent, not the fast path, which reads the existing mirror. Forking its accessor for that fallback would save rebuilding OAuth, multi-account, and paginated message reads; what it does not do is majordomo's own work either way: assignee reporting, the sieve, the MCP interface, identity-keyed reporting, and automation.
 
 The pending check before adopting gchat-cli for that fallback is whether its read and search return the complete message history over a date window, since a standalone reconstruction needs every message in range and the simple read path appears to cap at recent messages.
-
-### Relationship to the present reporter
-
-The present `google_chat_reporter.py` in this repository is majordomo's starting point: its `spaces`, `people`, `stats`, `tasks`, `messages`, and `thread` subcommands are the capability list above, minus the sieve, the MCP front door, and multi-account by identity. The task-reconstruction logic (becoming majordomo's standalone decoder), the People-API name resolution, and the date-range handling carry across; the environment-variable filters fold into the sieve; the single-account `config/token.json` is replaced by the identity-keyed scheme. The CLI shape stays close enough that present invocations have a direct majordomo equivalent.
 
 ## Orchestration
 

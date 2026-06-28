@@ -1,246 +1,84 @@
-# Google Spaces Tasks Reporter
+# majordomo
 
-This script creates comprehensive efficiency reports by analysing Google Chat spaces and extracting task information to generate detailed completion statistics. The tool retrieves task status and assignee data across specified time ranges, calculating metrics such as tasks received, tasks completed, and completion rates. All reports are exported to CSV format for further analysis and reporting.
+A command-line tool that reads Google Chat and reports task activity. The command line is the primary interface; an MCP server is a secondary interface for AI agents. Both are thin front doors over one shared core.
 
-## Overview
+## What it does
 
-The Google Spaces Tasks Reporter is designed for teams and organisations that need to track productivity and task completion across Google Chat spaces. By leveraging the Google Tasks API and Google Chat API, it provides insights into team performance and task management efficiency through automated data collection and reporting.
+When someone creates a task through Google Chat's "Create a task for @Person (via Tasks)", that task cannot be retrieved through the Google Tasks API; the only durable signal is the chat message itself (see [GOOGLE_CHAT_TASKS_LIMITATIONS.md](GOOGLE_CHAT_TASKS_LIMITATIONS.md)). majordomo reconstructs task activity from those messages and reports who holds which tasks across spaces over a date range.
 
-**Important**: This tool requires a Google Workspace account (Business or Enterprise) for full functionality. Personal Gmail accounts cannot access the Google Chat API, which is essential for retrieving space and task information. If you're using a personal Gmail account, you'll need to upgrade to Google Workspace or work with your organisation's administrator to gain access.
+- **Tasks** by assignee, space, and date; "assigned to me" and "assigned by me".
+- **Spaces**, **people** (participants with message and task counts), and raw **messages** by space or thread.
+- **Two sources, one shape.** A fast path reads an existing server-side cache of Chat (the [data model](DATA-MODEL.md)). A live path reads the Chat API directly and decodes tasks itself, so the tool also works without the cache. Every result is tagged with its source; the cache falls back to live automatically when it is unreachable.
+- **A privacy sieve** in the core drops blocked spaces (and assignees) before any caller (CLI or MCP) can see them.
+- **Output** as a rich console table, `--json`, or `--csv`.
 
-## Prerequisites and Setup
-
-The script requires Python 3.12 and access to Google Cloud services. Before installation, you'll need to configure several Google Cloud components to enable the necessary APIs and authentication.
-
-### Google Cloud Console Configuration
-
-Begin by creating a project in the [Google Cloud Console](https://console.cloud.google.com/) if you don't already have one. Once your project is established, navigate to the APIs & Services section to enable the required services. You'll need to activate both the Google Tasks API and Google Chat API, along with the People API for comprehensive functionality.
-
-### OAuth2 Client Setup
-
-Create an OAuth2 client within your project, selecting the "Desktop" application type for optimal compatibility. When naming the client, "Google-Spaces-Tasks-reporter" works well. In the Credentials section, ensure you add `http://localhost:7276/` to the authorised redirect URIs to enable local authentication.
-
-Download the generated JSON credential file and rename it to `client_secret.json`, placing it in the `config/` directory. This file contains the necessary authentication credentials for the script to interact with Google's services.
-
-### Google Chat App Configuration
-
-Google requires every project using the Chat API to have a configured Chat app. Navigate to the Chat API Configuration page within your project settings. When setting up the app, use "Google-Spaces-Tasks" as the name (keeping it concise) and provide your GitHub repository URL. Importantly, disable interactive features since this application operates passively without user interaction.
-
-## Installation
-
-The script offers two installation methods depending on your system preferences and requirements.
-
-### Ubuntu/Debian System Packages (Recommended)
-
-For Ubuntu and Debian systems, the recommended approach uses system packages for better integration and dependency management:
+## Install
 
 ```bash
-sudo apt update
-sudo apt install python3-googleapi python3-google-auth python3-google-auth-oauthlib python3-httplib2 python3-requests
+pip install -e .            # base CLI (cache path)
+pip install -e ".[live]"    # + live Google read and `login`
+pip install -e ".[mcp]"     # + the MCP server
 ```
 
-This method eliminates the need for the `requirements.txt` file and provides system-level package management.
+## Configuration
 
-### Python pip Packages
+majordomo reads two files from `~/.config/majordomo/`:
 
-Alternatively, you can install all dependencies using pip:
+`config.toml` (hand-edited):
+
+```toml
+[me]
+user_id = "users/1234567890"      # your Chat id, for --to-me / --by-me
+                                   # (find it with `majordomo people`)
+
+[sieve]
+block_spaces = ["spaces/AAAA"]     # never shown through any front door
+block_assignees = ["users/9999"]   # drop these assignees from every report
+
+[live]                             # optional; defaults shown
+token_file = "~/.config/majordomo/token.json"
+client_file = "~/.config/majordomo/client_secret.json"
+```
+
+`.env` (the cache database connection, when using the cache path):
+
+```
+MYSQL_HOST=…
+MYSQL_PORT=3306
+MYSQL_USER=…
+MYSQL_PASSWORD=…
+MYSQL_DATABASE=…
+```
+
+## Authenticating the live path
+
+`majordomo login` opens a browser OAuth flow and writes `~/.config/majordomo/token.json` (read-only Chat scopes). It needs a Desktop OAuth client with the Google Chat API enabled, saved as `client_secret.json` in the config directory.
 
 ```bash
-pip install -r requirements.txt
+majordomo login
 ```
 
-This approach is suitable for environments where system packages aren't available or when you prefer Python-specific package management.
-
-## Usage
-
-The script provides a command-line interface with several subcommands for different operations. When run without any arguments, it displays a helpful overview of available commands.
-
-### Command Overview
+## Commands
 
 ```bash
-python3 google_chat_reporter.py [command] [options]
+majordomo spaces
+majordomo people --window year
+majordomo tasks --to-me --window month
+majordomo tasks --assignee-name '*Alice*' --since 2026-01-01
+majordomo messages --space spaces/AAAA --window 7d
+majordomo messages --thread spaces/AAAA/messages/BBBB
+majordomo mcp                       # run the MCP server (stdio)
 ```
 
-**Available Commands:**
-- `config` - Configure authentication token
-- `spaces` - List accessible Google Chat spaces
-- `people` - List people found in spaces within a date range
-- `tasks` - Export detailed task data with thread context
-- `stats` - Generate summary statistics (completion rates per assignee)
-- `messages` - Export raw chat messages (auxiliary - not task-specific)
-- `thread` - Retrieve messages from a specific thread (auxiliary)
+- Source: default cache with live fallback; `--cache` or `--live` force one.
+- Window: `7d | 30d | month | year | all`, or `--since` / `--until` (ISO dates).
+- Output: default console, `--json`, or `--csv`.
 
-### Initial Setup
+## Not yet (deferred)
 
-Before using the script, you'll need to configure your authentication token:
+- **Task completion and stats.** Google Chat does not reliably carry task completion, so every task is reported as `open`; completion-rate reporting waits on a later signal.
+- **Directory name resolution.** Names come from the chat message and the live API; a bare `users/<id>` with no name attached is shown as the id.
 
-```bash
-python3 google_chat_reporter.py config
-```
+## License
 
-This command will prompt for Google account authentication and generate user credentials stored in `config/token.json`. This file enables subsequent runs without repeated authentication prompts.
-
-### Core Commands
-
-**Config Command**: Sets up or refreshes your Google API authentication token. This is required for first-time use and when tokens expire.
-
-**Spaces Command**: Retrieves a comprehensive list of Google Chat spaces accessible to your account. Use the `--json` flag to save results to a file for reference, or `--csv` for spreadsheet analysis.
-
-**People Command**: Extracts information about individuals found within the specified spaces. Supports date filtering. Results can be saved using `--json` or `--csv`.
-
-**Tasks Command**: Exports detailed individual task records from spaces, including status, assignee, timestamps, and thread context. Use this command when specific task details are needed. Supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today). Results can be saved using `--json` or `--csv`.
-
-**Stats Command**: Generates aggregate task completion statistics showing tasks received, completed, and completion rates per assignee. Use this command for summary metrics; use `tasks` for detailed individual records. Exports results to CSV format using `--csv filename.csv` or to JSON format using `--json filename.json`. When no output file is specified, statistics are displayed in the terminal. Supports comprehensive date filtering through `--date-start` and `--date-end` parameters in ISO format (YYYY-MM-DD), as well as convenient options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today).
-
-Advanced filtering options for `stats`:
-- **`--assignee PATTERN`**: Filter by assignee using glob patterns (`*` = any characters, `?` = single character). Case-sensitive. Examples: `"*Edwards"` matches anyone ending with Edwards; `"Priyanka*"` matches anyone starting with Priyanka.
-- **`--drill-down`**: Drills down into per-assignee details including actual task descriptions (first thread message), tasks assigned/closed in the past week, and completion status.
-
-**Messages Command**: Exports all chat messages from a specific Google Chat space in either JSON or CSV format. This command can accept a `--space` parameter to specify the target space directly, or if no space is specified, it will present an interactive list of all available spaces for the user to choose from. The export includes comprehensive message details such as message ID, full text content, sender information, space name, creation time, last update time, thread details, message type, and deletion status. Use `--json filename.json` to save the results to a JSON file or `--csv filename.csv` to save as CSV; without either flag, messages are displayed in the terminal. The command supports efficient date filtering using Google's API with options for `--past-week` (7 days ago to today), `--past-month` (30 days ago to today) and `--past-year` (365 days ago to today), or custom date ranges with `--date-start` and `--date-end`.
-
-### Usage Examples
-
-#### Initial Setup
-```bash
-python3 google_chat_reporter.py config
-python3 google_chat_reporter.py spaces
-```
-
-#### Basic Statistics
-```bash
-python3 google_chat_reporter.py stats --past-week       # Weekly statistics (display in terminal)
-python3 google_chat_reporter.py stats --past-month      # Monthly statistics (display in terminal)
-python3 google_chat_reporter.py stats --csv stats.csv   # Save to CSV
-```
-
-#### Filtered Statistics
-```bash
-# Filter by name pattern
-python3 google_chat_reporter.py stats --assignee "*Edwards" --past-month
-python3 google_chat_reporter.py stats --assignee "John*" --past-week
-
-# Drill down into per-person details
-python3 google_chat_reporter.py stats --past-week --drill-down
-
-# Combined: filtered + drill-down
-python3 google_chat_reporter.py stats --assignee "*ÐS" --drill-down --past-month
-```
-
-#### Task Queries
-```bash
-python3 google_chat_reporter.py tasks --past-week --json tasks.json           # Get recent tasks
-python3 google_chat_reporter.py tasks --assignee "John*" --csv tasks.csv     # Filter by assignee
-```
-
-#### Message Export
-```bash
-python3 google_chat_reporter.py messages --space "spaces/ABC123" --past-week --json messages.json
-python3 google_chat_reporter.py messages --all-spaces --csv messages.csv        # All spaces
-python3 google_chat_reporter.py messages                           # Interactive selection (display in terminal)
-```
-
-#### Advanced Usage
-```bash
-# Custom date range
-python3 google_chat_reporter.py stats --date-start 2024-01-01 --date-end 2024-01-31 --csv monthly.csv
-
-# Drill-down stats with JSON export
-python3 google_chat_reporter.py stats --assignee "Team*" --drill-down --json detailed.json
-```
-
-Use `--help` with any command for detailed parameter information.
-
-### Date Range Handling
-
-The script provides flexible date range options across all relevant commands. When no date range is specified, the script defaults to analysing the previous calendar month. All dates should be provided in ISO format (YYYY-MM-DD) for consistency and accuracy.
-
-**Available Date Range Options:**
-- **Custom Range**: Use `--date-start` and `--date-end` to specify exact start and end dates
-- **Past Week**: Use `--past-week` to analyse data from the past 7 days (from today)
-- **Past Month**: Use `--past-month` to analyse data from the past 30 days (from today)
-- **Past Year**: Use `--past-year` to analyse data from the past 365 days (from today)
-- **Default**: When no options are specified, the script automatically uses the previous calendar month
-
-**Commands with Date Range Support:**
-- `people` - Extract people information with date filtering
-- `tasks` - Export task data with date filtering
-- `stats` - Generate task statistics with date filtering
-- `messages` - Export messages with date filtering
-
-These date filtering options enable focused analysis of specific time periods, making it ideal for weekly reporting, monthly reporting, quarterly reviews, or targeted performance analysis. The `--past-week`, `--past-month` and `--past-year` options are particularly useful for quick analysis of recent activity without needing to calculate specific dates.
-
-### Environment Variable Configuration
-
-The tool supports filtering via environment variables for repeated usage and scripted deployments:
-
-**IGNORE_SPACES**: Blacklist specific Google Chat spaces to exclude from all operations
-- Format: JSON array of space IDs (without "spaces/" prefix)
-- Example: `export IGNORE_SPACES='["AAAAMj0BPws", "AAAAfPFB3gs"]'`
-
-**IGNORE_ASSIGNEE**: Blacklist specific people to exclude their tasks from reports
-- Format: JSON array of exact assignee names
-- Example: `export IGNORE_ASSIGNEE='["John Doe", "Jane Smith"]'`
-
-**Usage Examples:**
-
-One-time filtering:
-```bash
-IGNORE_SPACES='["AAAAMj0BPws"]' python3 google_chat_reporter.py stats --past-week
-```
-
-Persistent filtering (in shell session):
-```bash
-export IGNORE_SPACES='["AAAAMj0BPws", "AAAAfPFB3gs"]'
-export IGNORE_ASSIGNEE='["John Doe"]'
-python3 google_chat_reporter.py stats --past-week
-python3 google_chat_reporter.py tasks --past-month
-```
-
-Shell script integration:
-```bash
-#!/bin/bash
-export IGNORE_SPACES='["AAAAMj0BPws"]'
-export IGNORE_ASSIGNEE='["Test User"]'
-python3 google_chat_reporter.py stats --past-week --csv weekly_stats.csv
-```
-
-These settings apply automatically to all commands (stats, tasks, people, messages) and provide:
-- Performance optimization: Spaces are filtered before API calls
-- Simplified configuration: No separate config files to maintain
-- Automation friendly: Perfect for cron jobs and CI/CD pipelines
-
-## Output and Data Management
-
-The script generates output files to support different analysis needs. Use `--json` or `--csv` flags with any command to save results for reference or further analysis.
-
-**Output Format Options:**
-- **JSON format** (`--json`): Available for all commands, preserves the complete data structure including nested objects and arrays
-- **CSV format** (`--csv`): Available for commands with flat data structures (spaces, people, report, messages). Note that complex nested data from tasks command is not suitable for CSV export due to multi-level structure.
-
-These output files enable both immediate analysis and long-term data tracking, supporting various reporting requirements from quick status checks to comprehensive performance reviews. The CSV format ensures compatibility with spreadsheet applications and business intelligence tools for further analysis and visualisation.
-
-## Limitations
-
-### Google Chat API Search Limitations
-
-The Google Chat API has significant limitations when it comes to searching message content:
-
-**❌ No Server-Side Keyword Search**: The Google Chat API does not support searching for messages by keyword or text content. The `filter` parameter in `spaces().messages().list()` only supports:
-- Time-based filtering: `createTime > "date" AND createTime < "date"`
-- Thread-based filtering: `thread.name="thread_id"`
-
-**❌ No Text Content Filtering**: You cannot use filters like:
-- `filter='text contains "keyword"'`
-- `filter='message contains "urgent"'`
-- `filter='content:"statement"'`
-
-**Impact on Performance**: To search for tasks containing specific keywords, the tool must:
-1. Retrieve ALL messages from the specified spaces and date range
-2. Filter locally within the application for keyword matches
-3. Accept higher API quota usage due to the need to download all message data
-
-This limitation is inherent to Google's API design and affects all applications using the Google Chat API, not just this tool.
-
-### Google Tasks API Integration Limitations
-
-For detailed information about the fundamental limitations when integrating Google Chat task creation with Google Tasks API, see `GOOGLE_CHAT_TASKS_LIMITATIONS.md`. In summary, tasks created via Google Chat are not accessible through the Google Tasks API, requiring the tool to operate in "Chat-only mode" with limited task detail availability.
+See [LICENSE](LICENSE).
