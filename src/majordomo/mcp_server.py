@@ -37,10 +37,11 @@ def create_server() -> FastMCP:
     server = FastMCP("majordomo")
 
     @server.tool()
-    def spaces(source: Optional[str] = None) -> dict:
-        """List Google Chat spaces with task counts. source: cache | live (default auto)."""
+    def spaces(minimal_messages: int = 1, source: Optional[str] = None) -> dict:
+        """List spaces with message and task counts. minimal_messages hides spaces
+        with fewer than N messages (0 shows all; cache only). source: cache | live."""
         _cfg, reader = _reader(source)
-        return _envelope(reader, reader.spaces())
+        return _envelope(reader, reader.spaces(minimal_messages=minimal_messages))
 
     @server.tool()
     def people(window: str = "year", since: Optional[str] = None, until: Optional[str] = None,
