@@ -9,7 +9,7 @@ Build-Depends:
  python3-all,
  python3-setuptools,
 Standards-Version: 4.6.2
-Homepage: https://github.com/SmartLayer/majordomo
+Homepage: https://github.com/overseers-desk/majordomo
 Rules-Requires-Root: no
 
 Package: majordomo
