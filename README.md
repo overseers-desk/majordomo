@@ -14,11 +14,31 @@ When someone creates a task through Google Chat's "Create a task for @Person (vi
 
 ## Install
 
+Python 3.11+.
+
+**Run directly, no virtualenv, with Ubuntu/Debian packages:**
+
 ```bash
-pip install -e .            # base CLI (cache path)
-pip install -e ".[live]"    # + live Google read and `login`
-pip install -e ".[mcp]"     # + the MCP server
+sudo apt-get install python3-typer python3-rich python3-pymysql
+# for the live path (majordomo login, --live) also:
+sudo apt-get install python3-googleapi python3-google-auth python3-google-auth-oauthlib
 ```
+
+Then run from the repo without installing the package:
+
+```bash
+PYTHONPATH=src python3 -m majordomo spaces
+```
+
+**Or install the package** (puts `majordomo` on your PATH):
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[live,mcp]"      # drop the extras you don't need
+majordomo --help
+```
+
+The MCP server (`majordomo mcp`) needs the `mcp` PyPI package, which is not in apt; install it through the virtualenv above (the `mcp` extra).
 
 ## Configuration
 
