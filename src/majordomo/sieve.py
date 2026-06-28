@@ -25,3 +25,15 @@ def filter_rows(blocked: list[str], rows: list[dict], key: str = "space_name") -
 
 def allows(blocked: list[str], space_name: str | None) -> bool:
     return space_name not in blocked
+
+
+def filter_assignees(blocked: list[str], rows: list[dict],
+                     id_key: str = "assignee_user_name", name_key: str = "assignee") -> list[dict]:
+    """Drop rows whose assignee id or display name is in block_assignees (the
+    IGNORE_ASSIGNEE half of the sieve). Matches on either the `users/<id>` or the
+    prose @name, so a person can be blocked by whichever the config carries.
+    """
+    if not blocked:
+        return rows
+    blk = set(blocked)
+    return [r for r in rows if r.get(id_key) not in blk and r.get(name_key) not in blk]

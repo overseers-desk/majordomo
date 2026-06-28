@@ -2,7 +2,7 @@
 
 All behaviour lives in the core (readers / reports / decoder), so the MCP front
 door calls the same readers. Source is cache by default with a live fallback;
-`--cache` / `--live` force a backend. Every result is tagged with its source.
+`--cache` / `--live` force a backend. Output is console, `--json`, or `--csv`.
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+_WINDOW = "7d | 30d | month | year | all."
 
 
 @app.callback()
@@ -55,17 +57,37 @@ def _me(cfg: dict) -> str:
 
 
 @app.command()
-def spaces(ctx: typer.Context, json_out: bool = typer.Option(False, "--json", help="Raw JSON.")) -> None:
-    """List spaces with their task counts."""
-    _cfg, reader = _open(ctx)
-    emit(reader.spaces(), models.SPACE_COLUMNS, reader.source, json_out)
+def login() -> None:
+    """Mint or refresh the live OAuth token via the browser (needs the `live` extra)."""
+    from . import live
+    path = live.login(config.load_config())
+    typer.echo(f"majordomo: token written to {path}")
 
 
 @app.command()
-def people(ctx: typer.Context, json_out: bool = typer.Option(False, "--json", help="Raw JSON.")) -> None:
-    """List task assignees (id, name, count) — find your own users/<id> here."""
+def spaces(
+    ctx: typer.Context,
+    json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
+    csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
+) -> None:
+    """List spaces with their task counts."""
     _cfg, reader = _open(ctx)
-    emit(reader.people(), models.PEOPLE_COLUMNS, reader.source, json_out)
+    emit(reader.spaces(), models.SPACE_COLUMNS, reader.source, json_out, csv_out)
+
+
+@app.command()
+def people(
+    ctx: typer.Context,
+    window: str = typer.Option("year", "--window", help=_WINDOW),
+    since: Optional[str] = typer.Option(None, "--since", help="ISO date lower bound (overrides window)."),
+    until: Optional[str] = typer.Option(None, "--until", help="ISO date upper bound."),
+    json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
+    csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
+) -> None:
+    """List participants (senders and assignees) with message and task counts."""
+    _cfg, reader = _open(ctx)
+    start, end = dates.resolve(window, since, until)
+    emit(reader.people(start=start, end=end), models.PEOPLE_COLUMNS, reader.source, json_out, csv_out)
 
 
 @app.command()
@@ -74,12 +96,14 @@ def tasks(
     to_me: bool = typer.Option(False, "--to-me", help="Tasks assigned to you."),
     by_me: bool = typer.Option(False, "--by-me", help="Tasks you assigned."),
     assignee: Optional[str] = typer.Option(None, "--assignee", help="Tasks assigned to this users/<id>."),
+    assignee_name: Optional[str] = typer.Option(None, "--assignee-name", help="Assignee name glob, e.g. '*Alice*'."),
     space: Optional[str] = typer.Option(None, "--space", help="Limit to this space (spaces/<id>)."),
-    window: str = typer.Option("month", "--window", help="7d | 30d | month | all."),
+    window: str = typer.Option("month", "--window", help=_WINDOW),
     since: Optional[str] = typer.Option(None, "--since", help="ISO date lower bound (overrides window)."),
     until: Optional[str] = typer.Option(None, "--until", help="ISO date upper bound."),
     limit: int = typer.Option(readers.reports.TASK_LIMIT, "--limit", help="Maximum rows."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
+    csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
     """Report tasks, filtered by assignee, space, and date."""
     cfg, reader = _open(ctx)
@@ -88,30 +112,33 @@ def tasks(
         to_user=_me(cfg) if to_me else None,
         by_user=_me(cfg) if by_me else None,
         assignee=assignee,
+        assignee_name=assignee_name,
         space=space,
         start=start,
         end=end,
         limit=limit,
     )
-    emit(rows, models.TASK_COLUMNS, reader.source, json_out)
+    emit(rows, models.TASK_COLUMNS, reader.source, json_out, csv_out)
     _warn_if_capped(rows, limit)
 
 
 @app.command()
 def messages(
     ctx: typer.Context,
-    space: str = typer.Option(..., "--space", help="Space resource name (spaces/<id>)."),
-    window: str = typer.Option("month", "--window", help="7d | 30d | month | all."),
+    space: Optional[str] = typer.Option(None, "--space", help="Space resource name (spaces/<id>)."),
+    thread: Optional[str] = typer.Option(None, "--thread", help="A thread (or any message name in it)."),
+    window: str = typer.Option("month", "--window", help=_WINDOW),
     since: Optional[str] = typer.Option(None, "--since", help="ISO date lower bound (overrides window)."),
     until: Optional[str] = typer.Option(None, "--until", help="ISO date upper bound."),
     limit: int = typer.Option(readers.reports.MESSAGE_LIMIT, "--limit", help="Maximum rows."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
+    csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
-    """Report messages in a space over a date range."""
+    """Report messages in a space or a thread over a date range."""
     _cfg, reader = _open(ctx)
     start, end = dates.resolve(window, since, until)
-    rows = reader.messages(space, start=start, end=end, limit=limit)
-    emit(rows, models.MESSAGE_COLUMNS, reader.source, json_out)
+    rows = reader.messages(space, thread=thread, start=start, end=end, limit=limit)
+    emit(rows, models.MESSAGE_COLUMNS, reader.source, json_out, csv_out)
     _warn_if_capped(rows, limit)
 
 

@@ -35,7 +35,8 @@ SPACE_COLUMNS: list[Column] = [
 ]
 
 PEOPLE_COLUMNS: list[Column] = [
-    ("Assignee", lambda r: r.get("display") or "(no name)"),
+    ("Person", lambda r: r.get("display") or "(no name)"),
+    ("Msgs", "msgs"),
     ("Tasks", "tasks"),
     ("User ID", "user_id"),
 ]

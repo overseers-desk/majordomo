@@ -72,10 +72,27 @@ def test_to_me_and_by_me_filters():
     assert len(r.tasks(by_user="users/8")) == 0
 
 
+def test_people_broadened_counts_senders_and_assignees():
+    by = {r["user_id"]: r for r in _reader(["spaces/BLOCK"]).people()}
+    assert by["users/9"]["msgs"] == 2 and by["users/9"]["tasks"] == 0   # sender of both OK msgs
+    assert by["users/1"]["tasks"] == 1 and by["users/1"]["display"] == "Alice"
+
+
+def test_assignee_name_glob_live():
+    r = _reader(["spaces/BLOCK"])
+    assert len(r.tasks(assignee_name="*Ali*")) == 1
+    assert len(r.tasks(assignee_name="*Zzz*")) == 0
+
+
+def test_block_assignees_live():
+    r = live.LiveReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"], blocked_assignees=["users/1"])
+    assert r.tasks() == []                                              # Alice (users/1) was the only OK task
+
+
 def test_make_reader_auto_falls_back_to_live_when_db_down():
     orig_connect, orig_from = db.connect, live.LiveReader.from_config
     db.connect = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db down"))
-    live.LiveReader.from_config = staticmethod(lambda cfg, blocked: "LIVE")
+    live.LiveReader.from_config = staticmethod(lambda cfg, blocked, blocked_assignees=None: "LIVE")
     try:
         assert readers.make_reader({"sieve": {}}, None) == "LIVE"      # auto -> live
         forced_cache_raised = False

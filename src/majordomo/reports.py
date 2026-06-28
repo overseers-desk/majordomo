@@ -1,6 +1,7 @@
-"""The core reports over the cache. The sieve is applied in every one — both as a
-``NOT IN`` clause and a post-filter — so a blocked space cannot reach a caller
-through any front door. SQL shapes mirror the BI project's coord reader.
+"""The core cache reports. The space sieve is applied in every one — a `NOT IN`
+clause plus a post-filter — so a blocked space cannot reach a caller. SQL shapes
+mirror the BI project's coord reader. (Assignee blocking and the assignee-name
+glob's defence-in-depth live in the reader layer.)
 """
 
 from __future__ import annotations
@@ -11,6 +12,12 @@ from . import db, sieve
 
 TASK_LIMIT = 1000
 MESSAGE_LIMIT = 2000
+
+
+def _glob_to_like(pattern: str) -> str:
+    """fnmatch-style glob -> SQL LIKE (with ESCAPE '\\'). Supports * and ?."""
+    out = pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return out.replace("*", "%").replace("?", "_")
 
 
 def spaces(conn, blocked: list[str]) -> list[dict]:
@@ -29,21 +36,40 @@ def spaces(conn, blocked: list[str]) -> list[dict]:
     return sieve.filter_rows(blocked, rows)
 
 
-def people(conn, blocked: list[str]) -> list[dict]:
-    clause, params = sieve.clause(blocked, "space_name")
-    return db.query(
+def people(conn, blocked: list[str], *, start: datetime | None = None, end: datetime | None = None) -> list[dict]:
+    """All participants (message senders union task assignees) over the window,
+    with message and task counts. Display names come only from the prose @name
+    on the task side (the mirror carries no user display names)."""
+    clause, sp = sieve.clause(blocked, "space_name")
+    wm, pm = [clause], list(sp)
+    wt, pt = [clause], list(sp)
+    if start:
+        wm.append("create_time >= %s"); pm.append(start)
+        wt.append("created_at >= %s"); pt.append(start)
+    if end:
+        wm.append("create_time < %s"); pm.append(end)
+        wt.append("created_at < %s"); pt.append(end)
+    rows = db.query(
         conn,
         f"""
-        SELECT assignee_user_name AS user_id,
-               MAX(assignee_display) AS display,
-               COUNT(*) AS tasks
-          FROM coord_tasks
-         WHERE assignee_user_name IS NOT NULL AND {clause}
-         GROUP BY assignee_user_name
-         ORDER BY tasks DESC
+        SELECT user_id, MAX(display) AS display, SUM(msgs) AS msgs, SUM(tasks) AS tasks
+          FROM (
+            SELECT sender_name AS user_id, NULL AS display, COUNT(*) AS msgs, 0 AS tasks
+              FROM googlechat_messages
+             WHERE sender_name IS NOT NULL AND {" AND ".join(wm)}
+             GROUP BY sender_name
+            UNION ALL
+            SELECT assignee_user_name AS user_id, MAX(assignee_display) AS display, 0 AS msgs, COUNT(*) AS tasks
+              FROM coord_tasks
+             WHERE assignee_user_name IS NOT NULL AND {" AND ".join(wt)}
+             GROUP BY assignee_user_name
+          ) u
+         GROUP BY user_id
+         ORDER BY (SUM(msgs) + SUM(tasks)) DESC
         """,
-        params,
+        pm + pt,
     )
+    return rows
 
 
 def tasks(
@@ -53,6 +79,7 @@ def tasks(
     to_user: str | None = None,
     by_user: str | None = None,
     assignee: str | None = None,
+    assignee_name: str | None = None,
     space: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
@@ -69,6 +96,10 @@ def tasks(
         if val:
             where.append(f"{col} = %s")
             params.append(val)
+    if assignee_name:
+        # Backslash is MySQL's default LIKE escape, so _glob_to_like's \% \_ work.
+        where.append("COALESCE(u.display_name, t.assignee_display) LIKE %s")
+        params.append(_glob_to_like(assignee_name))
     if start:
         where.append("t.created_at >= %s")
         params.append(start)
@@ -102,15 +133,24 @@ def messages(
     conn,
     blocked: list[str],
     *,
-    space: str,
+    space: str | None = None,
+    thread: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
     limit: int = MESSAGE_LIMIT,
 ) -> list[dict]:
-    if not sieve.allows(blocked, space):
+    if not space and not thread:
+        raise SystemExit("majordomo: messages needs --space or --thread.")
+    if space and not sieve.allows(blocked, space):
         return []
-    where = ["m.space_name = %s"]
-    params: list = [space]
+    where: list[str] = []
+    params: list = []
+    if thread:
+        where.append("m.name LIKE %s")
+        params.append(thread.split(".")[0] + ".%")
+    if space:
+        where.append("m.space_name = %s")
+        params.append(space)
     if start:
         where.append("m.create_time >= %s")
         params.append(start)

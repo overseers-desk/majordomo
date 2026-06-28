@@ -9,30 +9,34 @@ always carries `source`, so a switch is surfaced, not silent.
 
 from __future__ import annotations
 
-from . import config, db, reports
+from . import config, db, reports, sieve
 
 # A "reader" is any object with `source` and the four report methods
 # (spaces / people / tasks / messages). CacheReader and live.LiveReader are the
-# two; they are duck-typed, so no Protocol interface is declared.
+# two; they are duck-typed, so no Protocol interface is declared. Both carry the
+# space sieve and the block_assignees list and apply both.
 
 
 class CacheReader:
     source = "cache"
 
-    def __init__(self, conn, blocked: list[str]):
+    def __init__(self, conn, blocked: list[str], blocked_assignees: list[str] | None = None):
         self.conn = conn
         self.blocked = blocked
+        self.blocked_assignees = blocked_assignees or []
 
     def spaces(self) -> list[dict]:
         return reports.spaces(self.conn, self.blocked)
 
-    def people(self) -> list[dict]:
-        return reports.people(self.conn, self.blocked)
+    def people(self, **kw) -> list[dict]:
+        rows = reports.people(self.conn, self.blocked, **kw)
+        return sieve.filter_assignees(self.blocked_assignees, rows, id_key="user_id", name_key="display")
 
     def tasks(self, **filters) -> list[dict]:
-        return reports.tasks(self.conn, self.blocked, **filters)
+        rows = reports.tasks(self.conn, self.blocked, **filters)
+        return sieve.filter_assignees(self.blocked_assignees, rows)
 
-    def messages(self, space: str, **kw) -> list[dict]:
+    def messages(self, space: str | None = None, **kw) -> list[dict]:
         return reports.messages(self.conn, self.blocked, space=space, **kw)
 
 
@@ -45,11 +49,12 @@ def make_reader(cfg: dict, source: str | None = None):
     not a phantom-problem fallback.
     """
     blocked = config.block_spaces(cfg)
+    blocked_assignees = config.block_assignees(cfg)
     if source != "live":
         try:
-            return CacheReader(db.connect(), blocked)
+            return CacheReader(db.connect(), blocked, blocked_assignees)
         except Exception:
             if source == "cache":
                 raise
     from .live import LiveReader
-    return LiveReader.from_config(cfg, blocked)
+    return LiveReader.from_config(cfg, blocked, blocked_assignees)
