@@ -27,6 +27,7 @@
 set -u
 
 MAJORDOMO="${MAJORDOMO:-majordomo}"
+MAJORDOMO_VENV="${MAJORDOMO_VENV:-$PWD/.venv}"   # MCP ships only via the venv (mcp extra), not the deb
 CFGDIR="${MAJORDOMO_CONFIG_DIR:-$HOME/.config/majordomo}"
 TEST_SPACE="${MAJORDOMO_TEST_SPACE:-spaces/AAQAGiUqUAU}"
 TEST_DM="${MAJORDOMO_TEST_DM:-spaces/jP4cXEAAAAE}"
@@ -173,12 +174,18 @@ if $MAJORDOMO --live --cache spaces >/dev/null 2>"$ERRF"; then
 else
   pass "--live --cache rejected (guard)"
 fi
-if timeout 3 $MAJORDOMO mcp </dev/null >/dev/null 2>"$ERRF"; then
-  pass "mcp boots (clean EOF exit)"
+# MCP is the pip-only front door: it ships in the venv (with the mcp extra), not
+# the deb. Test it through the venv interpreter.
+MCP_PY="$MAJORDOMO_VENV/bin/python"
+if [ ! -x "$MCP_PY" ]; then
+  echo "no venv python at $MCP_PY — MCP runs from the venv; set MAJORDOMO_VENV" > "$ERRF"
+  fail "mcp boots via venv"
+elif timeout 3 "$MCP_PY" -m majordomo mcp </dev/null >/dev/null 2>"$ERRF"; then
+  pass "mcp boots via venv (clean EOF exit)"
 elif [ "$?" = 124 ]; then
-  pass "mcp boots (ran until timeout)"
+  pass "mcp boots via venv (ran until timeout)"
 else
-  fail "mcp cannot start"
+  fail "mcp cannot start via venv  [$MCP_PY -m majordomo mcp]"
 fi
 
 # ---- live credentials (login proxy: login is interactive, its product is a token) ----

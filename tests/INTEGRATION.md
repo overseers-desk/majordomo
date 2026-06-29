@@ -45,8 +45,11 @@ Exit status:
 
 - `install-claude-command` exits 0.
 - `--live --cache` together is rejected (exit 2); a rejection is the pass.
-- `mcp` starts. It is a shipped entry point, so an absent `mcp` extra or a crash is
-  a `FAIL`. A clean EOF exit or the 3s timeout both count as a healthy boot.
+- `mcp` starts. It is the pip-only front door, shipped in the **venv** (with the
+  `mcp` extra), not the deb, so the gate boots it through the venv interpreter
+  (`$MAJORDOMO_VENV/bin/python -m majordomo mcp`, default `./.venv`). An absent venv,
+  a missing install, or a crash is a `FAIL`. A clean EOF exit or the 3s timeout both
+  count as a healthy boot.
 
 **Live credentials** (the `login` proxy): `login` itself is an interactive browser
 flow and cannot run headless, but its deployment-relevant product is a token that
