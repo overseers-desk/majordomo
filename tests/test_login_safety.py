@@ -1,5 +1,5 @@
 """The login path must never leak credentials: Typer must not dump locals on a
-crash, and ``live.login`` must turn an OAuth failure into a clean ``SystemExit``
+crash, and ``nocache.login`` must turn an OAuth failure into a clean ``SystemExit``
 (no raw exception, no locals). Offline — the OAuth flow is monkeypatched to fail.
 """
 
@@ -11,7 +11,7 @@ import types
 
 import pytest
 
-from majordomo import live
+from majordomo import nocache
 from majordomo.cli import app
 
 
@@ -40,9 +40,9 @@ def test_login_failure_is_clean_system_exit(monkeypatch):
         fh.write("{}")
         client_path = fh.name
     with tempfile.TemporaryDirectory() as td:
-        cfg = {"live": {"client_file": client_path, "token_file": f"{td}/token.json"}}
+        cfg = {"nocache": {"client_file": client_path, "token_file": f"{td}/token.json"}}
         with pytest.raises(SystemExit) as ei:
-            live.login(cfg)
+            nocache.login(cfg)
     msg = str(ei.value)
     assert "login failed" in msg
     assert "CLIENT_SECRET_PLACEHOLDER" not in msg
@@ -71,7 +71,7 @@ def test_get_credentials_uses_client_secret_json(monkeypatch, tmp_path):
         }
     }))
 
-    cfg = {"live": {"token_file": str(token_file), "client_file": str(client_file)}}
+    cfg = {"nocache": {"token_file": str(token_file), "client_file": str(client_file)}}
 
     captured = {}
 
@@ -79,9 +79,9 @@ def test_get_credentials_uses_client_secret_json(monkeypatch, tmp_path):
         captured.update(kwargs)
         return types.SimpleNamespace(valid=True)
 
-    monkeypatch.setattr(live, "_require_google", lambda: (fake_credentials, None, None))
+    monkeypatch.setattr(nocache, "_require_google", lambda: (fake_credentials, None, None))
 
-    creds = live.get_credentials(cfg)
+    creds = nocache.get_credentials(cfg)
     assert captured["client_secret"] == "RIGHT_SECRET", (
         f"expected RIGHT_SECRET, got {captured['client_secret']!r}"
     )

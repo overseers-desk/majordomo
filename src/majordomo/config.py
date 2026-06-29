@@ -44,14 +44,14 @@ def me_user_id(config: dict) -> str | None:
 
 def me_google_id(config: dict) -> str | None:
     """The configured subject's email. Cannot drive filters in v1 (no email
-    data in the mirror); kept for the later live-resolution path."""
+    data in the mirror); kept for the later API-resolution path."""
     return (config.get("me") or {}).get("google_id")
 
 
 def require_user_id(config: dict) -> str:
     """The configured subject's ``users/<id>``, or raise ValueError with guidance.
 
-    v1 has no live People API, so the email (``google_id``) cannot be resolved to
+    v1 has no People API, so the email (``google_id``) cannot be resolved to
     an id; ``user_id`` must be set explicitly. Both front doors call this, so the
     rule lives in one place.
     """
@@ -75,9 +75,9 @@ def block_assignees(config: dict) -> list[str]:
     return list((config.get("sieve") or {}).get("block_assignees") or [])
 
 
-def live_token_file(config: dict) -> str:
-    return (config.get("live") or {}).get("token_file") or str(CONFIG_DIR / "token.json")
+def nocache_token_file(config: dict) -> str:
+    return (config.get("nocache") or {}).get("token_file") or str(CONFIG_DIR / "token.json")
 
 
-def live_client_file(config: dict) -> str:
-    return (config.get("live") or {}).get("client_file") or str(CONFIG_DIR / "client_secret.json")
+def nocache_client_file(config: dict) -> str:
+    return (config.get("nocache") or {}).get("client_file") or str(CONFIG_DIR / "client_secret.json")

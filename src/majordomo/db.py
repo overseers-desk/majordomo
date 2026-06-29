@@ -3,7 +3,7 @@
 ``connect`` opens one PyMySQL connection from ``~/.config/majordomo/.env`` (the
 ``ssl=None`` plaintext idiom the BI project uses against this host); ``query``
 runs a parameterised read. The provenance of these rows is ``models.SOURCE_CACHE``.
-A later live reader is a separate stage and will bring its own access path.
+The direct-API reader (nocache.py) is a separate stage with its own access path.
 """
 
 from __future__ import annotations

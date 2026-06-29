@@ -1,9 +1,9 @@
 """The reader seam: one `Reader` interface, two interchangeable backends.
 
-A second real backend (live Google Chat) now exists, so the readers are
+A second real backend (the direct Chat API) now exists, so the readers are
 polymorphic — every command and front door calls a `Reader` without branching on
 source. The sieve is enforced inside each backend. `make_reader` selects the
-backend and implements the provenance-tagged cache->live fallback: the output
+backend and implements the provenance-tagged cache->nocache fallback: the output
 always carries `source`, so a switch is surfaced, not silent.
 """
 
@@ -12,8 +12,8 @@ from __future__ import annotations
 from . import config, db, reports, sieve
 
 # A "reader" is any object with `source` and the four report methods
-# (spaces / people / tasks / messages). CacheReader and live.LiveReader are the
-# two; they are duck-typed, so no Protocol interface is declared. Both carry the
+# (spaces / people / tasks / messages). CacheReader and nocache.NocacheReader are
+# the two; they are duck-typed, so no Protocol interface is declared. Both carry the
 # space sieve and the block_assignees list and apply both.
 
 
@@ -41,20 +41,20 @@ class CacheReader:
 
 
 def make_reader(cfg: dict, source: str | None = None):
-    """Pick a backend. `source` is "cache", "live", or None (auto).
+    """Pick a backend. `source` is "cache", "nocache", or None (auto).
 
-    Auto reads the cache and falls back to live only if the DB is unreachable.
-    Forced "cache" fails loud if the DB is down (no silent fallback). The fault
-    a live switch catches — an absent backend — is real and expected, so this is
-    not a phantom-problem fallback.
+    Auto reads the cache and falls back to the direct API only if the DB is
+    unreachable. Forced "cache" fails loud if the DB is down (no silent fallback).
+    The fault a nocache switch catches — an absent backend — is real and expected,
+    so this is not a phantom-problem fallback.
     """
     blocked = config.block_spaces(cfg)
     blocked_assignees = config.block_assignees(cfg)
-    if source != "live":
+    if source != "nocache":
         try:
             return CacheReader(db.connect(), blocked, blocked_assignees)
         except Exception:
             if source == "cache":
                 raise
-    from .live import LiveReader
-    return LiveReader.from_config(cfg, blocked, blocked_assignees)
+    from .nocache import NocacheReader
+    return NocacheReader.from_config(cfg, blocked, blocked_assignees)
