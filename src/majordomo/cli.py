@@ -1,8 +1,9 @@
 """majordomo — command-line front door. Thin: parse flags, pick a reader, render.
 
 All behaviour lives in the core (readers / reports / decoder), so the MCP front
-door calls the same readers. Source is cache by default with a direct-API fallback;
-`--cache` / `--nocache` force a backend. Output is console, `--json`, or `--csv`.
+door calls the same readers. Source is cache by default (direct-API fallback if the
+cache is down); `--cache` / `--live` (cache + freshness top-up) / `--nocache`
+(direct API) select it. Output is console, `--json`, or `--csv`.
 """
 
 from __future__ import annotations
@@ -29,13 +30,14 @@ _WINDOW = "7d | 30d | month | year | all."
 @app.callback()
 def _root(
     ctx: typer.Context,
+    live: bool = typer.Option(False, "--live", help="Up-to-dateness: cache plus a freshness top-up from the API."),
     nocache: bool = typer.Option(False, "--nocache", help="Bypass the cache; read the Chat API directly."),
     cache: bool = typer.Option(False, "--cache", help="Force the cache; fail if it is unreachable."),
 ) -> None:
-    if nocache and cache:
-        typer.echo("majordomo: use only one of --nocache / --cache.", err=True)
+    if sum((live, nocache, cache)) > 1:
+        typer.echo("majordomo: use only one of --live / --nocache / --cache.", err=True)
         raise typer.Exit(2)
-    ctx.obj = {"source": "nocache" if nocache else "cache" if cache else None}
+    ctx.obj = {"source": "live" if live else "nocache" if nocache else "cache" if cache else None}
     _claude_command.refresh()
 
 
