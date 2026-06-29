@@ -1,7 +1,7 @@
 """Render report rows: a rich console table by default, raw JSON with ``--json``.
 
 JSON wraps the rows in an envelope carrying the provenance ``source`` and a
-``count``, so a machine reader can tell a cache answer from a future live one.
+``count``, so a machine reader can tell a cache answer from a direct (nocache) one.
 """
 
 from __future__ import annotations

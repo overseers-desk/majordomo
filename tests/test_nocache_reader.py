@@ -1,12 +1,12 @@
-"""Live reader behaviour, with an injected fake Chat service (no creds/network),
-and the cache->live fallback in make_reader.
+"""NocacheReader (direct Chat API) behaviour, with an injected fake Chat service
+(no creds/network), and the cache->nocache fallback in make_reader.
 """
 
 import _shim  # noqa: F401
 
 from unittest.mock import MagicMock
 
-from majordomo import db, live, readers
+from majordomo import db, nocache, readers
 
 
 def _fake_chat(spaces: list, msgs: dict):
@@ -45,7 +45,7 @@ MSGS = {
 
 
 def _reader(blocked):
-    return live.LiveReader(service=_fake_chat(SPACES, MSGS), blocked=blocked)
+    return nocache.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=blocked)
 
 
 def test_decodes_and_recovers_title():
@@ -78,23 +78,23 @@ def test_people_broadened_counts_senders_and_assignees():
     assert by["users/1"]["tasks"] == 1 and by["users/1"]["display"] == "Alice"
 
 
-def test_assignee_name_glob_live():
+def test_assignee_name_glob_nocache():
     r = _reader(["spaces/BLOCK"])
     assert len(r.tasks(assignee_name="*Ali*")) == 1
     assert len(r.tasks(assignee_name="*Zzz*")) == 0
 
 
-def test_block_assignees_live():
-    r = live.LiveReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"], blocked_assignees=["users/1"])
+def test_block_assignees_nocache():
+    r = nocache.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"], blocked_assignees=["users/1"])
     assert r.tasks() == []                                              # Alice (users/1) was the only OK task
 
 
-def test_make_reader_auto_falls_back_to_live_when_db_down():
-    orig_connect, orig_from = db.connect, live.LiveReader.from_config
+def test_make_reader_auto_falls_back_to_nocache_when_db_down():
+    orig_connect, orig_from = db.connect, nocache.NocacheReader.from_config
     db.connect = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db down"))
-    live.LiveReader.from_config = staticmethod(lambda cfg, blocked, blocked_assignees=None: "LIVE")
+    nocache.NocacheReader.from_config = staticmethod(lambda cfg, blocked, blocked_assignees=None: "NOCACHE")
     try:
-        assert readers.make_reader({"sieve": {}}, None) == "LIVE"      # auto -> live
+        assert readers.make_reader({"sieve": {}}, None) == "NOCACHE"      # auto -> nocache
         forced_cache_raised = False
         try:
             readers.make_reader({"sieve": {}}, "cache")                # forced cache -> loud
@@ -102,7 +102,7 @@ def test_make_reader_auto_falls_back_to_live_when_db_down():
             forced_cache_raised = True
         assert forced_cache_raised
     finally:
-        db.connect, live.LiveReader.from_config = orig_connect, orig_from
+        db.connect, nocache.NocacheReader.from_config = orig_connect, orig_from
 
 
 if __name__ == "__main__":

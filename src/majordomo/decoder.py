@@ -3,7 +3,7 @@
 
 Parity invariant (I5): `decode_task` produces the same fields as coord's
 `decodeTask`, and `recover_titles` fills `title` the same way as `jobs.js`, so
-the live path and the cache (`coord_tasks`) agree. Verified against the actual
+the nocache path and the cache (`coord_tasks`) agree. Verified against the actual
 JS in tests/test_decoder_parity.py; status is always "open" and is added by the
 row layer, matching the `coord_tasks` default.
 """

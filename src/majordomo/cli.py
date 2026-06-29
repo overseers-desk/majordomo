@@ -1,8 +1,8 @@
 """majordomo — command-line front door. Thin: parse flags, pick a reader, render.
 
 All behaviour lives in the core (readers / reports / decoder), so the MCP front
-door calls the same readers. Source is cache by default with a live fallback;
-`--cache` / `--live` force a backend. Output is console, `--json`, or `--csv`.
+door calls the same readers. Source is cache by default with a direct-API fallback;
+`--cache` / `--nocache` force a backend. Output is console, `--json`, or `--csv`.
 """
 
 from __future__ import annotations
@@ -15,10 +15,10 @@ from . import _claude_command, config, dates, models, readers
 from .output import emit
 
 app = typer.Typer(
-    help="Read and report Google Chat task activity (cache fast path, live fallback).",
+    help="Read and report Google Chat task activity (cache fast path, direct-API fallback).",
     no_args_is_help=True,
     add_completion=False,
-    # A crash must never dump locals: the live-login traceback would otherwise
+    # A crash must never dump locals: the login traceback would otherwise
     # print the OAuth client secret and authorization code in plaintext.
     pretty_exceptions_show_locals=False,
 )
@@ -29,13 +29,13 @@ _WINDOW = "7d | 30d | month | year | all."
 @app.callback()
 def _root(
     ctx: typer.Context,
-    live: bool = typer.Option(False, "--live", help="Force the live Google read."),
+    nocache: bool = typer.Option(False, "--nocache", help="Bypass the cache; read the Chat API directly."),
     cache: bool = typer.Option(False, "--cache", help="Force the cache; fail if it is unreachable."),
 ) -> None:
-    if live and cache:
-        typer.echo("majordomo: use only one of --live / --cache.", err=True)
+    if nocache and cache:
+        typer.echo("majordomo: use only one of --nocache / --cache.", err=True)
         raise typer.Exit(2)
-    ctx.obj = {"source": "live" if live else "cache" if cache else None}
+    ctx.obj = {"source": "nocache" if nocache else "cache" if cache else None}
     _claude_command.refresh()
 
 
@@ -62,9 +62,9 @@ def _me(cfg: dict) -> str:
 
 @app.command()
 def login() -> None:
-    """Mint or refresh the live OAuth token via the browser (needs the `live` extra)."""
-    from . import live
-    path = live.login(config.load_config())
+    """Mint or refresh the OAuth token via the browser (needs the `nocache` extra)."""
+    from . import nocache
+    path = nocache.login(config.load_config())
     typer.echo(f"majordomo: token written to {path}")
 
 

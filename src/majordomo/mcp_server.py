@@ -2,8 +2,8 @@
 
 Exposes the same reports as the CLI, over MCP, by going through the same reader
 seam (`readers.make_reader`). The sieve is applied in the reader, so a tool
-cannot bypass it. Each tool takes an optional `source` ("cache" | "live"); the
-default is the cache fast path with a live fallback. Needs the `mcp` extra;
+cannot bypass it. Each tool takes an optional `source` ("cache" | "nocache"); the
+default is the cache fast path with a direct-API fallback. Needs the `mcp` extra;
 launched by `majordomo mcp` (stdio).
 """
 
@@ -39,7 +39,7 @@ def create_server() -> FastMCP:
     @server.tool()
     def spaces(minimal_messages: int = 1, source: Optional[str] = None) -> dict:
         """List spaces with message and task counts. minimal_messages hides spaces
-        with fewer than N messages (0 shows all; cache only). source: cache | live."""
+        with fewer than N messages (0 shows all; cache only). source: cache | nocache."""
         _cfg, reader = _reader(source)
         return _envelope(reader, reader.spaces(minimal_messages=minimal_messages))
 
@@ -70,7 +70,7 @@ def create_server() -> FastMCP:
         """Report tasks by assignee/space/date. to_me/by_me need [me].user_id.
 
         assignee_name is a glob over the prose @name; window is one of 7d, 30d,
-        month, year, all; since/until are ISO dates. source: cache | live.
+        month, year, all; since/until are ISO dates. source: cache | nocache.
         """
         cfg, reader = _reader(source)
         me = config.require_user_id(cfg) if (to_me or by_me) else None

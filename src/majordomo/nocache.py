@@ -1,9 +1,10 @@
-"""Live Google Chat reader — the BI-less path. Reads the Chat API directly via
+"""Direct Chat API reader — the no-cache path. Reads the Chat API directly via
 OAuth and decodes tasks itself (decoder.py), so majordomo works without the BI
-backend. Needs the `live` extra (google-api-python-client, google-auth). All
-records are tagged ``source = "live"``; the sieve (spaces + assignees) is applied
-here too. `login` mints the token. Names come from the API and the prose @name
-(no People API). Live is windowed and slow under Google's read quota.
+backend. Needs the `nocache` extra (google-api-python-client, google-auth). All
+records are tagged ``source = "nocache"``; the sieve (spaces + assignees) is
+applied here too. `login` mints the token. Names come from the API and the prose
+@name (no People API). A no-cache read is windowed and slow under Google's read
+quota, which is why the default path is the BI cache.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ def _require_google():
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
     except ImportError as exc:
-        raise SystemExit("majordomo: live mode needs the extra — pip install 'majordomo[live]'.") from exc
+        raise SystemExit("majordomo: no-cache mode needs the extra — pip install 'majordomo[nocache]'.") from exc
     return Credentials, Request, build
 
 
@@ -37,9 +38,9 @@ def login(cfg: dict) -> str:
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow
     except ImportError as exc:
-        raise SystemExit("majordomo: login needs the extra — pip install 'majordomo[live]'.") from exc
-    client_file = os.path.expanduser(config.live_client_file(cfg))
-    token_file = os.path.expanduser(config.live_token_file(cfg))
+        raise SystemExit("majordomo: login needs the extra — pip install 'majordomo[nocache]'.") from exc
+    client_file = os.path.expanduser(config.nocache_client_file(cfg))
+    token_file = os.path.expanduser(config.nocache_token_file(cfg))
     if not os.path.exists(client_file):
         raise SystemExit(
             f"majordomo: no OAuth client at {client_file}. Create a Desktop OAuth "
@@ -67,10 +68,10 @@ def get_credentials(cfg: dict):
     import json
 
     Credentials, Request, _ = _require_google()
-    token_file = os.path.expanduser(config.live_token_file(cfg))
+    token_file = os.path.expanduser(config.nocache_token_file(cfg))
     if not os.path.exists(token_file):
         raise SystemExit(
-            f"majordomo: no live token at {token_file}. Run `majordomo login` first."
+            f"majordomo: no OAuth token at {token_file}. Run `majordomo login` first."
         )
 
     with open(token_file) as fh:
@@ -78,7 +79,7 @@ def get_credentials(cfg: dict):
 
     # Prefer client_id / client_secret from client_secret.json so that a
     # rotated secret is picked up without re-running login.
-    client_file = os.path.expanduser(config.live_client_file(cfg))
+    client_file = os.path.expanduser(config.nocache_client_file(cfg))
     if os.path.exists(client_file):
         with open(client_file) as fh:
             raw = json.load(fh)
@@ -103,13 +104,13 @@ def get_credentials(cfg: dict):
                 creds.refresh(Request())
             except Exception as exc:
                 raise SystemExit(
-                    f"majordomo: live token refresh failed — {exc}. "
+                    f"majordomo: OAuth token refresh failed — {exc}. "
                     f"Re-run `majordomo login` (the OAuth client may be revoked)."
                 )
             with open(token_file, "w") as fh:
                 fh.write(creds.to_json())
         else:
-            raise SystemExit(f"majordomo: live token at {token_file} is invalid; run `majordomo login`.")
+            raise SystemExit(f"majordomo: OAuth token at {token_file} is invalid; run `majordomo login`.")
     return creds
 
 
@@ -139,8 +140,8 @@ def _space_of(thread_key: str) -> str | None:
     return "/".join(thread_key.split("/")[:2]) if thread_key.startswith("spaces/") else None
 
 
-class LiveReader:
-    source = "live"
+class NocacheReader:
+    source = "nocache"
 
     def __init__(self, creds=None, blocked=None, blocked_assignees=None, service=None):
         self.blocked = blocked or []
@@ -153,7 +154,7 @@ class LiveReader:
         self._spaces: list[dict] | None = None
 
     @classmethod
-    def from_config(cls, cfg: dict, blocked: list[str], blocked_assignees: list[str] | None = None) -> "LiveReader":
+    def from_config(cls, cfg: dict, blocked: list[str], blocked_assignees: list[str] | None = None) -> "NocacheReader":
         return cls(get_credentials(cfg), blocked, blocked_assignees)
 
     def _all_spaces(self) -> list[dict]:
@@ -188,7 +189,7 @@ class LiveReader:
         return out
 
     def spaces(self, minimal_messages: int = 1) -> list[dict]:
-        # The live API gives no message count cheaply, so minimal_messages is not
+        # The Chat API gives no message count cheaply, so minimal_messages is not
         # applied here (the CLI notes the filter is cache-only).
         rows = [{"space_name": s.get("name"), "space_display": s.get("displayName"),
                  "space_type": s.get("spaceType"), "messages": None, "tasks": None}
