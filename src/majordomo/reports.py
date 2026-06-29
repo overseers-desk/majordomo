@@ -6,12 +6,51 @@ glob's defence-in-depth live in the reader layer.)
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from . import db, sieve
 
 TASK_LIMIT = 1000
 MESSAGE_LIMIT = 2000
+# Freshness only polls the API for spaces active within this many days; a space
+# dormant longer has no new messages worth a call (the live top-up's recency cut).
+FRESH_HORIZON_DAYS = 30
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def space_watermark(conn, space: str) -> datetime | None:
+    """Newest cached message time for one space — the recency-gap lower bound the
+    live top-up fetches above. None when the cache holds no message for it."""
+    rows = db.query(
+        conn,
+        "SELECT MAX(create_time) AS wm FROM googlechat_messages WHERE space_name = %s",
+        [space],
+    )
+    return rows[0]["wm"] if rows and rows[0]["wm"] else None
+
+
+def active_spaces(conn, blocked: list[str], *, horizon_days: int = FRESH_HORIZON_DAYS) -> list[tuple[str, datetime]]:
+    """Spaces with a cached message within `horizon_days`, each mapped to its newest
+    cached message time, ranked most-recent first. The live top-up polls only these
+    — a space dormant past the horizon has no new messages worth an API call, so
+    this is the lever that keeps an unscoped freshness read within the read quota."""
+    since = _utcnow() - timedelta(days=horizon_days)
+    clause, sp = sieve.clause(blocked, "space_name")
+    rows = db.query(
+        conn,
+        f"""
+        SELECT space_name, MAX(create_time) AS wm
+          FROM googlechat_messages
+         WHERE create_time >= %s AND {clause}
+         GROUP BY space_name
+         ORDER BY wm DESC
+        """,
+        [since] + list(sp),
+    )
+    return [(r["space_name"], r["wm"]) for r in rows]
 
 
 def _glob_to_like(pattern: str) -> str:
