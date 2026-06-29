@@ -2,7 +2,7 @@
 
 `tests/integration.sh` drives every majordomo command against a real environment
 and checks each exits without error. It is the complement to the unit suite, which
-runs the readers against an injected fake Chat service (`tests/test_live.py`, "no
+runs the readers against an injected fake Chat service (`tests/test_live_reader.py`, "no
 creds/network") and so never touches OAuth, the database, or the live API. This
 script does. It is read-only: no command writes to any space.
 
