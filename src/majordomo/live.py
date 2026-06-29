@@ -64,13 +64,39 @@ def login(cfg: dict) -> str:
 
 
 def get_credentials(cfg: dict):
+    import json
+
     Credentials, Request, _ = _require_google()
     token_file = os.path.expanduser(config.live_token_file(cfg))
     if not os.path.exists(token_file):
         raise SystemExit(
             f"majordomo: no live token at {token_file}. Run `majordomo login` first."
         )
-    creds = Credentials.from_authorized_user_file(token_file)
+
+    with open(token_file) as fh:
+        tok = json.load(fh)
+
+    # Prefer client_id / client_secret from client_secret.json so that a
+    # rotated secret is picked up without re-running login.
+    client_file = os.path.expanduser(config.live_client_file(cfg))
+    if os.path.exists(client_file):
+        with open(client_file) as fh:
+            raw = json.load(fh)
+        block = raw.get("installed") or raw.get("web") or {}
+        client_id = block.get("client_id") or tok.get("client_id")
+        client_secret = block.get("client_secret") or tok.get("client_secret")
+    else:
+        client_id = tok.get("client_id")
+        client_secret = tok.get("client_secret")
+
+    creds = Credentials(
+        token=tok.get("token"),
+        refresh_token=tok.get("refresh_token"),
+        token_uri=tok.get("token_uri"),
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=tok.get("scopes"),
+    )
     if not creds.valid:
         if creds.expired and creds.refresh_token:
             try:

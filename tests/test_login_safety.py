@@ -48,6 +48,46 @@ def test_login_failure_is_clean_system_exit(monkeypatch):
     assert "CLIENT_SECRET_PLACEHOLDER" not in msg
 
 
+def test_get_credentials_uses_client_secret_json(monkeypatch, tmp_path):
+    """client_secret.json's secret overrides the stale one baked into token.json."""
+    import json
+
+    token_file = tmp_path / "token.json"
+    token_file.write_text(json.dumps({
+        "token": None,
+        "refresh_token": "rt_placeholder",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "client_id": "id_from_token",
+        "client_secret": "WRONG_SECRET",
+        "scopes": ["https://www.googleapis.com/auth/chat.spaces.readonly"],
+    }))
+
+    client_file = tmp_path / "client_secret.json"
+    client_file.write_text(json.dumps({
+        "installed": {
+            "client_id": "id_from_client_file",
+            "client_secret": "RIGHT_SECRET",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    }))
+
+    cfg = {"live": {"token_file": str(token_file), "client_file": str(client_file)}}
+
+    captured = {}
+
+    def fake_credentials(**kwargs):
+        captured.update(kwargs)
+        return types.SimpleNamespace(valid=True)
+
+    monkeypatch.setattr(live, "_require_google", lambda: (fake_credentials, None, None))
+
+    creds = live.get_credentials(cfg)
+    assert captured["client_secret"] == "RIGHT_SECRET", (
+        f"expected RIGHT_SECRET, got {captured['client_secret']!r}"
+    )
+    assert captured["client_id"] == "id_from_client_file"
+
+
 if __name__ == "__main__":  # standalone runner
     test_typer_hides_locals()
     print("ok   test_typer_hides_locals")
