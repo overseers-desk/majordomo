@@ -18,6 +18,9 @@ app = typer.Typer(
     help="Read and report Google Chat task activity (cache fast path, live fallback).",
     no_args_is_help=True,
     add_completion=False,
+    # A crash must never dump locals: the live-login traceback would otherwise
+    # print the OAuth client secret and authorization code in plaintext.
+    pretty_exceptions_show_locals=False,
 )
 
 _WINDOW = "7d | 30d | month | year | all."

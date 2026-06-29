@@ -45,8 +45,17 @@ def login(cfg: dict) -> str:
             f"majordomo: no OAuth client at {client_file}. Create a Desktop OAuth "
             "client in Google Cloud (Chat API enabled) and save it there."
         )
-    flow = InstalledAppFlow.from_client_secrets_file(client_file, LOGIN_SCOPES)
-    creds = flow.run_local_server(port=7276, access_type="offline", prompt="consent")
+    try:
+        flow = InstalledAppFlow.from_client_secrets_file(client_file, LOGIN_SCOPES)
+        creds = flow.run_local_server(port=7276, access_type="offline", prompt="consent")
+    except Exception:
+        # Swallow the raw exception (and its locals): a failed OAuth exchange
+        # carries the client secret and authorization code in the traceback.
+        raise SystemExit(
+            "majordomo: login failed (the OAuth client may be revoked or the "
+            f"project disabled). Re-download the Desktop client secret to {client_file} "
+            "and check the Cloud project is enabled, then retry."
+        )
     os.makedirs(os.path.dirname(token_file), exist_ok=True)
     with open(token_file, "w") as fh:
         fh.write(creds.to_json())
