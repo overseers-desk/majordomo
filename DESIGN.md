@@ -27,7 +27,7 @@ The sieve's two block lists (`block_spaces` and `block_assignees`) live in the h
 All capabilities are reachable through both front doors:
 
 - List spaces the account belongs to.
-- Read messages and spaces over a date range — from the BI platform's cache as the fast path, or a live Chat read paginated to completeness when that backend is absent.
+- Read messages and spaces over a date range — from the BI platform's cache as the fast path, or a direct Chat read paginated to completeness when that backend is absent.
 - Report task activity (creation, assignment, and other lifecycle signals): from the BI platform's `coord_tasks` reconstruction when present, from majordomo's own message decoder when standalone.
 - Report tasks by assignee, by space, and by date range.
 - Resolve user identifiers to display names via the People API, so reports name people rather than opaque IDs.
@@ -39,7 +39,7 @@ All capabilities are reachable through both front doors:
 
 ### Core
 
-One importable Python package holds the entire business behaviour: a reader for the BI platform's cache (the fast path) and a Google Chat client wrapping the official API (the standalone path), the configuration loader, the sieve, the task decoder, reporting, multi-account credential management, and the People-API name resolver. The cache reader is the primary source and the live client its fallback; the backend accelerates, it does not gate. The core has no command-line parsing and no MCP protocol code; it exposes functions and types that any caller can use.
+One importable Python package holds the entire business behaviour: a reader for the BI platform's cache (the fast path) and a Google Chat client wrapping the official API (the standalone path), the configuration loader, the sieve, the task decoder, reporting, multi-account credential management, and the People-API name resolver. The cache reader is the primary source and the direct-API client its fallback; the backend accelerates, it does not gate. Three read modes follow: `cache` (the mirror), `nocache` (the direct API, no cache), and `live` (up-to-dateness). The `live` mode serves the cache and tops it up from the API for records newer than each space's cache watermark, polling only recently-active spaces so an unscoped freshness read stays within the read quota. "live" names the need (currency), not a mechanism; the cache bypass is `nocache`. The core has no command-line parsing and no MCP protocol code; it exposes functions and types that any caller can use.
 
 ### Front doors
 
@@ -83,13 +83,13 @@ The `google-` prefix is avoided as a brand choice. In the apt ecosystem `google-
 
 ### crude and mailroom
 
-majordomo is an information-flow reader and reporter, not an object-edit tool, so it lives in neither of the user's neighbouring accessors. crude is rejected as a home: its CRUD/object grammar does not fit a read-mostly message flow whose tasks are reconstructed, not stored. mailroom is the architectural template, not the host: its sieve and provenance-tagged cache-with-live-fallback carry across, but its email-specific maildir+mu cache does not. The cache is mandatory, since Google throttles live reads (a hundred-plus-item scan can take minutes, and users expect mailroom speed), but majordomo does not build it: it reads the BI platform's existing server-side `googlechat` mirror and `coord_tasks` reconstruction (direct DB first, an API later), keeping its own live read and task decoder to run without that backend. How it serves callers, a query CLI or a daemon over REST in the Evolution API style, is open. `DATA-MODEL.md` holds the full reasoning.
+majordomo is an information-flow reader and reporter, not an object-edit tool, so it lives in neither of the user's neighbouring accessors. crude is rejected as a home: its CRUD/object grammar does not fit a read-mostly message flow whose tasks are reconstructed, not stored. mailroom is the architectural template, not the host: its sieve and provenance-tagged cache-with-direct-API-fallback carry across, but its email-specific maildir+mu cache does not. The cache is mandatory, since Google throttles direct reads (a hundred-plus-item scan can take minutes, and users expect mailroom speed), but majordomo does not build it: it reads the BI platform's existing server-side `googlechat` mirror and `coord_tasks` reconstruction (direct DB first, an API later), keeping its own direct read and task decoder to run without that backend. How it serves callers, a query CLI or a daemon over REST in the Evolution API style, is open. `DATA-MODEL.md` holds the full reasoning.
 
 ### gchat-cli
 
 `gchat-cli` (the project `chadsaun/gchat`, MIT) already implements the accessor layer majordomo needs: OAuth with multi-account support, TOML configuration, listing spaces, reading and searching messages, sending, and JSON output. It is a single-author build of about twenty hours from January 2026 with no activity or users since, so it is best treated as MIT source to fork and own rather than as a maintained dependency.
 
-gchat-cli matters only for majordomo's standalone live read, the fallback when the BI cache is absent, not the fast path, which reads the existing mirror. Forking its accessor for that fallback would save rebuilding OAuth, multi-account, and paginated message reads; what it does not do is majordomo's own work either way: assignee reporting, the sieve, the MCP interface, identity-keyed reporting, and automation.
+gchat-cli matters only for majordomo's standalone direct read, the fallback when the BI cache is absent, not the fast path, which reads the existing mirror. Forking its accessor for that fallback would save rebuilding OAuth, multi-account, and paginated message reads; what it does not do is majordomo's own work either way: assignee reporting, the sieve, the MCP interface, identity-keyed reporting, and automation.
 
 The pending check before adopting gchat-cli for that fallback is whether its read and search return the complete message history over a date window, since a standalone reconstruction needs every message in range and the simple read path appears to cap at recent messages.
 
@@ -116,7 +116,7 @@ Decided:
 - Task activity reported from the BI platform's reconstruction (`coord_tasks`) when present, from majordomo's own message decoder when standalone; the decoder is retained so majordomo runs without that backend.
 - Sieve enforced in the core, never only in a front door.
 - Orchestration kept external.
-- The accessor's data model is an information flow (crude's object-edit model is rejected). The fast path reads the BI platform's existing cache and reconstructed tasks, mandatory cache-first because Google throttles live reads, while majordomo keeps its own live read and decoder to run standalone. Delivery (query CLI versus REST daemon) is open (`DATA-MODEL.md`).
+- The accessor's data model is an information flow (crude's object-edit model is rejected). The fast path reads the BI platform's existing cache and reconstructed tasks, mandatory cache-first because Google throttles direct reads, while majordomo keeps its own direct read and decoder to run standalone. Delivery (query CLI versus REST daemon) is open (`DATA-MODEL.md`).
 
 Open:
 
