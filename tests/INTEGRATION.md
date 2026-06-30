@@ -2,7 +2,7 @@
 
 `tests/integration.sh` is the last stage before deployment. It is **not** a
 software-strength test: the unit suite already proves the code logic against a fake
-Chat service (`tests/test_live_reader.py`, "no creds/network"). This script answers
+Chat service (`tests/test_nocache_reader.py`, "no creds/network"). This script answers
 a different question. Is *this machine*, with *this configuration* and *these
 credentials*, ready to serve a real user?
 
@@ -51,25 +51,24 @@ Exit status:
   a missing install, or a crash is a `FAIL`. A clean EOF exit or the 3s timeout both
   count as a healthy boot.
 
-**Live credentials** (the `login` proxy): `login` itself is an interactive browser
-flow and cannot run headless, but its deployment-relevant product is a token that
-authenticates. `majordomo --live spaces` exercises exactly that, so a dead or
-revoked client fails here as `invalid_client`. That is the whole point: if the
-client is invalid, we cannot deploy.
+**Credentials** (the `login` proxy): `login` is an interactive browser flow and
+cannot run headless, but its deployment-relevant product is a token the direct-API
+path uses. `majordomo --nocache spaces` forces that path, so a dead or revoked
+client fails here as `invalid_client`. (`--live` would not prove auth: it is
+cache-backed and only calls the API to top up when the cache lags.)
 
-**Fixtures exist on the live API:** `TEST_SPACE` and `TEST_DM` must appear in
-`majordomo --live spaces`. A missing fixture means a wrong id, lost access, or dead
-auth, each a `FAIL`.
+**Fixtures exist on the API:** `TEST_SPACE` and `TEST_DM` must appear in
+`majordomo --nocache spaces`. A missing fixture means a wrong id, lost access, or
+dead auth, each a `FAIL`.
 
 **Read matrices:** the full window/format cross-product runs on the local backends
-(`--cache`, auto). The live leg is scoped to the fixtures and runs each command
-once, because live reads burn Google's per-project read quota; the cross-product is
-already covered on cache. Commands exercised:
+(`--cache`, auto). The API-touching leg covers the two source modes that hit Google,
+scoped so neither does a global scan:
 
-- `spaces`: default, `--minimal-messages 0`, `--json`, `--csv`.
-- `people`: every window (`7d 30d month year all`), `--since/--until`, `--json`, `--csv` (cache/auto); one short window on live, run last because it is the one command that scans every space.
-- `tasks`: default, `--to-me`, `--by-me`, `--assignee-name`, `--space`, `--window all`, `--limit`, `--json`, `--csv`.
-- `messages`: `--space` (group and DM), `--window all`, `--json`, `--csv`, and `--thread` fed by a message name lifted from the space.
+- `spaces`: default, `--minimal-messages 0`, `--json`, `--csv` (cache/auto).
+- `people`: every window (`7d 30d month year all`), `--since/--until`, `--json`, `--csv` (cache/auto); on `--live` it is cache-backed (identities are stable), so it is exercised once as a fast no-API check.
+- `tasks`: default, `--to-me`, `--by-me`, `--assignee-name`, `--space`, `--window all`, `--limit`, `--json`, `--csv` (cache/auto); on `--live`, `--space` (top-up of one space) and one unscoped `--window 7d` (top-up bounded to the recently-active spaces, never all ~191); on `--nocache`, `--space` (direct, scoped).
+- `messages`: `--space` (group and DM), `--window all`, `--json`, `--csv`, and `--thread` from a lifted message name, on both `--live` (top-up) and `--nocache` (direct), always scoped to a fixture.
 
 **Daily-DM freshness:** the subject DMs daily, so the newest message in `TEST_DM`
 must be within `MAJORDOMO_DM_FRESH_DAYS` (default 1). A stale newest message means
