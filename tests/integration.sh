@@ -123,21 +123,20 @@ matrix() {
   fi
 }
 
-# Live reads burn Google's per-project read quota, so the live leg is scoped to the
-# test fixtures (the reason they exist) and exercises each command once, not the
-# full window/format cross-product (already covered on cache).
-live_matrix() {
-  echo "── live backend (scoped to fixtures, quota-limited) ─────"
-  run "live spaces"                       $MAJORDOMO --live spaces
-  run "live spaces --json"                $MAJORDOMO --live spaces --json
-  run "live spaces --csv"                 $MAJORDOMO --live spaces --csv
+# --live is up-to-dateness (cache base + API top-up). Scoped reads (--space/--thread)
+# poll one space; the unscoped read polls only the recently-active spaces (bounded),
+# never all ~191. --nocache is the direct API, scoped to a fixture so it stays cheap.
+# people/spaces under --live come from cache (no API), so they are fast and safe.
+freshness_matrix() {
+  echo "── live (freshness top-up) + nocache (direct), fixture-scoped ──"
+  run "live spaces (cache-backed)"        $MAJORDOMO --live spaces
+  run "live people (cache-backed)"        $MAJORDOMO --live people
   run "live tasks --space TEST_SPACE"     $MAJORDOMO --live tasks --space "$TEST_SPACE"
   run "live tasks --space --json"         $MAJORDOMO --live tasks --space "$TEST_SPACE" --json
-  run "live tasks --space --csv"          $MAJORDOMO --live tasks --space "$TEST_SPACE" --csv
+  run "live tasks (unscoped, active-bounded)" $MAJORDOMO --live tasks --window 7d
   run "live messages --space TEST_SPACE"  $MAJORDOMO --live messages --space "$TEST_SPACE"
   run "live messages --space TEST_DM"     $MAJORDOMO --live messages --space "$TEST_DM"
   run "live messages --space --window all" $MAJORDOMO --live messages --space "$TEST_SPACE" --window all
-  run "live messages --space --json"      $MAJORDOMO --live messages --space "$TEST_SPACE" --json
   run "live messages --space --csv"       $MAJORDOMO --live messages --space "$TEST_SPACE" --csv
   local mname
   mname=$($MAJORDOMO --live messages --space "$TEST_SPACE" --window all --json 2>/dev/null \
@@ -148,6 +147,9 @@ live_matrix() {
     echo "no message in $TEST_SPACE to derive a thread from" > "$ERRF"
     fail "live messages --thread (could not derive a thread)"
   fi
+  # direct-API path, scoped so it never does a global scan
+  run "nocache tasks --space TEST_SPACE"     $MAJORDOMO --nocache tasks --space "$TEST_SPACE"
+  run "nocache messages --space TEST_SPACE"  $MAJORDOMO --nocache messages --space "$TEST_SPACE"
 }
 
 echo "majordomo deployment-readiness gate"
@@ -188,22 +190,25 @@ else
   fail "mcp cannot start via venv  [$MCP_PY -m majordomo mcp]"
 fi
 
-# ---- live credentials (login proxy: login is interactive, its product is a token) ----
-echo "── live credentials ─────────────────────────────────────"
-run "live auth works (token mints / refreshes)" $MAJORDOMO --live spaces --json
+# ---- credentials (the login proxy) ------------------------------------------
+# `login` is interactive; its product is a token the direct-API path uses. --nocache
+# forces that path, so a dead/revoked client fails here as invalid_client. (--live
+# would not prove auth: it is cache-backed and only tops up if the cache lags.)
+echo "── credentials (direct API / OAuth) ─────────────────────"
+run "OAuth works (--nocache reaches the API)" $MAJORDOMO --nocache spaces --json
 
-# ---- fixtures exist on the live API -----------------------------------------
-LIVE_IDS=$($MAJORDOMO --live spaces --json 2>/dev/null \
+# ---- fixtures exist on the API ----------------------------------------------
+API_IDS=$($MAJORDOMO --nocache spaces --json 2>/dev/null \
             | python3 -c 'import sys,json; print(" ".join(r["space_name"] for r in json.load(sys.stdin)["rows"]))' 2>/dev/null)
-if echo " $LIVE_IDS " | grep -qw "$TEST_SPACE"; then pass "TEST_SPACE $TEST_SPACE exists on live"
-else echo "not in live space list (wrong id, no access, or auth down)" > "$ERRF"; fail "TEST_SPACE $TEST_SPACE exists on live"; fi
-if echo " $LIVE_IDS " | grep -qw "$TEST_DM"; then pass "TEST_DM $TEST_DM exists on live"
-else echo "not in live space list (wrong id, no access, or auth down)" > "$ERRF"; fail "TEST_DM $TEST_DM exists on live"; fi
+if echo " $API_IDS " | grep -qw "$TEST_SPACE"; then pass "TEST_SPACE $TEST_SPACE exists on the API"
+else echo "not in the API space list (wrong id, no access, or auth down)" > "$ERRF"; fail "TEST_SPACE $TEST_SPACE exists on the API"; fi
+if echo " $API_IDS " | grep -qw "$TEST_DM"; then pass "TEST_DM $TEST_DM exists on the API"
+else echo "not in the API space list (wrong id, no access, or auth down)" > "$ERRF"; fail "TEST_DM $TEST_DM exists on the API"; fi
 
 # ---- read matrices ----------------------------------------------------------
 matrix "--cache" "cache"
 matrix ""        "auto"
-live_matrix
+freshness_matrix
 
 # ---- daily-DM freshness -----------------------------------------------------
 echo "── DM freshness ─────────────────────────────────────────"
@@ -219,11 +224,6 @@ sys.exit(0 if (datetime.datetime.utcnow()-dt).days <= int(sys.argv[2]) else 1)
 PY
 then pass "TEST_DM fresh (newest ${newest:-none})"
 else echo "newest '${newest:-none}' older than ${DM_FRESH_DAYS}d, or none in 7d" > "$ERRF"; fail "TEST_DM fresh"; fi
-
-# The one unavoidably global read goes last: it scans every space and is the most
-# likely to hit the read quota, so a 429 here retry-aborts after everything else ran.
-echo "── live people (global scan, quota-sensitive) ───────────"
-run "live people --window 7d" $MAJORDOMO --live people --window 7d
 
 echo "──────────────────────────────────────────────────────────"
 printf 'PASS %d  FAIL %d\n' "$PASS" "$FAIL"
