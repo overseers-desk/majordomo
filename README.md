@@ -14,6 +14,22 @@ When someone creates a task through Google Chat's "Create a task for @Person (vi
 
 ## Install
 
+The simplest cross-platform install is from PyPI:
+
+```bash
+pip install majordomo                  # CLI, reads the Chat cache
+pip install "majordomo[nocache,mcp]"   # plus the live Chat API path and the MCP server
+```
+
+With uv, `uvx majordomo ...` runs it without installing and `uv tool install majordomo` installs it permanently.
+
+Homebrew (macOS or Linux):
+
+```bash
+brew tap overseers-desk/od
+brew install majordomo
+```
+
 Python 3.11+.
 
 **Run directly, no virtualenv, with Ubuntu/Debian packages:**
