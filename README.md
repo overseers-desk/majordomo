@@ -8,7 +8,7 @@ When someone creates a task through Google Chat's "Create a task for @Person (vi
 
 - **Tasks** by assignee, space, and date; "assigned to me" and "assigned by me".
 - **Spaces**, **people** (participants with message and task counts), and raw **messages** by space or thread.
-- **Two sources, one shape.** A fast path reads an existing server-side cache of Chat (the [data model](DATA-MODEL.md)). A live path reads the Chat API directly and decodes tasks itself, so the tool also works without the cache. Every result is tagged with its source; the cache falls back to live automatically when it is unreachable.
+- **Three modes, one shape.** The fast path reads an existing server-side cache of Chat (the [data model](DATA-MODEL.md)). `--live` is up-to-dateness: it serves the cache and tops it up from the Chat API with anything newer. `--nocache` reads the Chat API directly and decodes tasks itself, so the tool also works without the cache. Every result is tagged with its source; an unforced read uses the cache and falls back to the direct API automatically when the cache is unreachable.
 - **A privacy sieve** in the core drops blocked spaces (and assignees) before any caller (CLI or MCP) can see them.
 - **Output** as a rich console table, `--json`, or `--csv`.
 
@@ -20,7 +20,7 @@ Python 3.11+.
 
 ```bash
 sudo apt-get install python3-typer python3-rich python3-pymysql
-# for the live path (majordomo login, --live) also:
+# for the API path (majordomo login, --live top-up, --nocache) also:
 sudo apt-get install python3-googleapi python3-google-auth python3-google-auth-oauthlib
 ```
 
@@ -34,7 +34,7 @@ PYTHONPATH=src python3 -m majordomo spaces
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[live,mcp]"      # drop the extras you don't need
+pip install -e ".[nocache,mcp]"   # drop the extras you don't need
 majordomo --help
 ```
 
@@ -55,7 +55,7 @@ user_id = "users/1234567890"      # your Chat id, for --to-me / --by-me
 block_spaces = ["spaces/AAAA"]     # never shown through any front door
 block_assignees = ["users/9999"]   # drop these assignees from every report
 
-[live]                             # optional; defaults shown
+[nocache]                          # optional; defaults shown (OAuth for the API path)
 token_file = "~/.config/majordomo/token.json"
 client_file = "~/.config/majordomo/client_secret.json"
 ```
@@ -70,9 +70,9 @@ MYSQL_PASSWORD=…
 MYSQL_DATABASE=…
 ```
 
-## Authenticating the live path
+## Authenticating (OAuth for the API path)
 
-`majordomo login` opens a browser OAuth flow and writes `~/.config/majordomo/token.json` (read-only Chat scopes). It needs a Desktop OAuth client with the Google Chat API enabled, saved as `client_secret.json` in the config directory.
+`majordomo login` opens a browser OAuth flow and writes `~/.config/majordomo/token.json` (read-only Chat scopes), used by `--live` (for the top-up) and `--nocache`. It needs a Desktop OAuth client with the Google Chat API enabled, saved as `client_secret.json` in the config directory.
 
 ```bash
 majordomo login
@@ -90,14 +90,14 @@ majordomo messages --thread spaces/AAAA/messages/BBBB
 majordomo mcp                       # run the MCP server (stdio)
 ```
 
-- Source: default cache with live fallback; `--cache` or `--live` force one.
+- Source: default cache with an automatic direct-API fallback. `--cache` forces the cache; `--live` adds a freshness top-up from the API; `--nocache` reads the API directly.
 - Window: `7d | 30d | month | year | all`, or `--since` / `--until` (ISO dates).
 - Output: default console, `--json`, or `--csv`.
 
 ## Not yet (deferred)
 
 - **Task completion and stats.** Google Chat does not reliably carry task completion, so every task is reported as `open`; completion-rate reporting waits on a later signal.
-- **Directory name resolution.** Names come from the chat message and the live API; a bare `users/<id>` with no name attached is shown as the id.
+- **Directory name resolution.** Names come from the chat message and the Chat API directly; a bare `users/<id>` with no name attached is shown as the id.
 
 ## License
 
