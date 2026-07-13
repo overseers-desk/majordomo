@@ -10,14 +10,72 @@ from __future__ import annotations
 
 import os
 import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
 
 CONFIG_DIR = Path(os.path.expanduser("~/.config/majordomo"))
 CONFIG_TOML = CONFIG_DIR / "config.toml"
 ENV_FILE = CONFIG_DIR / ".env"
 
+# The office-wide replay bound (WORLD_AS_OF.design.md): when set, nothing dated
+# after this instant may leave majordomo. Read from the environment on every
+# call — a long-running MCP server honors the environment its launcher set and
+# fails per call, not at handshake.
+WORLD_AS_OF_ENV = "WORLD_AS_OF"
+
+# The once-per-run honesty flag (design §3 rule 1): metadata the store keeps no
+# history for is served as it stands now, and the output says so.
+WORLD_CURRENT_STATE_NOTE = (
+    "space and user display names are current-state, not rewound to WORLD_AS_OF"
+)
+
+
+def world_as_of() -> datetime | None:
+    """The WORLD_AS_OF bound as a naive-UTC datetime, or None when unset.
+
+    The variable is ISO-8601 with a timezone offset. Set but unparseable (or
+    timezone-naive) is a hard failure on every code path — a silently ignored
+    bound produces a contaminated run that looks valid. The store and
+    ``dates.resolve`` work in naive UTC, so the offset is converted then dropped.
+    """
+    raw = os.environ.get(WORLD_AS_OF_ENV)
+    if raw is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        parsed = None
+    if parsed is None or parsed.tzinfo is None:
+        raise SystemExit(
+            f"majordomo: WORLD_AS_OF={raw!r} must be an ISO-8601 timestamp with a "
+            "timezone offset (e.g. 2026-07-12T17:07:00+10:00); refusing to run "
+            "with an unenforceable bound."
+        )
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def world_clamp(end: datetime | None) -> datetime | None:
+    """Clamp an end-exclusive upper bound to WORLD_AS_OF; identity when unset.
+
+    The one clamp rule (design §2): ``end = min(end or WORLD_AS_OF, WORLD_AS_OF)``
+    wherever an end bound exists. Enforcement lives inside each backend (the
+    reader seam), so the cache->nocache fallback cannot leak.
+    """
+    bound = world_as_of()
+    if bound is None:
+        return end
+    if end is None:
+        return bound
+    if end.tzinfo is not None:
+        end = end.astimezone(timezone.utc).replace(tzinfo=None)
+    return min(end, bound)
+
 
 def load_config() -> dict:
+    # Parse the bound before anything else: a bad WORLD_AS_OF stops every
+    # command, including ones that fetch no dates (design §5, hard failure
+    # everywhere).
+    world_as_of()
     if not CONFIG_TOML.exists():
         raise SystemExit(f"majordomo: no config at {CONFIG_TOML}")
     with open(CONFIG_TOML, "rb") as fh:
