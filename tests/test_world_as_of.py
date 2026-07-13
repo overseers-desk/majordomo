@@ -10,10 +10,11 @@ No test touches the live Chat API (fakes only, per test_nocache_reader.py).
 import _shim  # noqa: F401
 
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 
-from majordomo import config, dates
+from majordomo import config, dates, db, nocache, reports
 
 # 2026-07-12T17:07:00+10:00 == 2026-07-12T07:07:00 UTC
 BOUND_RAW = "2026-07-12T17:07:00+10:00"
@@ -117,6 +118,133 @@ def test_early_until_passes_untouched(monkeypatch, capsys):
     monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
     assert dates.resolve("all", until="2026-02-01") == (None, datetime(2026, 2, 1))
     assert capsys.readouterr().err == ""
+
+
+# --- cache backend: enforcement inside reports (the seam, not the front door)
+
+def _capture_queries(monkeypatch):
+    """Record every db.query call; each returns no rows."""
+    calls: list[tuple[str, list]] = []
+
+    def fake(conn, sql, params=()):
+        calls.append((sql, list(params)))
+        return []
+
+    monkeypatch.setattr(db, "query", fake)
+    return calls
+
+
+def _sql_with(calls, fragment):
+    hits = [(sql, params) for sql, params in calls if fragment in sql]
+    assert hits, f"no captured query contains {fragment!r}"
+    return hits[-1]
+
+
+def test_spaces_subqueries_gain_the_bound(monkeypatch):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    calls = _capture_queries(monkeypatch)
+    reports.spaces(None, [], minimal_messages=1)
+    sql, params = _sql_with(calls, "FROM googlechat_spaces")
+    # Both count subqueries are bounded; so is the minimal_messages predicate,
+    # which drops spaces whose first message postdates the cutoff.
+    assert sql.count("m.create_time < %s") == 2
+    assert sql.count("t.created_at < %s") == 1
+    assert params == [BOUND_UTC, BOUND_UTC, BOUND_UTC, 1]
+
+
+def test_spaces_sql_unchanged_when_unset(monkeypatch):
+    monkeypatch.delenv("WORLD_AS_OF", raising=False)
+    calls = _capture_queries(monkeypatch)
+    reports.spaces(None, ["spaces/BLOCK"], minimal_messages=1)
+    sql, params = _sql_with(calls, "FROM googlechat_spaces")
+    assert "create_time" not in sql and "created_at" not in sql
+    assert params == ["spaces/BLOCK", 1]
+
+
+def test_messages_open_end_closes_at_the_bound(monkeypatch):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    calls = _capture_queries(monkeypatch)
+    reports.messages(None, [], space="spaces/X", end=None)
+    sql, params = _sql_with(calls, "FROM googlechat_messages m")
+    assert "m.create_time < %s" in sql
+    assert BOUND_UTC in params
+
+
+def test_tasks_end_is_clamped_not_replaced(monkeypatch):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    calls = _capture_queries(monkeypatch)
+    reports.tasks(None, [], end=datetime(2027, 1, 1))         # later than the bound
+    _sql, params = _sql_with(calls, "FROM coord_tasks t")
+    assert BOUND_UTC in params and datetime(2027, 1, 1) not in params
+    calls.clear()
+    reports.tasks(None, [], end=datetime(2026, 1, 1))         # earlier: untouched
+    _sql, params = _sql_with(calls, "FROM coord_tasks t")
+    assert datetime(2026, 1, 1) in params and BOUND_UTC not in params
+
+
+def test_people_both_aggregation_arms_are_bounded(monkeypatch):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    calls = _capture_queries(monkeypatch)
+    reports.people(None, [])
+    sql, params = _sql_with(calls, "UNION ALL")
+    assert "create_time < %s" in sql and "created_at < %s" in sql
+    assert params.count(BOUND_UTC) == 2
+
+
+# --- nocache backend: server-side createTime clamp + spaces post-filter -----
+
+API_SPACES = [
+    {"name": "spaces/OLD", "displayName": "Old", "spaceType": "SPACE",
+     "createTime": "2024-01-01T00:00:00Z"},
+    {"name": "spaces/NEW", "displayName": "New", "spaceType": "SPACE",
+     "createTime": "2026-08-01T00:00:00Z"},                    # after the bound
+    {"name": "spaces/ANCIENT", "displayName": "Ancient", "spaceType": "SPACE"},
+]
+
+
+def _fake_chat(spaces, captured_filters):
+    chat = MagicMock()
+    chat.spaces().list().execute.return_value = {"spaces": spaces}
+
+    def msg_list(parent=None, filter=None, **kw):
+        captured_filters.append(filter)
+        page = MagicMock()
+        page.execute.return_value = {"messages": []}
+        return page
+
+    chat.spaces().messages().list.side_effect = msg_list
+    return chat
+
+
+def test_nocache_spaces_posts_filter_on_create_time(monkeypatch):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    reader = nocache.NocacheReader(service=_fake_chat(API_SPACES, []))
+    names = [r["space_name"] for r in reader.spaces()]
+    # Created-after-the-bound drops; no-createTime (pre-mid-2021) is kept as
+    # current-state, because dropping it would misreport it as never existing.
+    assert names == ["spaces/OLD", "spaces/ANCIENT"]
+    monkeypatch.delenv("WORLD_AS_OF")
+    reader = nocache.NocacheReader(service=_fake_chat(API_SPACES, []))
+    assert len(reader.spaces()) == 3
+
+
+def test_nocache_message_fetch_is_server_bounded(monkeypatch):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    filters: list = []
+    reader = nocache.NocacheReader(service=_fake_chat(API_SPACES, filters))
+    reader.messages(space="spaces/OLD")                        # open end
+    assert filters == ['createTime < "2026-07-12T07:07:00Z"']
+    filters.clear()
+    reader.tasks(space="spaces/OLD", end=datetime(2027, 1, 1))  # later end clamps
+    assert filters == ['createTime < "2026-07-12T07:07:00Z"']
+
+
+def test_nocache_filter_unchanged_when_unset(monkeypatch):
+    monkeypatch.delenv("WORLD_AS_OF", raising=False)
+    filters: list = []
+    reader = nocache.NocacheReader(service=_fake_chat(API_SPACES, filters))
+    reader.messages(space="spaces/OLD")
+    assert filters == [""]
 
 
 if __name__ == "__main__":
