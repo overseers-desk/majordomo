@@ -282,7 +282,7 @@ class NocacheReader:
                 if bound is not None:
                     # Neither store keeps pre-edit bodies: a message edited after
                     # the bound carries its post-edit text. Mark it rather than
-                    # drop it — dropping would misreport it as never sent.
+                    # drop it: dropping would misreport it as never sent.
                     lu = _parse_dt(m.get("lastUpdateTime"))
                     if lu is not None and lu > bound:
                         row["edited_after_bound"] = True

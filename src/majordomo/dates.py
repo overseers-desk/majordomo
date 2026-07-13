@@ -6,8 +6,8 @@ overrides the window. Bounds are naive UTC datetimes (or ``None`` for an open
 end), matching ``coord_tasks.created_at`` / ``googlechat_messages.create_time``.
 
 Under WORLD_AS_OF (WORLD_AS_OF.design.md) the bound is the clock: relative
-windows anchor to it, not to now — ``7d`` is the seven days before the bound,
-``month`` the calendar month before the one containing it — and ``end`` is
+windows anchor to it, not to now (``7d`` is the seven days before the bound,
+``month`` the calendar month before the one containing it), and ``end`` is
 clamped down to it (a later user-supplied ``--until`` gets a stderr note).
 Without the frozen now, a replayed ``--window 7d`` resolves against the replay
 date and silently reports nothing.

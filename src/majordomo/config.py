@@ -19,7 +19,7 @@ ENV_FILE = CONFIG_DIR / ".env"
 
 # The office-wide replay bound (WORLD_AS_OF.design.md): when set, nothing dated
 # after this instant may leave majordomo. Read from the environment on every
-# call — a long-running MCP server honors the environment its launcher set and
+# call. A long-running MCP server honors the environment its launcher set and
 # fails per call, not at handshake.
 WORLD_AS_OF_ENV = "WORLD_AS_OF"
 
@@ -34,7 +34,7 @@ def world_as_of() -> datetime | None:
     """The WORLD_AS_OF bound as a naive-UTC datetime, or None when unset.
 
     The variable is ISO-8601 with a timezone offset. Set but unparseable (or
-    timezone-naive) is a hard failure on every code path — a silently ignored
+    timezone-naive) is a hard failure on every code path: a silently ignored
     bound produces a contaminated run that looks valid. The store and
     ``dates.resolve`` work in naive UTC, so the offset is converted then dropped.
     """

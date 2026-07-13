@@ -102,7 +102,7 @@ class FreshReader:
         which the bound would exclude anyway, so the call is definitionally
         useless. `--live` degrades to the cache read plus a stderr note. A
         watermark short of the bound (a future bound, or the sync gap) keeps its
-        top-up — the one case where `--live` still adds anything; the fetch
+        top-up, the one case where `--live` still adds anything; the fetch
         itself is end-clamped inside NocacheReader.
         """
         bound = config.world_as_of()
