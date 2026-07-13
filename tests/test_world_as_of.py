@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from majordomo import config, dates, db, nocache, reports
+from majordomo import config, dates, db, nocache, readers, reports
 
 # 2026-07-12T17:07:00+10:00 == 2026-07-12T07:07:00 UTC
 BOUND_RAW = "2026-07-12T17:07:00+10:00"
@@ -189,6 +189,54 @@ def test_people_both_aggregation_arms_are_bounded(monkeypatch):
     sql, params = _sql_with(calls, "UNION ALL")
     assert "create_time < %s" in sql and "created_at < %s" in sql
     assert params.count(BOUND_UTC) == 2
+
+
+# --- FreshReader (--live): degrade to cache when the mirror reaches the bound
+
+def _fresh(cache, nc):
+    fr = readers.FreshReader(cache, {}, [], [])
+    fr._nc = nc  # skip the real NocacheReader build
+    return fr
+
+
+def test_live_topup_skipped_when_watermark_reaches_the_bound(monkeypatch, capsys):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    cache = MagicMock()
+    cache.tasks.return_value = ["CACHE_ROW"]
+    nc = MagicMock()
+    monkeypatch.setattr(readers.reports, "space_watermark",
+                        lambda conn, sp: datetime(2026, 7, 13))  # past the bound
+    out = _fresh(cache, nc).tasks(space="spaces/X")
+    assert out == ["CACHE_ROW"]                                  # cache served as-is
+    nc.tasks.assert_not_called()                                 # no API call at all
+    assert "WORLD_AS_OF" in capsys.readouterr().err              # and it says so
+
+
+def test_live_topup_survives_a_watermark_short_of_the_bound(monkeypatch, capsys):
+    # The legitimate case (a bound in the future or inside the sync gap): the
+    # top-up runs; its fetch is end-clamped inside NocacheReader.
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    cache = MagicMock()
+    cache.messages.return_value = []
+    nc = MagicMock()
+    nc.messages.return_value = []
+    monkeypatch.setattr(readers.reports, "space_watermark",
+                        lambda conn, sp: datetime(2026, 7, 1))   # short of the bound
+    _fresh(cache, nc).messages("spaces/X")
+    nc.messages.assert_called_once()
+    assert capsys.readouterr().err == ""
+
+
+def test_live_unbounded_polls_as_before(monkeypatch):
+    monkeypatch.delenv("WORLD_AS_OF", raising=False)
+    cache = MagicMock()
+    cache.tasks.return_value = []
+    nc = MagicMock()
+    nc.tasks.return_value = []
+    monkeypatch.setattr(readers.reports, "space_watermark",
+                        lambda conn, sp: datetime(2026, 7, 13))
+    _fresh(cache, nc).tasks(space="spaces/X")
+    nc.tasks.assert_called_once()
 
 
 # --- nocache backend: server-side createTime clamp + spaces post-filter -----
