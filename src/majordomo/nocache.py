@@ -267,6 +267,7 @@ class NocacheReader:
             targets = [space]
         else:
             return []
+        bound = config.world_as_of()
         rows: list[dict] = []
         for sp in targets:
             if sp and not sieve.allows(self.blocked, sp):
@@ -274,8 +275,16 @@ class NocacheReader:
             for m in self._messages(sp, start, end):
                 if thread and m.get("name", "").split(".")[0] != key:
                     continue
-                rows.append({"name": m.get("name"), "space_name": sp, "space_display": self._space_display(sp),
-                             "sender_name": (m.get("sender") or {}).get("name"),
-                             "sender_type": (m.get("sender") or {}).get("type"),
-                             "create_time": _parse_dt(m.get("createTime")), "text": m.get("text")})
+                row = {"name": m.get("name"), "space_name": sp, "space_display": self._space_display(sp),
+                       "sender_name": (m.get("sender") or {}).get("name"),
+                       "sender_type": (m.get("sender") or {}).get("type"),
+                       "create_time": _parse_dt(m.get("createTime")), "text": m.get("text")}
+                if bound is not None:
+                    # Neither store keeps pre-edit bodies: a message edited after
+                    # the bound carries its post-edit text. Mark it rather than
+                    # drop it — dropping would misreport it as never sent.
+                    lu = _parse_dt(m.get("lastUpdateTime"))
+                    if lu is not None and lu > bound:
+                        row["edited_after_bound"] = True
+                rows.append(row)
         return sieve.filter_rows(self.blocked, rows)[:limit]

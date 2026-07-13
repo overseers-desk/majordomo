@@ -12,6 +12,7 @@ bounds itself.
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta, timezone
 
 from . import config, db, sieve
@@ -59,6 +60,27 @@ def active_spaces(conn, blocked: list[str], *, horizon_days: int = FRESH_HORIZON
     return [(r["space_name"], r["wm"]) for r in rows]
 
 
+def _floor_check(conn, *, space: str | None = None) -> None:
+    """Warn when WORLD_AS_OF predates the oldest cached message in the queried
+    scope. The mirror keeps a twelve-month floor, so an older bound yields a
+    silently thin answer — contamination by omission, given the same visibility
+    as leakage (WORLD_AS_OF.design.md §3 rule 4). No-op when unset.
+    """
+    bound = config.world_as_of()
+    if bound is None:
+        return
+    where, params = ("WHERE space_name = %s", [space]) if space else ("", [])
+    rows = db.query(conn, f"SELECT MIN(create_time) AS floor FROM googlechat_messages {where}", params)
+    floor = rows[0]["floor"] if rows else None
+    if floor and bound < floor:
+        print(
+            f"majordomo: WORLD_AS_OF ({bound.isoformat()} UTC) predates the oldest "
+            f"cached message ({floor.isoformat()}); the store does not reach the "
+            "as-of instant, so the answer may be thin.",
+            file=sys.stderr,
+        )
+
+
 def _glob_to_like(pattern: str) -> str:
     """fnmatch-style glob -> SQL LIKE (with ESCAPE '\\'). Supports * and ?."""
     out = pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -75,6 +97,7 @@ def spaces(conn, blocked: list[str], *, minimal_messages: int = 1) -> list[dict]
     metadata (display name, type) is current-state and flagged, not rewound.
     """
     bound = config.world_as_of()
+    _floor_check(conn)
     msg_bound = " AND m.create_time < %s" if bound else ""
     task_bound = " AND t.created_at < %s" if bound else ""
     clause, params = sieve.clause(blocked, "s.name")
@@ -99,6 +122,7 @@ def people(conn, blocked: list[str], *, start: datetime | None = None, end: date
     with message and task counts. Display names come only from the prose @name
     on the task side (the mirror carries no user display names)."""
     end = config.world_clamp(end)
+    _floor_check(conn)
     clause, sp = sieve.clause(blocked, "space_name")
     wm, pm = [clause], list(sp)
     wt, pt = [clause], list(sp)
@@ -145,6 +169,7 @@ def tasks(
     limit: int = TASK_LIMIT,
 ) -> list[dict]:
     end = config.world_clamp(end)
+    _floor_check(conn, space=space)
     where: list[str] = []
     params: list = []
     join = ""
@@ -204,6 +229,7 @@ def messages(
     if space and not sieve.allows(blocked, space):
         return []
     end = config.world_clamp(end)
+    _floor_check(conn, space=space)
     where: list[str] = []
     params: list = []
     if thread:

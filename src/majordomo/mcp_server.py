@@ -9,6 +9,7 @@ launched by `majordomo mcp` (stdio).
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime
 from typing import Optional
 
@@ -25,12 +26,25 @@ def _jsonable(rows: list[dict]) -> list[dict]:
 
 
 def _reader(source: Optional[str]):
-    cfg = config.load_config()
+    try:
+        cfg = config.load_config()
+    except SystemExit as exc:
+        # A config-time hard failure (a bad WORLD_AS_OF, a missing config) must
+        # fail this tool call with its message, not kill the long-running server.
+        # The bound is parsed per call, so the server honors the environment its
+        # launcher set rather than dying opaquely at handshake.
+        raise RuntimeError(str(exc)) from None
     return cfg, readers.make_reader(cfg, source)
 
 
 def _envelope(reader, rows: list[dict]) -> dict:
-    return {"source": reader.source, "count": len(rows), "rows": _jsonable(rows)}
+    out = {"source": reader.source, "count": len(rows), "rows": _jsonable(rows)}
+    bounded = os.environ.get(config.WORLD_AS_OF_ENV)
+    if bounded:
+        # Auditability: a bounded answer says so, so a benchmark log proves it.
+        out["world_as_of"] = bounded
+        out["current_state_note"] = config.WORLD_CURRENT_STATE_NOTE
+    return out
 
 
 def create_server() -> FastMCP:

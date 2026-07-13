@@ -2,18 +2,23 @@
 
 JSON wraps the rows in an envelope carrying the provenance ``source`` and a
 ``count``, so a machine reader can tell a cache answer from a direct (nocache) one.
+Under WORLD_AS_OF the envelope also carries ``world_as_of`` (the bound as set,
+so a benchmark log proves the answer was bounded) and the current-state note;
+the console and CSV paths say the same once on stderr. Absent when unset.
 """
 
 from __future__ import annotations
 
 import csv as _csv
 import json
+import os
 import sys
+
+from . import config
+from .models import Column
 
 from rich.console import Console
 from rich.table import Table
-
-from .models import Column
 
 console = Console()
 
@@ -25,9 +30,20 @@ def _cell(row: dict, key) -> str:
 
 def emit(rows: list[dict], columns: list[Column], source: str,
          output_json: bool = False, output_csv: bool = False) -> None:
+    bounded = os.environ.get(config.WORLD_AS_OF_ENV)
     if output_json:
-        print(json.dumps({"source": source, "count": len(rows), "rows": rows}, indent=2, default=str))
+        envelope: dict = {"source": source, "count": len(rows), "rows": rows}
+        if bounded:
+            envelope["world_as_of"] = bounded
+            envelope["current_state_note"] = config.WORLD_CURRENT_STATE_NOTE
+        print(json.dumps(envelope, indent=2, default=str))
         return
+    if bounded:
+        print(
+            f"majordomo: bounded to WORLD_AS_OF={bounded}; "
+            f"{config.WORLD_CURRENT_STATE_NOTE}.",
+            file=sys.stderr,
+        )
     if output_csv:
         writer = _csv.writer(sys.stdout)
         writer.writerow([header for header, _ in columns])
