@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from majordomo import config, dates, db, nocache, readers, reports
+from majordomo import config, dates, db, nocache, output, readers, reports
 
 # 2026-07-12T17:07:00+10:00 == 2026-07-12T07:07:00 UTC
 BOUND_RAW = "2026-07-12T17:07:00+10:00"
@@ -293,6 +293,79 @@ def test_nocache_filter_unchanged_when_unset(monkeypatch):
     reader = nocache.NocacheReader(service=_fake_chat(API_SPACES, filters))
     reader.messages(space="spaces/OLD")
     assert filters == [""]
+
+
+# --- flagging: the envelope proves the bound; honesty warnings ---------------
+
+def test_json_envelope_carries_the_bound(monkeypatch, capsys):
+    import json
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    output.emit([{"a": 1}], [("A", "a")], "cache", output_json=True)
+    env = json.loads(capsys.readouterr().out)
+    assert env["world_as_of"] == BOUND_RAW
+    assert env["current_state_note"] == config.WORLD_CURRENT_STATE_NOTE
+
+
+def test_json_envelope_unchanged_when_unset(monkeypatch, capsys):
+    import json
+    monkeypatch.delenv("WORLD_AS_OF", raising=False)
+    output.emit([{"a": 1}], [("A", "a")], "cache", output_json=True)
+    env = json.loads(capsys.readouterr().out)
+    assert "world_as_of" not in env and "current_state_note" not in env
+
+
+def test_console_flags_the_bound_on_stderr(monkeypatch, capsys):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    output.emit([{"a": 1}], [("A", "a")], "cache", output_csv=True)
+    captured = capsys.readouterr()
+    assert BOUND_RAW in captured.err
+    assert "WORLD_AS_OF" not in captured.out  # rows themselves stay clean
+
+
+def test_cache_floor_warning(monkeypatch, capsys):
+    # A bound older than the oldest cached message is contamination by
+    # omission: the store cannot reach the as-of instant, and says so.
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+
+    def fake(conn, sql, params=()):
+        if "MIN(create_time)" in sql:
+            return [{"floor": datetime(2026, 7, 20)}]  # oldest row postdates bound
+        return []
+
+    monkeypatch.setattr(db, "query", fake)
+    reports.messages(None, [], space="spaces/X")
+    assert "does not reach the as-of instant" in capsys.readouterr().err
+
+
+def test_no_floor_warning_when_store_reaches_the_bound(monkeypatch, capsys):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+
+    def fake(conn, sql, params=()):
+        if "MIN(create_time)" in sql:
+            return [{"floor": datetime(2025, 7, 1)}]
+        return []
+
+    monkeypatch.setattr(db, "query", fake)
+    reports.messages(None, [], space="spaces/X")
+    assert "as-of instant" not in capsys.readouterr().err
+
+
+def test_edited_after_bound_is_marked_not_dropped(monkeypatch):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    chat = MagicMock()
+    chat.spaces().list().execute.return_value = {"spaces": API_SPACES[:1]}
+    page = MagicMock()
+    page.execute.return_value = {"messages": [
+        {"name": "spaces/OLD/messages/A.1", "createTime": "2026-07-01T00:00:00Z",
+         "lastUpdateTime": "2026-07-13T00:00:00Z", "text": "edited later"},
+        {"name": "spaces/OLD/messages/A.2", "createTime": "2026-07-01T01:00:00Z",
+         "text": "untouched"},
+    ]}
+    chat.spaces().messages().list.return_value = page
+    rows = nocache.NocacheReader(service=chat).messages(space="spaces/OLD")
+    by = {r["name"]: r for r in rows}
+    assert by["spaces/OLD/messages/A.1"]["edited_after_bound"] is True
+    assert "edited_after_bound" not in by["spaces/OLD/messages/A.2"]
 
 
 if __name__ == "__main__":
