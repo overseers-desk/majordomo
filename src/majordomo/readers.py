@@ -9,6 +9,7 @@ always carries `source`, so a switch is surfaced, not silent.
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime
 
 from . import config, db, reports, sieve
@@ -94,13 +95,38 @@ class FreshReader:
             return [(space, reports.space_watermark(self.cache.conn, space))]
         return reports.active_spaces(self.cache.conn, self.blocked)
 
+    @staticmethod
+    def _bounded_targets(targets):
+        """Under WORLD_AS_OF, drop top-up targets whose cache watermark is at or
+        past the bound: the top-up fetches only records newer than the watermark,
+        which the bound would exclude anyway, so the call is definitionally
+        useless. `--live` degrades to the cache read plus a stderr note. A
+        watermark short of the bound (a future bound, or the sync gap) keeps its
+        top-up — the one case where `--live` still adds anything; the fetch
+        itself is end-clamped inside NocacheReader.
+        """
+        bound = config.world_as_of()
+        if bound is None:
+            return list(targets)
+        live = [(sp, wm) for sp, wm in targets if wm is None or wm < bound]
+        if len(live) < len(targets):
+            print(
+                "majordomo: WORLD_AS_OF bound: --live top-up skipped where the "
+                "cache already reaches the bound; served cache.",
+                file=sys.stderr,
+            )
+        return live
+
     def tasks(self, *, to_user=None, by_user=None, assignee=None, assignee_name=None,
               space=None, start=None, end=None, limit=reports.TASK_LIMIT) -> list[dict]:
         base = self.cache.tasks(to_user=to_user, by_user=by_user, assignee=assignee,
                                 assignee_name=assignee_name, space=space, start=start, end=end, limit=limit)
+        targets = self._bounded_targets(self._targets(space))
+        if not targets:
+            return base
         nc = self._nocache()
         fresh: list[dict] = []
-        for sp, wm in self._targets(space):
+        for sp, wm in targets:
             fresh += nc.tasks(to_user=to_user, by_user=by_user, assignee=assignee,
                               assignee_name=assignee_name, space=sp,
                               start=self._api_start(wm, start), end=end, limit=limit)
@@ -116,6 +142,9 @@ class FreshReader:
             targets = [(sp, reports.space_watermark(self.cache.conn, sp))] if sp else []
         else:
             return base  # reports.messages already required space or thread
+        targets = self._bounded_targets(targets)
+        if not targets:
+            return base
         nc = self._nocache()
         fresh: list[dict] = []
         for sp, wm in targets:
