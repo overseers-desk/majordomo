@@ -6,7 +6,7 @@ glob's defence-in-depth live in the reader layer.)
 WORLD_AS_OF (WORLD_AS_OF.design.md) is enforced here, inside the backend, not
 at the front door: every dated read already carries an end-exclusive upper
 bound (`create_time < %s` / `created_at < %s`), so the bound is one clamp on
-`end` — and the cache->nocache fallback cannot leak, because each backend
+`end`, and the cache->nocache fallback cannot leak, because each backend
 bounds itself.
 """
 
@@ -63,7 +63,7 @@ def active_spaces(conn, blocked: list[str], *, horizon_days: int = FRESH_HORIZON
 def _floor_check(conn, *, space: str | None = None) -> None:
     """Warn when WORLD_AS_OF predates the oldest cached message in the queried
     scope. The mirror keeps a twelve-month floor, so an older bound yields a
-    silently thin answer — contamination by omission, given the same visibility
+    silently thin answer: contamination by omission, given the same visibility
     as leakage (WORLD_AS_OF.design.md §3 rule 4). No-op when unset.
     """
     bound = config.world_as_of()
@@ -93,7 +93,7 @@ def spaces(conn, blocked: list[str], *, minimal_messages: int = 1) -> list[dict]
 
     Under WORLD_AS_OF the message and task count subqueries are bounded, which
     also makes the minimal_messages filter drop spaces whose first message
-    postdates the cutoff — the proxy for "did not yet visibly exist". Space
+    postdates the cutoff, the proxy for "did not yet visibly exist". Space
     metadata (display name, type) is current-state and flagged, not rewound.
     """
     bound = config.world_as_of()

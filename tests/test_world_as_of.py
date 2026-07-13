@@ -1,5 +1,5 @@
 """WORLD_AS_OF (replay-bounded reads, WORLD_AS_OF.design.md): the three
-semantics — unset is unbounded and changes nothing; set means nothing dated
+semantics: unset is unbounded and changes nothing; set means nothing dated
 after the bound leaves any backend; set-but-unparseable (or timezone-naive) is
 a hard failure on every code path. Enforcement is tested at the seam: the
 parser, the window clamp, the two ``reports.spaces`` subqueries, the
