@@ -9,11 +9,11 @@ No test touches the live Chat API (fakes only, per test_nocache_reader.py).
 
 import _shim  # noqa: F401
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
-from majordomo import config
+from majordomo import config, dates
 
 # 2026-07-12T17:07:00+10:00 == 2026-07-12T07:07:00 UTC
 BOUND_RAW = "2026-07-12T17:07:00+10:00"
@@ -76,6 +76,47 @@ def test_load_config_hard_fails_on_bad_bound(monkeypatch, tmp_path):
         config.load_config()
     monkeypatch.delenv("WORLD_AS_OF")
     assert config.load_config()["me"]["user_id"] == "users/1"
+
+
+# --- dates.resolve: the bound is the clock (the settled frozen-now semantics)
+
+def test_relative_windows_anchor_to_the_bound(monkeypatch):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    for window, days in (("7d", 7), ("30d", 30), ("year", 365)):
+        start, end = dates.resolve(window)
+        assert start == BOUND_UTC - timedelta(days=days), window
+        assert end == BOUND_UTC, window  # the open end closes at the bound
+
+
+def test_month_is_the_month_before_the_one_containing_the_bound(monkeypatch):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    assert dates.resolve("month") == (datetime(2026, 6, 1), datetime(2026, 7, 1))
+
+
+def test_all_window_closes_at_the_bound(monkeypatch):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    assert dates.resolve("all") == (None, BOUND_UTC)
+
+
+def test_windows_unchanged_when_unset(monkeypatch):
+    monkeypatch.delenv("WORLD_AS_OF", raising=False)
+    start, end = dates.resolve("7d")
+    assert end is None
+    assert dates._now_utc() - start < timedelta(days=7, minutes=1)
+
+
+def test_late_until_is_clamped_with_a_note(monkeypatch, capsys):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    start, end = dates.resolve("all", since="2026-01-01", until="2026-12-31")
+    assert start == datetime(2026, 1, 1)
+    assert end == BOUND_UTC
+    assert "WORLD_AS_OF" in capsys.readouterr().err
+
+
+def test_early_until_passes_untouched(monkeypatch, capsys):
+    monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
+    assert dates.resolve("all", until="2026-02-01") == (None, datetime(2026, 2, 1))
+    assert capsys.readouterr().err == ""
 
 
 if __name__ == "__main__":
