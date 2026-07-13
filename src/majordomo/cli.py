@@ -15,8 +15,16 @@ import typer
 from . import _claude_command, config, dates, models, readers
 from .output import emit
 
+# The office-wide replay bound, documented where flags are discovered.
+_WORLD_EPILOG = (
+    "WORLD_AS_OF (environment, ISO-8601 with timezone) bounds every answer to that "
+    "instant when set: nothing dated after it is reported, and relative windows "
+    "anchor to it instead of now. Unparseable or offset-less values are a hard error."
+)
+
 app = typer.Typer(
     help="Read and report Google Chat task activity (cache fast path, direct-API fallback).",
+    epilog=_WORLD_EPILOG,
     no_args_is_help=True,
     add_completion=False,
     # A crash must never dump locals: the login traceback would otherwise
@@ -70,7 +78,7 @@ def login() -> None:
     typer.echo(f"majordomo: token written to {path}")
 
 
-@app.command()
+@app.command(epilog=_WORLD_EPILOG)
 def spaces(
     ctx: typer.Context,
     minimal_messages: int = typer.Option(
@@ -90,7 +98,7 @@ def spaces(
         )
 
 
-@app.command()
+@app.command(epilog=_WORLD_EPILOG)
 def people(
     ctx: typer.Context,
     window: str = typer.Option("year", "--window", help=_WINDOW),
@@ -105,7 +113,7 @@ def people(
     emit(reader.people(start=start, end=end), models.PEOPLE_COLUMNS, reader.source, json_out, csv_out)
 
 
-@app.command()
+@app.command(epilog=_WORLD_EPILOG)
 def tasks(
     ctx: typer.Context,
     to_me: bool = typer.Option(False, "--to-me", help="Tasks assigned to you."),
@@ -137,7 +145,7 @@ def tasks(
     _warn_if_capped(rows, limit)
 
 
-@app.command()
+@app.command(epilog=_WORLD_EPILOG)
 def messages(
     ctx: typer.Context,
     space: Optional[str] = typer.Option(None, "--space", help="Space resource name (spaces/<id>)."),

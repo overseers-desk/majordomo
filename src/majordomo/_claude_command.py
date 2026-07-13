@@ -71,6 +71,8 @@ Raw messages in one space, or one thread (any message resource name in the threa
 ## Windows, output, source
 
 `--window` takes `7d | 30d | month | year | all`, or set `--since` / `--until` with ISO dates instead. Output is a console table by default, `--json`, or `--csv`. Rows are capped (a stderr note says when); narrow `--window`/`--space` or raise `--limit`. `majordomo <command> --help` carries the remaining flags.
+
+When the `WORLD_AS_OF` environment variable is set (ISO-8601 with timezone, a replay harness's as-of instant), majordomo honors it natively — nothing dated after the bound is reported, relative windows anchor to it, and the JSON envelope carries `world_as_of` — so do not add your own date filtering on top.
 """
 
 

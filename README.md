@@ -110,6 +110,20 @@ majordomo mcp                       # run the MCP server (stdio)
 - Window: `7d | 30d | month | year | all`, or `--since` / `--until` (ISO dates).
 - Output: default console, `--json`, or `--csv`.
 
+## Replay bounds: `WORLD_AS_OF`
+
+`WORLD_AS_OF` is the office-wide replay bound (design: [WORLD_AS_OF.design.md](WORLD_AS_OF.design.md)): an ISO-8601 timestamp with a timezone offset, exported into the environment by a replay harness so a run sees the world as it stood at that instant.
+
+```bash
+WORLD_AS_OF='2026-07-12T17:07:00+10:00' majordomo tasks --window 7d
+```
+
+- **Unset**: normal operation, at no cost.
+- **Set**: nothing dated after the bound is reported, on every source (cache, `--live`, `--nocache`) and through both front doors (CLI and MCP). Relative windows anchor to the bound, not to now: `7d` is the seven days before it, `month` the calendar month before the one containing it. A `--until` later than the bound is clamped down with a stderr note. Under a past bound `--live` degrades to the cache read (a top-up would fetch only what the bound excludes). The JSON/MCP envelope carries `world_as_of`, so a log proves the answer was bounded.
+- **Set but unparseable, or missing its timezone offset**: a hard error on every command, including ones that fetch no dates, because a silently ignored bound would produce a contaminated run that looks valid.
+
+The bound is honest about what it cannot rewind. Space and user display names are current-state (the mirror keeps no history of prior names) and the output says so. A message edited after the bound carries its post-edit text, marked `edited_after_bound` on the API path where the edit is observable. A bound older than the oldest cached message earns a warning that the store does not reach the as-of instant. For replaying the past the cache is the higher-fidelity source: the mirror retains messages the API has since dropped through deletion.
+
 ## Not yet (deferred)
 
 - **Task completion and stats.** Google Chat does not reliably carry task completion, so every task is reported as `open`; completion-rate reporting waits on a later signal.
