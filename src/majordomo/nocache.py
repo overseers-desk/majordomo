@@ -176,8 +176,10 @@ class NocacheReader:
         return None
 
     def _messages(self, space_name: str, start, end) -> list[dict]:
+        # WORLD_AS_OF is enforced here, at the one _time_filter caller, so
+        # tasks / people / messages are all server-bounded by createTime.
         out, token = [], None
-        flt = _time_filter(start, end)
+        flt = _time_filter(start, config.world_clamp(end))
         while True:
             resp = self.chat.spaces().messages().list(
                 parent=space_name, filter=flt, pageToken=token, pageSize=1000
@@ -191,9 +193,17 @@ class NocacheReader:
     def spaces(self, minimal_messages: int = 1) -> list[dict]:
         # The Chat API gives no message count cheaply, so minimal_messages is not
         # applied here (the CLI notes the filter is cache-only).
+        found = self._all_spaces()
+        bound = config.world_as_of()
+        if bound is not None:
+            # spaces.list takes no date filter, so this is post-filter territory:
+            # drop spaces created after the bound. A space without createTime
+            # (created before ~mid-2021) is kept as current-state and flagged.
+            found = [s for s in found
+                     if (ct := _parse_dt(s.get("createTime"))) is None or ct < bound]
         rows = [{"space_name": s.get("name"), "space_display": s.get("displayName"),
                  "space_type": s.get("spaceType"), "messages": None, "tasks": None}
-                for s in self._all_spaces()]
+                for s in found]
         return sieve.filter_rows(self.blocked, rows)
 
     def tasks(self, *, to_user=None, by_user=None, assignee=None, assignee_name=None,

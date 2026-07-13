@@ -2,13 +2,19 @@
 clause plus a post-filter — so a blocked space cannot reach a caller. SQL shapes
 mirror the BI project's coord reader. (Assignee blocking and the assignee-name
 glob's defence-in-depth live in the reader layer.)
+
+WORLD_AS_OF (WORLD_AS_OF.design.md) is enforced here, inside the backend, not
+at the front door: every dated read already carries an end-exclusive upper
+bound (`create_time < %s` / `created_at < %s`), so the bound is one clamp on
+`end` — and the cache->nocache fallback cannot leak, because each backend
+bounds itself.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from . import db, sieve
+from . import config, db, sieve
 
 TASK_LIMIT = 1000
 MESSAGE_LIMIT = 2000
@@ -61,20 +67,29 @@ def _glob_to_like(pattern: str) -> str:
 
 def spaces(conn, blocked: list[str], *, minimal_messages: int = 1) -> list[dict]:
     """Spaces with at least `minimal_messages` mirrored messages (default 1, so
-    Google's auto-created empty meeting groups drop out; 0 shows them)."""
+    Google's auto-created empty meeting groups drop out; 0 shows them).
+
+    Under WORLD_AS_OF the message and task count subqueries are bounded, which
+    also makes the minimal_messages filter drop spaces whose first message
+    postdates the cutoff — the proxy for "did not yet visibly exist". Space
+    metadata (display name, type) is current-state and flagged, not rewound.
+    """
+    bound = config.world_as_of()
+    msg_bound = " AND m.create_time < %s" if bound else ""
+    task_bound = " AND t.created_at < %s" if bound else ""
     clause, params = sieve.clause(blocked, "s.name")
     rows = db.query(
         conn,
         f"""
         SELECT s.name AS space_name, s.display_name AS space_display, s.space_type,
-               (SELECT COUNT(*) FROM googlechat_messages m WHERE m.space_name = s.name) AS messages,
-               (SELECT COUNT(*) FROM coord_tasks t WHERE t.space_name = s.name) AS tasks
+               (SELECT COUNT(*) FROM googlechat_messages m WHERE m.space_name = s.name{msg_bound}) AS messages,
+               (SELECT COUNT(*) FROM coord_tasks t WHERE t.space_name = s.name{task_bound}) AS tasks
           FROM googlechat_spaces s
          WHERE {clause}
-           AND (SELECT COUNT(*) FROM googlechat_messages m WHERE m.space_name = s.name) >= %s
+           AND (SELECT COUNT(*) FROM googlechat_messages m WHERE m.space_name = s.name{msg_bound}) >= %s
          ORDER BY (s.display_name IS NULL), s.display_name, s.name
         """,
-        params + [minimal_messages],
+        ([bound, bound] if bound else []) + params + ([bound] if bound else []) + [minimal_messages],
     )
     return sieve.filter_rows(blocked, rows)
 
@@ -83,6 +98,7 @@ def people(conn, blocked: list[str], *, start: datetime | None = None, end: date
     """All participants (message senders union task assignees) over the window,
     with message and task counts. Display names come only from the prose @name
     on the task side (the mirror carries no user display names)."""
+    end = config.world_clamp(end)
     clause, sp = sieve.clause(blocked, "space_name")
     wm, pm = [clause], list(sp)
     wt, pt = [clause], list(sp)
@@ -128,6 +144,7 @@ def tasks(
     end: datetime | None = None,
     limit: int = TASK_LIMIT,
 ) -> list[dict]:
+    end = config.world_clamp(end)
     where: list[str] = []
     params: list = []
     join = ""
@@ -186,6 +203,7 @@ def messages(
         raise SystemExit("majordomo: messages needs --space or --thread.")
     if space and not sieve.allows(blocked, space):
         return []
+    end = config.world_clamp(end)
     where: list[str] = []
     params: list = []
     if thread:
