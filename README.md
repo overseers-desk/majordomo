@@ -106,6 +106,7 @@ majordomo messages --space spaces/AAAA --window 7d
 majordomo messages --thread spaces/AAAA/messages/BBBB
 majordomo send --space spaces/AAAA "On my way."
 majordomo send --thread spaces/AAAA/messages/BBBB "Done, see the doc."
+majordomo send --to alice@example.com "Lunch?"       # a person's existing 1:1 DM
 majordomo mcp                       # run the MCP server (stdio)
 ```
 
