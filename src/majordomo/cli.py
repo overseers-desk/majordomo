@@ -24,7 +24,7 @@ _WORLD_EPILOG = (
 )
 
 app = typer.Typer(
-    help="Read and report Google Chat task activity (cache fast path, direct-API fallback).",
+    help="Read and report Google Chat task activity (cache fast path, direct-API fallback); send messages.",
     epilog=_WORLD_EPILOG,
     no_args_is_help=True,
     add_completion=False,

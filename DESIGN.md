@@ -4,7 +4,7 @@ A shorter forward plan, with the decided-and-open scope as a checklist, lives al
 
 ## What majordomo is
 
-majordomo is a command-line tool that reads Google Chat and reports on it. The command line is the primary interface; an MCP server is a secondary interface for AI agents. Both are thin front doors over one shared core, and the core is written so the same design can later reach sources other than Google.
+majordomo is a command-line tool that reads Google Chat, reports on it, and sends messages into it. The command line is the primary interface; an MCP server is a secondary interface for AI agents. Both are thin front doors over one shared core, and the core is written so the same design can later reach sources other than Google.
 
 Its name is the household steward who runs a principal's affairs and decides what reaches them. The choice points at the access filter described below, and the word is unclaimed on PyPI and apt as of 2026-05-22. Names beginning with `google-` are avoided because that namespace reads as official Google software, and `gchat` and `gchat-cli` are already taken and imply a generic chat client rather than this reporter.
 
@@ -30,6 +30,7 @@ All capabilities are reachable through both front doors:
 - Read messages and spaces over a date range — from the BI platform's cache as the fast path, or a direct Chat read paginated to completeness when that backend is absent.
 - Report task activity (creation, assignment, and other lifecycle signals): from the BI platform's `coord_tasks` reconstruction when present, from majordomo's own message decoder when standalone.
 - Report tasks by assignee, by space, and by date range.
+- Send a message into a space, or a reply into a thread, as the authenticated account.
 - Resolve user identifiers to display names via the People API, so reports name people rather than opaque IDs.
 - Apply the sieve, dropping blocked spaces from every output path.
 - Address several Google accounts by identity, without swapping configuration files.
@@ -73,6 +74,14 @@ The sieve is an allow-list and block-list of spaces. Its purpose is to keep cert
 
 Placing it in the core, not in a wrapper, means any front door (and any future front door) inherits it for free; a future automation that talks to the core directly cannot work around a wrapper-only gate.
 
+## Sending
+
+`send` posts a message to a space, or a reply into a thread, through both front doors, always over the direct Chat API (a write has no cache path). The write side follows the same discipline as the reads:
+
+- The sieve applies to writes: a send into a blocked space is refused with the same wording as a space that does not exist, so a caller cannot probe the block list through send.
+- A set `WORLD_AS_OF` refuses the send outright: a bounded run is a replay, and a send would act in the real present.
+- `login` mints the send scope (`chat.messages.create`) together with the read scopes, so one token serves every path; a token minted without it points at re-running `majordomo login`.
+
 ## Naming and packaging convention
 
 The distribution name on PyPI and the Debian package name follow the lowercase-hyphen convention (`majordomo`). The import package uses underscores because hyphens are not valid in Python identifiers; for a single word the two are the same.
@@ -115,6 +124,8 @@ Decided:
 - Credentials keyed by identity.
 - Task activity reported from the BI platform's reconstruction (`coord_tasks`) when present, from majordomo's own message decoder when standalone; the decoder is retained so majordomo runs without that backend.
 - Sieve enforced in the core, never only in a front door.
+- Send reachable through both front doors: one command shape (`send --space|--thread TEXT`), the sieve refusing blocked targets indistinguishably from missing ones, refused entirely under `WORLD_AS_OF`, its scope minted by every `login`.
+- The direct-API surface (module, pip extra, config table) is named `api`; `nocache` names only the read mode.
 - Orchestration kept external.
 - The accessor's data model is an information flow (crude's object-edit model is rejected). The fast path reads the BI platform's existing cache and reconstructed tasks, mandatory cache-first because Google throttles direct reads, while majordomo keeps its own direct read and decoder to run standalone. Delivery (query CLI versus REST daemon) is open (`DATA-MODEL.md`).
 
