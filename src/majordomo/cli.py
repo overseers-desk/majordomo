@@ -72,9 +72,9 @@ def _me(cfg: dict) -> str:
 
 @app.command()
 def login() -> None:
-    """Mint or refresh the OAuth token via the browser (needs the `nocache` extra)."""
-    from . import nocache
-    path = nocache.login(config.load_config())
+    """Mint or refresh the OAuth token via the browser (needs the `api` extra)."""
+    from . import api
+    path = api.login(config.load_config())
     typer.echo(f"majordomo: token written to {path}")
 
 

@@ -18,7 +18,7 @@ The simplest cross-platform install is from PyPI:
 
 ```bash
 pip install majordomo                  # CLI, reads the Chat cache
-pip install "majordomo[nocache,mcp]"   # plus the live Chat API path and the MCP server
+pip install "majordomo[api,mcp]"       # plus the live Chat API path and the MCP server
 ```
 
 With uv, `uvx majordomo ...` runs it without installing and `uv tool install majordomo` installs it permanently.
@@ -50,7 +50,7 @@ PYTHONPATH=src python3 -m majordomo spaces
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[nocache,mcp]"   # drop the extras you don't need
+pip install -e ".[api,mcp]"       # drop the extras you don't need
 majordomo --help
 ```
 
@@ -71,7 +71,7 @@ user_id = "users/1234567890"      # your Chat id, for --to-me / --by-me
 block_spaces = ["spaces/AAAA"]     # never shown through any front door
 block_assignees = ["users/9999"]   # drop these assignees from every report
 
-[nocache]                          # optional; defaults shown (OAuth for the API path)
+[api]                              # optional; defaults shown (OAuth for the API path)
 token_file = "~/.config/majordomo/token.json"
 client_file = "~/.config/majordomo/client_secret.json"
 ```

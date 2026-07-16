@@ -133,9 +133,9 @@ def block_assignees(config: dict) -> list[str]:
     return list((config.get("sieve") or {}).get("block_assignees") or [])
 
 
-def nocache_token_file(config: dict) -> str:
-    return (config.get("nocache") or {}).get("token_file") or str(CONFIG_DIR / "token.json")
+def api_token_file(config: dict) -> str:
+    return (config.get("api") or {}).get("token_file") or str(CONFIG_DIR / "token.json")
 
 
-def nocache_client_file(config: dict) -> str:
-    return (config.get("nocache") or {}).get("client_file") or str(CONFIG_DIR / "client_secret.json")
+def api_client_file(config: dict) -> str:
+    return (config.get("api") or {}).get("client_file") or str(CONFIG_DIR / "client_secret.json")
