@@ -38,7 +38,12 @@ def _config() -> dict:
 
 def _reader(source: Optional[str]):
     cfg = _config()
-    return cfg, readers.make_reader(cfg, source)
+    try:
+        return cfg, readers.make_reader(cfg, source)
+    except SystemExit as exc:
+        # A forced-cache read against a dead cache exits the CLI with one
+        # line; here it answers the tool call, it does not end the server.
+        raise RuntimeError(str(exc)) from None
 
 
 def _envelope(reader, rows: list[dict]) -> dict:
