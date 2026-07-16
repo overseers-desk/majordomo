@@ -174,9 +174,14 @@ def make_reader(cfg: dict, source: str | None = None):
         return NocacheReader.from_config(cfg, blocked, blocked_assignees)
     try:
         cache = CacheReader(db.connect(), blocked, blocked_assignees)
-    except Exception:
+    except Exception as exc:
         if source == "cache":
-            raise
+            # --cache promises to fail here rather than fall back; the failure
+            # is a one-line answer, not the driver's traceback.
+            raise SystemExit(
+                f"majordomo: cache unreachable with --cache ({exc}); "
+                "drop the flag to fall back to the direct API."
+            ) from None
         from .api import NocacheReader
         return NocacheReader.from_config(cfg, blocked, blocked_assignees)
     if source == "live":

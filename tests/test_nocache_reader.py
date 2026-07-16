@@ -95,12 +95,13 @@ def test_make_reader_auto_falls_back_to_nocache_when_db_down():
     api.NocacheReader.from_config = staticmethod(lambda cfg, blocked, blocked_assignees=None: "NOCACHE")
     try:
         assert readers.make_reader({"sieve": {}}, None) == "NOCACHE"      # auto -> nocache
-        forced_cache_raised = False
+        message = None
         try:
-            readers.make_reader({"sieve": {}}, "cache")                # forced cache -> loud
-        except RuntimeError:
-            forced_cache_raised = True
-        assert forced_cache_raised
+            readers.make_reader({"sieve": {}}, "cache")                # forced cache -> loud, one line
+        except SystemExit as exc:
+            message = str(exc)
+        assert message is not None, "forced cache with a dead DB did not fail"
+        assert "cache unreachable" in message and "db down" in message  # clean answer, cause named
     finally:
         db.connect, api.NocacheReader.from_config = orig_connect, orig_from
 
