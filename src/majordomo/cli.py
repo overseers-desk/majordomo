@@ -171,19 +171,20 @@ def send(
     text: str = typer.Argument(..., help="Message text."),
     space: Optional[str] = typer.Option(None, "--space", help="Space resource name (spaces/<id>)."),
     thread: Optional[str] = typer.Option(None, "--thread", help="Reply in this thread (or any message name in it)."),
+    to: Optional[str] = typer.Option(None, "--to", help="Person's existing 1:1 DM: an email or users/<id>."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON of the created message."),
 ) -> None:
-    """Send a message to a space, or reply in a thread (needs the `api` extra).
+    """Send a message to a space, a thread, or a person's DM (needs the `api` extra).
 
     Refused while WORLD_AS_OF is set: a bounded run is a replay, and a send
     would act in the real present.
     """
-    if (space is None) == (thread is None):
-        typer.echo("majordomo: send needs exactly one of --space / --thread.", err=True)
+    if (space, thread, to).count(None) != 2:
+        typer.echo("majordomo: send needs exactly one of --space / --thread / --to.", err=True)
         raise typer.Exit(2)
     from . import api
     cfg = config.load_config()
-    created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread, text=text)
+    created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread, to=to, text=text)
     if json_out:
         typer.echo(json.dumps(created, indent=2, default=str))
     else:
