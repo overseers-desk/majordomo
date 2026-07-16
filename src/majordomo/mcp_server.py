@@ -15,7 +15,7 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from . import config, dates, readers
+from . import api, config, dates, readers
 
 
 def _jsonable(rows: list[dict]) -> list[dict]:
@@ -25,15 +25,19 @@ def _jsonable(rows: list[dict]) -> list[dict]:
     return out
 
 
-def _reader(source: Optional[str]):
+def _config() -> dict:
     try:
-        cfg = config.load_config()
+        return config.load_config()
     except SystemExit as exc:
         # A config-time hard failure (a bad WORLD_AS_OF, a missing config) must
         # fail this tool call with its message, not kill the long-running server.
         # The bound is parsed per call, so the server honors the environment its
         # launcher set rather than dying opaquely at handshake.
         raise RuntimeError(str(exc)) from None
+
+
+def _reader(source: Optional[str]):
+    cfg = _config()
     return cfg, readers.make_reader(cfg, source)
 
 
@@ -115,6 +119,21 @@ def create_server() -> FastMCP:
         _cfg, reader = _reader(source)
         start, end = dates.resolve(window, since, until)
         return _envelope(reader, reader.messages(space, thread=thread, start=start, end=end, limit=limit))
+
+    @server.tool()
+    def send(text: str, space: Optional[str] = None, thread: Optional[str] = None) -> dict:
+        """Send a message to a space, or reply in a thread (thread takes a thread
+        or any message name in it). Exactly one of space/thread. The sieve
+        refuses blocked spaces; a set WORLD_AS_OF refuses the send outright,
+        a bounded run being a replay.
+        """
+        cfg = _config()
+        try:
+            return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread, text=text)
+        except SystemExit as exc:
+            # Core refusals arrive as SystemExit; they answer this tool call,
+            # they do not end the server process.
+            raise RuntimeError(str(exc)) from None
 
     return server
 
