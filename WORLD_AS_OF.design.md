@@ -17,7 +17,7 @@ majordomo exposes four report surfaces, each reachable through two front doors (
 
 ## 2. How the bound applies, per surface and backend
 
-The single fact that makes this clean: every dated read already flows through an end-exclusive upper bound. Cache SQL uses `create_time < %s` / `created_at < %s` (`reports.py`), and the API filter uses `createTime < "..."` (`nocache._time_filter`). So the bound is "clamp `end`": `end = min(end or WORLD_AS_OF, WORLD_AS_OF)` wherever an end bound exists, converting the timestamp to naive UTC first, since the store and `dates.resolve` work in naive UTC. A record stamped exactly at the instant is excluded by `<`; if inclusive semantics are wanted, the clamp value is the instant plus one second, a choice to record in one place.
+The single fact that makes this clean: every dated read already flows through an end-exclusive upper bound. Cache SQL uses `create_time < %s` / `created_at < %s` (`reports.py`), and the API filter uses `createTime < "..."` (`api._time_filter`). So the bound is "clamp `end`": `end = min(end or WORLD_AS_OF, WORLD_AS_OF)` wherever an end bound exists, converting the timestamp to naive UTC first, since the store and `dates.resolve` work in naive UTC. A record stamped exactly at the instant is excluded by `<`; if inclusive semantics are wanted, the clamp value is the instant plus one second, a choice to record in one place.
 
 - **`messages`, cache**: server-side query filter, exact. The clamp lands in the existing `create_time < %s` clause.
 - **`messages`, API**: server-side query filter, exact for existence, via `createTime < ...`. Text content is post-cutoff-current for edited messages (see boundary rule 3).
@@ -44,7 +44,7 @@ majordomo pre-serves exactly one artifact into AI context: the Claude Code comma
 
 ## 5. Feasibility verdict
 
-Feasible and clean, because the codebase already funnels every read through one seam and already expresses every dated read as an end-exclusive upper bound. Effort: **S to M** (roughly one session): a `config.world_as_of()` parser, a clamp in `dates.resolve`, bound predicates in two `reports.spaces` subqueries, the `FreshReader` skip, the space `createTime` post-filter in `nocache.spaces`, the envelope/stderr flagging, and tests. The sharp edges:
+Feasible and clean, because the codebase already funnels every read through one seam and already expresses every dated read as an end-exclusive upper bound. Effort: **S to M** (roughly one session): a `config.world_as_of()` parser, a clamp in `dates.resolve`, bound predicates in two `reports.spaces` subqueries, the `FreshReader` skip, the space `createTime` post-filter in `api.spaces`, the envelope/stderr flagging, and tests. The sharp edges:
 
 - **Silent-fallback leak.** `make_reader`'s auto mode falls back from cache to the direct API when the DB is down. Both backends enforce the bound, so this is safe, but only if the bound is applied inside each backend rather than at the CLI layer; enforcement at the seam, not the front door, is the design's one structural commitment.
 - **Timezone conversion.** The store is naive UTC; the variable carries an offset. The parser rejects a timestamp without an offset (hard failure, same as unparseable), converts to UTC, then drops tzinfo. Getting this wrong shifts the boundary by hours and is invisible in tests that use UTC inputs; the test set needs a non-UTC offset case.

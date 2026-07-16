@@ -1,10 +1,10 @@
-"""Direct Chat API reader — the no-cache path. Reads the Chat API directly via
-OAuth and decodes tasks itself (decoder.py), so majordomo works without the BI
-backend. Needs the `nocache` extra (google-api-python-client, google-auth). All
-records are tagged ``source = "nocache"``; the sieve (spaces + assignees) is
-applied here too. `login` mints the token. Names come from the API and the prose
-@name (no People API). A no-cache read is windowed and slow under Google's read
-quota, which is why the default path is the BI cache.
+"""Direct Chat API access: OAuth login and the no-cache read path. Reads the
+Chat API directly and decodes tasks itself (decoder.py), so majordomo works
+without the BI backend. Needs the `api` extra (google-api-python-client,
+google-auth). Read records are tagged ``source = "nocache"``; the sieve (spaces
++ assignees) is applied here too. `login` mints the token. Names come from the
+API and the prose @name (no People API). A no-cache read is windowed and slow
+under Google's read quota, which is why the default path is the BI cache.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def _require_google():
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
     except ImportError as exc:
-        raise SystemExit("majordomo: no-cache mode needs the extra — pip install 'majordomo[nocache]'.") from exc
+        raise SystemExit("majordomo: no-cache mode needs the extra — pip install 'majordomo[api]'.") from exc
     return Credentials, Request, build
 
 
@@ -38,9 +38,9 @@ def login(cfg: dict) -> str:
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow
     except ImportError as exc:
-        raise SystemExit("majordomo: login needs the extra — pip install 'majordomo[nocache]'.") from exc
-    client_file = os.path.expanduser(config.nocache_client_file(cfg))
-    token_file = os.path.expanduser(config.nocache_token_file(cfg))
+        raise SystemExit("majordomo: login needs the extra — pip install 'majordomo[api]'.") from exc
+    client_file = os.path.expanduser(config.api_client_file(cfg))
+    token_file = os.path.expanduser(config.api_token_file(cfg))
     if not os.path.exists(client_file):
         raise SystemExit(
             f"majordomo: no OAuth client at {client_file}. Create a Desktop OAuth "
@@ -68,7 +68,7 @@ def get_credentials(cfg: dict):
     import json
 
     Credentials, Request, _ = _require_google()
-    token_file = os.path.expanduser(config.nocache_token_file(cfg))
+    token_file = os.path.expanduser(config.api_token_file(cfg))
     if not os.path.exists(token_file):
         raise SystemExit(
             f"majordomo: no OAuth token at {token_file}. Run `majordomo login` first."
@@ -79,7 +79,7 @@ def get_credentials(cfg: dict):
 
     # Prefer client_id / client_secret from client_secret.json so that a
     # rotated secret is picked up without re-running login.
-    client_file = os.path.expanduser(config.nocache_client_file(cfg))
+    client_file = os.path.expanduser(config.api_client_file(cfg))
     if os.path.exists(client_file):
         with open(client_file) as fh:
             raw = json.load(fh)
