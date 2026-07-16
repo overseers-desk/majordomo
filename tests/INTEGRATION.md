@@ -10,8 +10,8 @@ The judging rule is strict. Every readiness check is `PASS` or `FAIL`; there is 
 `SKIP` and no `WARN`. A path that cannot be exercised is a path that is not ready,
 so it fails. An invalid OAuth client, a dead token, a cache DB server that is down,
 an MCP front door that will not start, a missing config file, a test space that
-does not exist: each stops a real user, so each is a hard `FAIL`. The script is
-read-only; no command writes to a space.
+does not exist: each stops a real user, so each is a hard `FAIL`. The script
+invokes only read commands; nothing it runs writes to a space.
 
 ## The one thing that is not a verdict: cannot-run conditions
 

@@ -17,7 +17,7 @@
 # problem, not a harness one).
 #
 # Exit: 0 ready · 1 not ready (FAIL>0) · 2 cannot run (network/quota).
-# Read-only: no command writes to any space.
+# The script invokes only read commands; nothing here writes to a space.
 #
 # Fixtures (override with env vars):
 #   MAJORDOMO_TEST_SPACE  a real group space the subject reads   (spaces/<id>)
