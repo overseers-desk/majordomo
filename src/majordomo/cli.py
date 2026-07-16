@@ -8,6 +8,7 @@ cache is down); `--cache` / `--live` (cache + freshness top-up) / `--nocache`
 
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 import typer
@@ -163,6 +164,30 @@ def messages(
     rows = reader.messages(space, thread=thread, start=start, end=end, limit=limit)
     emit(rows, models.MESSAGE_COLUMNS, reader.source, json_out, csv_out)
     _warn_if_capped(rows, limit)
+
+
+@app.command()
+def send(
+    text: str = typer.Argument(..., help="Message text."),
+    space: Optional[str] = typer.Option(None, "--space", help="Space resource name (spaces/<id>)."),
+    thread: Optional[str] = typer.Option(None, "--thread", help="Reply in this thread (or any message name in it)."),
+    json_out: bool = typer.Option(False, "--json", help="Raw JSON of the created message."),
+) -> None:
+    """Send a message to a space, or reply in a thread (needs the `api` extra).
+
+    Refused while WORLD_AS_OF is set: a bounded run is a replay, and a send
+    would act in the real present.
+    """
+    if (space is None) == (thread is None):
+        typer.echo("majordomo: send needs exactly one of --space / --thread.", err=True)
+        raise typer.Exit(2)
+    from . import api
+    cfg = config.load_config()
+    created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread, text=text)
+    if json_out:
+        typer.echo(json.dumps(created, indent=2, default=str))
+    else:
+        typer.echo(f"majordomo: sent {created.get('name')}")
 
 
 @app.command("install-claude-command")
