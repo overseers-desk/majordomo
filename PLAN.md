@@ -4,7 +4,7 @@ A plan for turning this command-line reporter into a packaged accessor for Googl
 
 ## What it is
 
-majordomo is a command-line tool that reads Google Chat and reports on it. The command line is the primary interface; an MCP server is a secondary interface for AI agents. Both are thin front doors over one shared core, and the core is written so the same design can later reach sources other than Google.
+majordomo is a command-line tool that reads Google Chat, reports on it, and sends messages into it. The command line is the primary interface; an MCP server is a secondary interface for AI agents. Both are thin front doors over one shared core, and the core is written so the same design can later reach sources other than Google.
 
 The name is the household steward who runs a principal's affairs and decides what reaches them. It was chosen for that gatekeeping sense, which matches the access filter described below, and because it is unclaimed on PyPI and apt as of 2026-05-22. Names beginning with `google-` are avoided because that namespace reads as official Google software, and `gchat` / `gchat-cli` are already taken and imply a generic chat client rather than this reporter.
 
@@ -51,6 +51,7 @@ Decided:
 - A core holding the Google Chat logic, configuration, and sieve, with thin front doors.
 - The configuration split above, with identity-keyed credentials.
 - Task reconstruction from chat messages as the core capability.
+- Send through both front doors (`send --space|--thread TEXT`), the sieve refusing blocked targets.
 - Orchestration kept external.
 
 Open:

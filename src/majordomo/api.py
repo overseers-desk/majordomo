@@ -33,7 +33,7 @@ def _require_google():
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
     except ImportError as exc:
-        raise SystemExit("majordomo: no-cache mode needs the extra — pip install 'majordomo[api]'.") from exc
+        raise SystemExit("majordomo: the direct Chat API path needs the extra — pip install 'majordomo[api]'.") from exc
     return Credentials, Request, build
 
 
