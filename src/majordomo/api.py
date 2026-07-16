@@ -1,6 +1,6 @@
-"""Direct Chat API access: OAuth login and the no-cache read path. Reads the
-Chat API directly and decodes tasks itself (decoder.py), so majordomo works
-without the BI backend. Needs the `api` extra (google-api-python-client,
+"""Direct Chat API access: OAuth login, the no-cache read path, and send.
+Reads the Chat API directly and decodes tasks itself (decoder.py), so majordomo
+works without the BI backend. Needs the `api` extra (google-api-python-client,
 google-auth). Read records are tagged ``source = "nocache"``; the sieve (spaces
 + assignees) is applied here too. `login` mints the token. Names come from the
 API and the prose @name (no People API). A no-cache read is windowed and slow
@@ -16,10 +16,14 @@ from datetime import datetime
 from . import config, decoder, sieve
 
 PEOPLE_LIMIT = 1000
-# Read-only scopes for a freshly-minted token.
+# The one write scope: creating messages. Nothing else is writable.
+SEND_SCOPE = "https://www.googleapis.com/auth/chat.messages.create"
+# Scopes for a freshly-minted token: both reads plus send, minted together so
+# one login serves every path.
 LOGIN_SCOPES = [
     "https://www.googleapis.com/auth/chat.spaces.readonly",
     "https://www.googleapis.com/auth/chat.messages.readonly",
+    SEND_SCOPE,
 ]
 
 
@@ -112,6 +116,59 @@ def get_credentials(cfg: dict):
         else:
             raise SystemExit(f"majordomo: OAuth token at {token_file} is invalid; run `majordomo login`.")
     return creds
+
+
+def _thread_target(thread: str) -> tuple[str, str]:
+    """Resolve a reply target to (space, thread resource name).
+
+    Accepts what ``messages --thread`` accepts, a thread or any message name in
+    it: the part before the first "." names the thread, and a
+    spaces/X/messages/T key maps to the thread spaces/X/threads/T.
+    """
+    key = thread.split(".")[0]
+    return "/".join(key.split("/")[:2]), key.replace("/messages/", "/threads/")
+
+
+def send(cfg: dict, blocked: list[str], *, space: str | None = None,
+         thread: str | None = None, text: str, service=None) -> dict:
+    """Create a message in a space, or reply in a thread; returns the created
+    message as the API gives it. The sieve refuses a blocked space with the
+    same wording as a space that does not exist, so send cannot probe the
+    block list. Refuses under WORLD_AS_OF: a bounded run is a replay, and a
+    send would act in the real present.
+    """
+    if config.world_as_of() is not None:
+        raise SystemExit(
+            "majordomo: WORLD_AS_OF is set (a replay bound); refusing to send "
+            "a real message from a bounded run."
+        )
+    if (space is None) == (thread is None):
+        raise SystemExit("majordomo: send needs exactly one of space / thread.")
+    body: dict = {"text": text}
+    kwargs: dict = {}
+    if thread:
+        space, thread_name = _thread_target(thread)
+        body["thread"] = {"name": thread_name}
+        kwargs["messageReplyOption"] = "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
+    not_found = f"majordomo: {space}: not found."
+    if not sieve.allows(blocked, space):
+        raise SystemExit(not_found)
+    if service is None:
+        creds = get_credentials(cfg)
+        if SEND_SCOPE not in (creds.scopes or []):
+            raise SystemExit(
+                "majordomo: the OAuth token predates send and lacks its scope; "
+                "re-run `majordomo login`."
+            )
+        _, _, build = _require_google()
+        service = build("chat", "v1", credentials=creds, cache_discovery=False)
+    try:
+        return service.spaces().messages().create(parent=space, body=body, **kwargs).execute()
+    except Exception as exc:
+        # A 404 answers exactly like the sieve above, one wording for both.
+        if getattr(getattr(exc, "resp", None), "status", None) == 404:
+            raise SystemExit(not_found) from None
+        raise
 
 
 def _rfc3339(dt: datetime) -> str:
