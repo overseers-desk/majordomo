@@ -13,8 +13,14 @@ from typing import Optional
 
 import typer
 
-from . import _claude_command, config, dates, models, readers
+from . import _claude_command, config, dates, models, readers, version
 from .output import emit
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"majordomo {version()}")
+        raise typer.Exit()
 
 # The office-wide replay bound, documented where flags are discovered.
 _WORLD_EPILOG = (
@@ -42,6 +48,9 @@ def _root(
     live: bool = typer.Option(False, "--live", help="Up-to-dateness: cache plus a freshness top-up from the API."),
     nocache: bool = typer.Option(False, "--nocache", help="Bypass the cache; read the Chat API directly."),
     cache: bool = typer.Option(False, "--cache", help="Force the cache; fail if it is unreachable."),
+    _version: bool = typer.Option(
+        False, "--version", callback=_version_callback, is_eager=True, help="Show version and exit."
+    ),
 ) -> None:
     if sum((live, nocache, cache)) > 1:
         typer.echo("majordomo: use only one of --live / --nocache / --cache.", err=True)
