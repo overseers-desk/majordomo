@@ -25,6 +25,25 @@ def _create_kwargs(chat):
     return kwargs
 
 
+def _chat_with_dm(user_to_space, created=None):
+    """A fake whose findDirectMessage knows the given users/<x> -> space map
+    and answers 404 for anyone else, like the API."""
+    chat = _chat(created)
+
+    def find_dm(name=None):
+        page = MagicMock()
+        if name in user_to_space:
+            page.execute.return_value = {"name": user_to_space[name], "spaceType": "DIRECT_MESSAGE"}
+        else:
+            err = Exception("404")
+            err.resp = types.SimpleNamespace(status=404)
+            page.execute.side_effect = err
+        return page
+
+    chat.spaces().findDirectMessage.side_effect = find_dm
+    return chat
+
+
 def test_send_to_space_calls_create():
     chat = _chat({"name": "spaces/OK/messages/NEW"})
     out = api.send({}, [], space="spaces/OK", text="hi", service=chat)
@@ -103,11 +122,44 @@ def test_token_without_send_scope_points_at_login(monkeypatch):
     assert "majordomo login" in str(ei.value)
 
 
+def test_to_email_resolves_the_dm_and_sends():
+    chat = _chat_with_dm({"users/alice@example.com": "spaces/DM1"})
+    api.send({}, [], to="alice@example.com", text="hi", service=chat)
+    kwargs = _create_kwargs(chat)
+    assert kwargs["parent"] == "spaces/DM1"
+    assert kwargs["body"] == {"text": "hi"}
+
+
+def test_to_accepts_the_users_id_form():
+    chat = _chat_with_dm({"users/123": "spaces/DM2"})
+    api.send({}, [], to="users/123", text="hi", service=chat)
+    assert _create_kwargs(chat)["parent"] == "spaces/DM2"
+
+
+def test_to_without_an_existing_dm_refused_cleanly():
+    chat = _chat_with_dm({})
+    with pytest.raises(SystemExit) as ei:
+        api.send({}, [], to="bob@example.com", text="hi", service=chat)
+    assert str(ei.value) == "majordomo: no direct message space with users/bob@example.com."
+    chat.spaces().messages().create.assert_not_called()
+
+
+def test_to_blocked_dm_answers_like_an_absent_one():
+    chat = _chat_with_dm({"users/alice@example.com": "spaces/BLOCKDM"})
+    with pytest.raises(SystemExit) as ei:
+        api.send({}, ["spaces/BLOCKDM"], to="alice@example.com", text="hi", service=chat)
+    assert str(ei.value) == "majordomo: no direct message space with users/alice@example.com."
+    chat.spaces().messages().create.assert_not_called()
+
+
 def test_needs_exactly_one_target():
     with pytest.raises(SystemExit):
         api.send({}, [], text="hi", service=_chat())
     with pytest.raises(SystemExit):
         api.send({}, [], space="spaces/OK", thread="spaces/OK/threads/T",
+                 text="hi", service=_chat())
+    with pytest.raises(SystemExit):
+        api.send({}, [], space="spaces/OK", to="alice@example.com",
                  text="hi", service=_chat())
 
 

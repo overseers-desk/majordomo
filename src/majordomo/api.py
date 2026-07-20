@@ -129,30 +129,51 @@ def _thread_target(thread: str) -> tuple[str, str]:
     return "/".join(key.split("/")[:2]), key.replace("/messages/", "/threads/")
 
 
+def _dm_space(service, blocked: list[str], to: str) -> str:
+    """The existing 1:1 direct-message space with a person, or a clean refusal.
+
+    ``to`` is users/<id>, a bare id, or an email (the API takes the email as
+    an alias for the id). A DM the sieve blocks answers exactly like one that
+    does not exist, so the resolved space id stays unspoken.
+    """
+    user = to if to.startswith("users/") else f"users/{to}"
+    absent = f"majordomo: no direct message space with {user}."
+    try:
+        found = service.spaces().findDirectMessage(name=user).execute()
+    except Exception as exc:
+        if getattr(getattr(exc, "resp", None), "status", None) == 404:
+            raise SystemExit(absent) from None
+        raise
+    space = found.get("name")
+    if not sieve.allows(blocked, space):
+        raise SystemExit(absent)
+    return space
+
+
 def send(cfg: dict, blocked: list[str], *, space: str | None = None,
-         thread: str | None = None, text: str, service=None) -> dict:
-    """Create a message in a space, or reply in a thread; returns the created
-    message as the API gives it. The sieve refuses a blocked space with the
-    same wording as a space that does not exist, so send cannot probe the
-    block list. Refuses under WORLD_AS_OF: a bounded run is a replay, and a
-    send would act in the real present.
+         thread: str | None = None, to: str | None = None, text: str,
+         service=None) -> dict:
+    """Create a message in a space, in a thread, or in a person's 1:1 DM;
+    returns the created message as the API gives it. The sieve refuses a
+    blocked space with the same wording as a space that does not exist, so
+    send cannot probe the block list. Refuses under WORLD_AS_OF: a bounded
+    run is a replay, and a send would act in the real present.
     """
     if config.world_as_of() is not None:
         raise SystemExit(
             "majordomo: WORLD_AS_OF is set (a replay bound); refusing to send "
             "a real message from a bounded run."
         )
-    if (space is None) == (thread is None):
-        raise SystemExit("majordomo: send needs exactly one of space / thread.")
+    if (space, thread, to).count(None) != 2:
+        raise SystemExit("majordomo: send needs exactly one of space / thread / to.")
     body: dict = {"text": text}
     kwargs: dict = {}
     if thread:
         space, thread_name = _thread_target(thread)
         body["thread"] = {"name": thread_name}
         kwargs["messageReplyOption"] = "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
-    not_found = f"majordomo: {space}: not found."
-    if not sieve.allows(blocked, space):
-        raise SystemExit(not_found)
+    if space and not sieve.allows(blocked, space):
+        raise SystemExit(f"majordomo: {space}: not found.")
     if service is None:
         creds = get_credentials(cfg)
         if SEND_SCOPE not in (creds.scopes or []):
@@ -162,12 +183,14 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
             )
         _, _, build = _require_google()
         service = build("chat", "v1", credentials=creds, cache_discovery=False)
+    if to:
+        space = _dm_space(service, blocked, to)
     try:
         return service.spaces().messages().create(parent=space, body=body, **kwargs).execute()
     except Exception as exc:
         # A 404 answers exactly like the sieve above, one wording for both.
         if getattr(getattr(exc, "resp", None), "status", None) == 404:
-            raise SystemExit(not_found) from None
+            raise SystemExit(f"majordomo: {space}: not found.") from None
         raise
 
 
