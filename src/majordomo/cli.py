@@ -30,7 +30,7 @@ _WORLD_EPILOG = (
 )
 
 app = typer.Typer(
-    help="Read and report Google Chat task activity (cache fast path, direct-API fallback); send messages.",
+    help="Read Google Chat, report who holds which tasks, and send messages.",
     epilog=_WORLD_EPILOG,
     no_args_is_help=True,
     add_completion=False,
@@ -45,7 +45,7 @@ _WINDOW = "7d | 30d | month | year | all."
 @app.callback()
 def _root(
     ctx: typer.Context,
-    live: bool = typer.Option(False, "--live", help="Up-to-dateness: cache plus a freshness top-up from the API."),
+    live: bool = typer.Option(False, "--live", help="Also fetch messages newer than the cache holds (slower)."),
     nocache: bool = typer.Option(False, "--nocache", help="Bypass the cache; read the Chat API directly."),
     cache: bool = typer.Option(False, "--cache", help="Force the cache; fail if it is unreachable."),
     _version: bool = typer.Option(
@@ -82,7 +82,7 @@ def _me(cfg: dict) -> str:
 
 @app.command()
 def login() -> None:
-    """Mint or refresh the OAuth token via the browser (needs the `api` extra)."""
+    """Sign in to Google in your browser. Do this once before sending, or before reading with --live or --nocache."""
     from . import api
     path = api.login(config.load_config())
     typer.echo(f"majordomo: token written to {path}")
@@ -184,15 +184,14 @@ def send(
     attach: Optional[List[str]] = typer.Option(None, "--attach", help="A local file to attach; repeat for several. Message text becomes optional."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON of the created message."),
 ) -> None:
-    """Send a Google Chat message to a space, a thread, or a person (needs the `api` extra).
+    """Send a Google Chat message to a space, a thread, or a person.
 
     Carries message text, one or more file attachments (--attach, repeatable),
     or both; at least one is required. An email address in --to names the
     person, not an email channel: the message arrives in your 1:1 Chat DM with
     them.
 
-    Refused while WORLD_AS_OF is set: a bounded run is a replay, and a send
-    would act in the real present.
+    Sending needs `majordomo login` first. Refused while WORLD_AS_OF is set.
     """
     if (space, thread, to).count(None) != 2:
         typer.echo("majordomo: send needs exactly one of --space / --thread / --to.", err=True)
@@ -219,7 +218,7 @@ def install_claude_command() -> None:
 
 @app.command()
 def mcp() -> None:
-    """Run the MCP server (stdio) — the secondary front door. Needs the `mcp` extra."""
+    """Run the MCP server (stdio), so an AI agent can call majordomo as tools."""
     try:
         from .mcp_server import main as mcp_main
     except ImportError:
