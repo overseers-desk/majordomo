@@ -171,10 +171,13 @@ def send(
     text: str = typer.Argument(..., help="Message text."),
     space: Optional[str] = typer.Option(None, "--space", help="Space resource name (spaces/<id>)."),
     thread: Optional[str] = typer.Option(None, "--thread", help="Reply in this thread (or any message name in it)."),
-    to: Optional[str] = typer.Option(None, "--to", help="Person's existing 1:1 DM: an email or users/<id>."),
+    to: Optional[str] = typer.Option(None, "--to", help="A person, by email or users/<id>: sends in your 1:1 DM, and says so if you have none with them."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON of the created message."),
 ) -> None:
-    """Send a message to a space, a thread, or a person's DM (needs the `api` extra).
+    """Send a Google Chat message to a space, a thread, or a person (needs the `api` extra).
+
+    An email address in --to names the person, not an email channel: the
+    message arrives in your 1:1 Chat DM with them.
 
     Refused while WORLD_AS_OF is set: a bounded run is a replay, and a send
     would act in the real present.
