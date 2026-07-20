@@ -76,7 +76,7 @@ Placing it in the core, not in a wrapper, means any front door (and any future f
 
 ## Sending
 
-`send` posts a message to a space, or a reply into a thread, through both front doors, always over the direct Chat API (a write has no cache path). The write side follows the same discipline as the reads:
+`send` posts a message to a space, a reply into a thread, or a message into a person's existing 1:1 DM (`--to`, an email or `users/<id>`, resolved by the API's find-direct-message call). It works through both front doors, always over the direct Chat API (a write has no cache path). The write side follows the same discipline as the reads:
 
 - The sieve applies to writes: a send into a blocked space is refused with the same wording as a space that does not exist, so a caller cannot probe the block list through send.
 - A set `WORLD_AS_OF` refuses the send outright: a bounded run is a replay, and a send would act in the real present.
