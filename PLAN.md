@@ -20,7 +20,7 @@ A second concern is privacy. When an AI agent uses the tool, some spaces should 
 
 - One importable core holds the Google Chat logic, the configuration, and the sieve.
 - Thin front doors call the core and add no logic of their own: the command-line interface (primary) and the MCP server (secondary). An automation script that drives the command line is just another caller of the same core.
-- Because the sieve and the credentials live in the core, behaviour stays consistent across every front door, and a single change reaches all of them.
+- The core-holds-all rule is an invariant, stated with its why in [`INVARIANTS.md`](INVARIANTS.md); `DESIGN.md` elaborates it.
 
 ## Configuration
 

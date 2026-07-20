@@ -49,7 +49,7 @@ Two front doors call the core and add no logic of their own:
 - The command-line interface is the primary one. It is what a person types at a terminal, what a cron entry or systemd timer triggers, and what an automation script drives.
 - The MCP server is the secondary one. It exposes the same operations as MCP tools so AI agents can call them through that protocol.
 
-Because the sieve and the credentials live in the core, behaviour stays consistent across every front door, a single change reaches all of them, and no front door can bypass the access gate by accident.
+Because the sieve and the credentials live in the core, behaviour stays consistent across every front door, a single change reaches all of them, and no front door can bypass the access gate by accident. This is the first invariant in [`INVARIANTS.md`](INVARIANTS.md).
 
 ## Configuration
 
