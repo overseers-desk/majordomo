@@ -1,3 +1,15 @@
+majordomo (0.1.5) unstable; urgency=medium
+
+  * Add `majordomo send`: post a message to a space, or reply in a thread,
+    through the CLI and the MCP server. The privacy sieve refuses blocked
+    spaces; a set WORLD_AS_OF refuses every send; `login` now also mints
+    the message-create scope (re-run it once before the first send).
+  * Rename the direct-API surface to `api`: the pip extra becomes
+    `majordomo[api]` and the optional config table `[api]`. The
+    `--nocache` read flag keeps its name.
+
+ -- Weiwu Zhang <a@colourful.land>  Thu, 16 Jul 2026 16:21:25 +1000
+
 majordomo (0.1.4) unstable; urgency=medium
 
   * Add `--live` (cache plus active-space top-up) and rename the API-bypass

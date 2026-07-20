@@ -15,7 +15,7 @@ from datetime import datetime
 from . import config, db, reports, sieve
 
 # A "reader" is any object with `source` and the four report methods
-# (spaces / people / tasks / messages). CacheReader and nocache.NocacheReader are
+# (spaces / people / tasks / messages). CacheReader and api.NocacheReader are
 # the two; they are duck-typed, so no Protocol interface is declared. Both carry the
 # space sieve and the block_assignees list and apply both.
 
@@ -64,7 +64,7 @@ class FreshReader:
 
     def _nocache(self):
         if self._nc is None:
-            from .nocache import NocacheReader
+            from .api import NocacheReader
             self._nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees)
         return self._nc
 
@@ -137,7 +137,7 @@ class FreshReader:
         if space:
             targets = [(space, reports.space_watermark(self.cache.conn, space))]
         elif thread:
-            from .nocache import _space_of
+            from .api import _space_of
             sp = _space_of(thread.split(".")[0])
             targets = [(sp, reports.space_watermark(self.cache.conn, sp))] if sp else []
         else:
@@ -170,14 +170,19 @@ def make_reader(cfg: dict, source: str | None = None):
     blocked = config.block_spaces(cfg)
     blocked_assignees = config.block_assignees(cfg)
     if source == "nocache":
-        from .nocache import NocacheReader
+        from .api import NocacheReader
         return NocacheReader.from_config(cfg, blocked, blocked_assignees)
     try:
         cache = CacheReader(db.connect(), blocked, blocked_assignees)
-    except Exception:
+    except Exception as exc:
         if source == "cache":
-            raise
-        from .nocache import NocacheReader
+            # --cache promises to fail here rather than fall back; the failure
+            # is a one-line answer, not the driver's traceback.
+            raise SystemExit(
+                f"majordomo: cache unreachable with --cache ({exc}); "
+                "drop the flag to fall back to the direct API."
+            ) from None
+        from .api import NocacheReader
         return NocacheReader.from_config(cfg, blocked, blocked_assignees)
     if source == "live":
         return FreshReader(cache, cfg, blocked, blocked_assignees)

@@ -29,15 +29,15 @@ COMMAND_NAME = "majordomo"
 # not the description.
 COMMAND = """---
 name: majordomo
-description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return.
+description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return. Also sends a Google Chat message to a space, or a reply into a thread.
 allowed-tools: Bash
 ---
 
 # majordomo
 
-majordomo reports Google Chat task activity over the `majordomo <command>` CLI. A task created through Chat's "Create a task for @Person (via Tasks)" is not retrievable through the Google Tasks API; majordomo reconstructs it from the chat message instead, and reports who holds which tasks across spaces over a date range. Configuration lives in `~/.config/majordomo/` (`config.toml` for the subject and the privacy sieve, `.env` for the cache database). Add `--json` to any command for a `{"source", "count", "rows": [...]}` envelope; the `source` field tags each answer as `cache` or `live`.
+majordomo reports Google Chat task activity, and sends messages, over the `majordomo <command>` CLI. A task created through Chat's "Create a task for @Person (via Tasks)" is not retrievable through the Google Tasks API; majordomo reconstructs it from the chat message instead, and reports who holds which tasks across spaces over a date range. Configuration lives in `~/.config/majordomo/` (`config.toml` for the subject and the privacy sieve, `.env` for the cache database). Add `--json` to any command for a `{"source", "count", "rows": [...]}` envelope; the `source` field tags each answer as `cache` or `live`.
 
-A read uses the server-side cache by default and falls back to reading the Chat API directly when the cache is unreachable. `--cache` or `--nocache` before the command forces one source; `--nocache` needs the nocache extra and a prior `majordomo login`.
+A read uses the server-side cache by default and falls back to reading the Chat API directly when the cache is unreachable. `--cache` or `--nocache` before the command forces one source; `--nocache` needs the api extra and a prior `majordomo login`.
 
 ## Tasks
 
@@ -67,6 +67,15 @@ majordomo messages --thread spaces/AAAA/messages/BBBB
 ```
 
 Raw messages in one space, or one thread (any message resource name in the thread).
+
+## Send
+
+```bash
+majordomo send --space spaces/AAAA "On my way."
+majordomo send --thread spaces/AAAA/messages/BBBB "Done, see the doc."
+```
+
+One target: `--space` posts to the space, `--thread` replies in a thread (any message resource name in it works). Sends as the logged-in account; a token from before send existed lacks the scope, and the error says to re-run `majordomo login`. A blocked space answers "not found". While `WORLD_AS_OF` is set, a send is refused: a bounded run is a replay.
 
 ## Windows, output, source
 

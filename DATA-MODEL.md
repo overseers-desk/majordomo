@@ -19,7 +19,7 @@ So the accessor could be a third crude site, a standalone tool (the `DESIGN.md` 
 
 ## The data model
 
-**Object-edit (the crude model): rejected.** A crude site has a stable server-side object you mutate — a listing, a roster row, a product. A conversation has no such object. Messages are append-only and effectively immutable to an accessor, and the entity majordomo cares about — a task — is reconstructed from message patterns and stored on no server, so there is nothing to create, update, or delete. crude's `<resource> <verb>` grammar would model a thing that is not there.
+**Object-edit (the crude model): rejected.** A crude site has a stable server-side object you mutate — a listing, a roster row, a product. A conversation has no such object. Messages are append-only and effectively immutable to an accessor, and the entity majordomo cares about — a task — is reconstructed from message patterns and stored on no server, so there is nothing to update or delete; `send` appends a new message to the flow and edits nothing. crude's `<resource> <verb>` grammar would model a thing that is not there.
 
 **Information-flow: the irreducible core.** majordomo is, at bottom, a reader of a time-ordered, sender-attributed message flow over a date window. This shape is medium-neutral and is the part that extends to WhatsApp, Messenger, or any later source. It matches every connector the user already runs. How it reads that flow — from a cache or directly from Google — is the next question; that it is a flow, not an editable object store, is the settled core.
 
@@ -44,7 +44,7 @@ The two shapes are not mutually exclusive in time. The upstream cache is the inv
 
 ## Decision
 
-- majordomo is an **information-flow reader and reporter**, not an editable object store (so crude is out). It reads a message flow and reports task activity over it.
+- majordomo is an **information-flow reader and reporter**, not an editable object store (so crude is out). It reads a message flow, reports task activity over it, and sends into it append-only; nothing is edited in place.
 - **The fast path is the BI platform's cache, read not built.** majordomo queries the `googlechat_*` mirror and the `coord_tasks` reconstruction — direct database access first, a served API later. Google's throttle is what makes cache-first mandatory for usable speed.
 - **It is self-sufficient without that backend.** majordomo retains its own direct Chat read and its own task decoder, so it runs where the BI platform is absent; reconstruction is reused from `coord_tasks` when present and performed by majordomo's own decoder when not. The backend accelerates, it does not gate.
 - **PM needs per-identity OAuth.** A service account cannot read this workspace's messages or DMs; each identity is read through its own OAuth, and direct-message history is already the larger half of the cache.
