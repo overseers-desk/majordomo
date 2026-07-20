@@ -37,7 +37,7 @@ allowed-tools: Bash
 
 majordomo reports Google Chat task activity, and sends messages, over the `majordomo <command>` CLI. A task created through Chat's "Create a task for @Person (via Tasks)" is not retrievable through the Google Tasks API; majordomo reconstructs it from the chat message instead, and reports who holds which tasks across spaces over a date range. Configuration lives in `~/.config/majordomo/` (`config.toml` for the subject and the privacy sieve, `.env` for the cache database). Add `--json` to any command for a `{"source", "count", "rows": [...]}` envelope; the `source` field tags each answer as `cache` or `live`.
 
-A read uses the server-side cache by default and falls back to reading the Chat API directly when the cache is unreachable. `--cache` or `--nocache` before the command forces one source; `--nocache` needs the api extra and a prior `majordomo login`.
+A read uses the server-side cache by default and falls back to reading the Chat API directly when the cache is unreachable. `--cache` or `--nocache` before the command forces one source; `--nocache` needs a prior `majordomo login`, and `--cache` needs the cache driver (`majordomo[bi]`).
 
 ## Tasks
 

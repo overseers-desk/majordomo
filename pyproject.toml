@@ -11,17 +11,17 @@ requires-python = ">=3.11"
 dependencies = [
     "typer>=0.9",
     "rich>=13",
-    "pymysql>=1.0",
+    "google-api-python-client>=2",
+    "google-auth-oauthlib>=1",
+    "google-auth>=2",
 ]
 
 [project.optional-dependencies]
 mcp = [
     "mcp>=1.0.0",
 ]
-api = [
-    "google-api-python-client>=2",
-    "google-auth-oauthlib>=1",
-    "google-auth>=2",
+bi = [
+    "pymysql>=1.0",
 ]
 dev = [
     "pytest>=8.0.0",
