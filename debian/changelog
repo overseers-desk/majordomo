@@ -1,3 +1,14 @@
+majordomo (0.1.6) unstable; urgency=medium
+
+  * Send a private message to a person: `majordomo send --to <email> "text"`
+    (or `--to users/<id>`) delivers into your 1:1 Chat DM with them, so
+    reaching someone no longer means hunting for a space id. Available
+    through the CLI and the MCP server. A person you have no DM with is
+    refused by name; majordomo opens no new DMs.
+  * `send --help` states what `--to` does rather than what it presumes.
+
+ -- Weiwu Zhang <a@colourful.land>  Mon, 20 Jul 2026 17:45:09 +1000
+
 majordomo (0.1.5) unstable; urgency=medium
 
   * Add `majordomo send`: post a message to a space, or reply in a thread,
