@@ -93,7 +93,7 @@ The `google-` prefix is avoided as a brand choice. In the apt ecosystem `google-
 
 ### crude and mailroom
 
-majordomo is an information-flow reader and reporter, not an object-edit tool, so it lives in neither of the user's neighbouring accessors. crude is rejected as a home: its CRUD/object grammar does not fit a read-mostly message flow whose tasks are reconstructed, not stored. mailroom is the architectural template, not the host: its sieve and provenance-tagged cache-with-direct-API-fallback carry across, but its email-specific maildir+mu cache does not. The cache is mandatory, since Google throttles direct reads (a hundred-plus-item scan can take minutes, and users expect mailroom speed), but majordomo does not build it: it reads the BI platform's existing server-side `googlechat` mirror and `coord_tasks` reconstruction (direct DB first, an API later), keeping its own direct read and task decoder to run without that backend. How it serves callers, a query CLI or a daemon over REST in the Evolution API style, is open. `DATA-MODEL.md` holds the full reasoning.
+majordomo is an information-flow reader and reporter, not an object-edit tool, so it lives in neither of the user's neighbouring accessors. crude is rejected as a home: its CRUD/object grammar does not fit a read-mostly message flow whose tasks are reconstructed, not stored. mailroom is the architectural template, not the host: its sieve and provenance-tagged cache-with-direct-API-fallback carry across, but its email-specific maildir+mu cache does not. The cache is what makes bulk reads fast, since Google throttles direct reads (a hundred-plus-item scan can take minutes, and users expect mailroom speed). It is an accelerator for sites that already run the mirror, not a requirement of the software, which reads Google directly wherever the mirror is absent. majordomo does not build it: it reads the BI platform's existing server-side `googlechat` mirror and `coord_tasks` reconstruction (direct DB first, an API later), keeping its own direct read and task decoder to run without that backend. How it serves callers, a query CLI or a daemon over REST in the Evolution API style, is open. `DATA-MODEL.md` holds the full reasoning.
 
 ### gchat-cli
 
@@ -126,9 +126,10 @@ Decided:
 - Task activity reported from the BI platform's reconstruction (`coord_tasks`) when present, from majordomo's own message decoder when standalone; the decoder is retained so majordomo runs without that backend.
 - Sieve enforced in the core, never only in a front door.
 - Send reachable through both front doors: one command shape (`send --space|--thread TEXT`), the sieve refusing blocked targets indistinguishably from missing ones, refused entirely under `WORLD_AS_OF`, its scope minted by every `login`.
-- The direct-API surface (module, pip extra, config table) is named `api`; `nocache` names only the read mode.
+- Reading Google directly is the baseline every install can do, so the Google client libraries are core dependencies and the cache driver is the `bi` install option. The reverse would ship public software whose one usable path was optional.
+- The direct-API module and config table are named `api`; `nocache` names only the read mode.
 - Orchestration kept external.
-- The accessor's data model is an information flow (crude's object-edit model is rejected). The fast path reads the BI platform's existing cache and reconstructed tasks, mandatory cache-first because Google throttles direct reads, while majordomo keeps its own direct read and decoder to run standalone. Delivery (query CLI versus REST daemon) is open (`DATA-MODEL.md`).
+- The accessor's data model is an information flow (crude's object-edit model is rejected). The fast path reads the BI platform's existing cache and reconstructed tasks, preferred wherever it exists because Google throttles direct reads, while majordomo's own direct read and decoder are what every install has. Delivery (query CLI versus REST daemon) is open (`DATA-MODEL.md`).
 
 Open:
 

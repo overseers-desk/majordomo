@@ -18,9 +18,11 @@ When someone creates a task through Google Chat's "Create a task for @Person (vi
 The simplest cross-platform install is from PyPI:
 
 ```bash
-pip install majordomo                  # CLI, reads the Chat cache
-pip install "majordomo[api,mcp]"       # plus the live Chat API path and the MCP server
+pip install majordomo                  # reads and sends through the Chat API
+pip install "majordomo[bi,mcp]"        # plus the cache fast path and the MCP server
 ```
+
+A plain install talks to Google directly and is complete on its own. The `bi` option adds the driver for reading an existing server-side cache of Chat, which is an accelerator for sites that already run that mirror.
 
 With uv, `uvx majordomo ...` runs it without installing and `uv tool install majordomo` installs it permanently.
 
@@ -36,9 +38,10 @@ Python 3.11+.
 **Run directly, no virtualenv, with Ubuntu/Debian packages:**
 
 ```bash
-sudo apt-get install python3-typer python3-rich python3-pymysql
-# for the API path (majordomo login, --live top-up, --nocache, send) also:
-sudo apt-get install python3-googleapi python3-google-auth python3-google-auth-oauthlib
+sudo apt-get install python3-typer python3-rich \
+  python3-googleapi python3-google-auth python3-google-auth-oauthlib
+# only if you read the server-side cache (--cache, --live) as well:
+sudo apt-get install python3-pymysql
 ```
 
 Then run from the repo without installing the package:
@@ -51,11 +54,11 @@ PYTHONPATH=src python3 -m majordomo spaces
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[api,mcp]"       # drop the extras you don't need
+pip install -e ".[bi,mcp]"        # drop the options you don't need
 majordomo --help
 ```
 
-The MCP server (`majordomo mcp`) needs the `mcp` PyPI package, which is not in apt; install it through the virtualenv above (the `mcp` extra).
+The MCP server (`majordomo mcp`) needs the `mcp` PyPI package, which is not in apt; install it through the virtualenv above (the `mcp` option).
 
 ## Configuration
 

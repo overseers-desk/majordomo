@@ -33,7 +33,10 @@ def _require_google():
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
     except ImportError as exc:
-        raise SystemExit("majordomo: the direct Chat API path needs the extra — pip install 'majordomo[api]'.") from exc
+        raise SystemExit(
+            "majordomo: the Google client libraries are missing, so this "
+            "install is incomplete; reinstall majordomo."
+        ) from exc
     return Credentials, Request, build
 
 
@@ -48,7 +51,10 @@ def login(cfg: dict) -> str:
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow
     except ImportError as exc:
-        raise SystemExit("majordomo: login needs the extra — pip install 'majordomo[api]'.") from exc
+        raise SystemExit(
+            "majordomo: the Google sign-in library is missing, so this "
+            "install is incomplete; reinstall majordomo."
+        ) from exc
     client_file = os.path.expanduser(config.api_client_file(cfg))
     token_file = os.path.expanduser(config.api_token_file(cfg))
     if not os.path.exists(client_file):
