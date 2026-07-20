@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from majordomo import config, dates, db, nocache, output, readers, reports
+from majordomo import api, config, dates, db, output, readers, reports
 
 # 2026-07-12T17:07:00+10:00 == 2026-07-12T07:07:00 UTC
 BOUND_RAW = "2026-07-12T17:07:00+10:00"
@@ -266,20 +266,20 @@ def _fake_chat(spaces, captured_filters):
 
 def test_nocache_spaces_posts_filter_on_create_time(monkeypatch):
     monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
-    reader = nocache.NocacheReader(service=_fake_chat(API_SPACES, []))
+    reader = api.NocacheReader(service=_fake_chat(API_SPACES, []))
     names = [r["space_name"] for r in reader.spaces()]
     # Created-after-the-bound drops; no-createTime (pre-mid-2021) is kept as
     # current-state, because dropping it would misreport it as never existing.
     assert names == ["spaces/OLD", "spaces/ANCIENT"]
     monkeypatch.delenv("WORLD_AS_OF")
-    reader = nocache.NocacheReader(service=_fake_chat(API_SPACES, []))
+    reader = api.NocacheReader(service=_fake_chat(API_SPACES, []))
     assert len(reader.spaces()) == 3
 
 
 def test_nocache_message_fetch_is_server_bounded(monkeypatch):
     monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
     filters: list = []
-    reader = nocache.NocacheReader(service=_fake_chat(API_SPACES, filters))
+    reader = api.NocacheReader(service=_fake_chat(API_SPACES, filters))
     reader.messages(space="spaces/OLD")                        # open end
     assert filters == ['createTime < "2026-07-12T07:07:00Z"']
     filters.clear()
@@ -290,7 +290,7 @@ def test_nocache_message_fetch_is_server_bounded(monkeypatch):
 def test_nocache_filter_unchanged_when_unset(monkeypatch):
     monkeypatch.delenv("WORLD_AS_OF", raising=False)
     filters: list = []
-    reader = nocache.NocacheReader(service=_fake_chat(API_SPACES, filters))
+    reader = api.NocacheReader(service=_fake_chat(API_SPACES, filters))
     reader.messages(space="spaces/OLD")
     assert filters == [""]
 
@@ -362,7 +362,7 @@ def test_edited_after_bound_is_marked_not_dropped(monkeypatch):
          "text": "untouched"},
     ]}
     chat.spaces().messages().list.return_value = page
-    rows = nocache.NocacheReader(service=chat).messages(space="spaces/OLD")
+    rows = api.NocacheReader(service=chat).messages(space="spaces/OLD")
     by = {r["name"]: r for r in rows}
     assert by["spaces/OLD/messages/A.1"]["edited_after_bound"] is True
     assert "edited_after_bound" not in by["spaces/OLD/messages/A.2"]

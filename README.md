@@ -1,6 +1,6 @@
 # majordomo
 
-A command-line tool that reads Google Chat and reports task activity. The command line is the primary interface; an MCP server is a secondary interface for AI agents. Both are thin front doors over one shared core.
+A command-line tool that reads Google Chat, reports task activity, and sends messages. The command line is the primary interface; an MCP server is a secondary interface for AI agents. Both are thin front doors over one shared core.
 
 ## What it does
 
@@ -9,7 +9,8 @@ When someone creates a task through Google Chat's "Create a task for @Person (vi
 - **Tasks** by assignee, space, and date; "assigned to me" and "assigned by me".
 - **Spaces**, **people** (participants with message and task counts), and raw **messages** by space or thread.
 - **Three modes, one shape.** The fast path reads an existing server-side cache of Chat (the [data model](DATA-MODEL.md)). `--live` is up-to-dateness: it serves the cache and tops it up from the Chat API with anything newer. `--nocache` reads the Chat API directly and decodes tasks itself, so the tool also works without the cache. Every result is tagged with its source; an unforced read uses the cache and falls back to the direct API automatically when the cache is unreachable.
-- **A privacy sieve** in the core drops blocked spaces (and assignees) before any caller (CLI or MCP) can see them.
+- **Send** a message to a space, or a reply into a thread, as the logged-in account (`majordomo send`).
+- **A privacy sieve** in the core drops blocked spaces (and assignees) before any caller (CLI or MCP) can see them; it refuses sends into blocked spaces the same way.
 - **Output** as a rich console table, `--json`, or `--csv`.
 
 ## Install
@@ -18,7 +19,7 @@ The simplest cross-platform install is from PyPI:
 
 ```bash
 pip install majordomo                  # CLI, reads the Chat cache
-pip install "majordomo[nocache,mcp]"   # plus the live Chat API path and the MCP server
+pip install "majordomo[api,mcp]"       # plus the live Chat API path and the MCP server
 ```
 
 With uv, `uvx majordomo ...` runs it without installing and `uv tool install majordomo` installs it permanently.
@@ -36,7 +37,7 @@ Python 3.11+.
 
 ```bash
 sudo apt-get install python3-typer python3-rich python3-pymysql
-# for the API path (majordomo login, --live top-up, --nocache) also:
+# for the API path (majordomo login, --live top-up, --nocache, send) also:
 sudo apt-get install python3-googleapi python3-google-auth python3-google-auth-oauthlib
 ```
 
@@ -50,7 +51,7 @@ PYTHONPATH=src python3 -m majordomo spaces
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[nocache,mcp]"   # drop the extras you don't need
+pip install -e ".[api,mcp]"       # drop the extras you don't need
 majordomo --help
 ```
 
@@ -71,7 +72,7 @@ user_id = "users/1234567890"      # your Chat id, for --to-me / --by-me
 block_spaces = ["spaces/AAAA"]     # never shown through any front door
 block_assignees = ["users/9999"]   # drop these assignees from every report
 
-[nocache]                          # optional; defaults shown (OAuth for the API path)
+[api]                              # optional; defaults shown (OAuth for the API path)
 token_file = "~/.config/majordomo/token.json"
 client_file = "~/.config/majordomo/client_secret.json"
 ```
@@ -88,7 +89,7 @@ MYSQL_DATABASE=…
 
 ## Authenticating (OAuth for the API path)
 
-`majordomo login` opens a browser OAuth flow and writes `~/.config/majordomo/token.json` (read-only Chat scopes), used by `--live` (for the top-up) and `--nocache`. It needs a Desktop OAuth client with the Google Chat API enabled, saved as `client_secret.json` in the config directory.
+`majordomo login` opens a browser OAuth flow and writes `~/.config/majordomo/token.json` (the two Chat read scopes plus message create), used by `--live` (for the top-up), `--nocache`, and `send`. It needs a Desktop OAuth client with the Google Chat API enabled, saved as `client_secret.json` in the config directory. A token minted before send existed lacks its scope; `send` says so and re-running `majordomo login` fixes it.
 
 ```bash
 majordomo login
@@ -103,6 +104,8 @@ majordomo tasks --to-me --window month
 majordomo tasks --assignee-name '*Alice*' --since 2026-01-01
 majordomo messages --space spaces/AAAA --window 7d
 majordomo messages --thread spaces/AAAA/messages/BBBB
+majordomo send --space spaces/AAAA "On my way."
+majordomo send --thread spaces/AAAA/messages/BBBB "Done, see the doc."
 majordomo mcp                       # run the MCP server (stdio)
 ```
 
@@ -119,7 +122,7 @@ WORLD_AS_OF='2026-07-12T17:07:00+10:00' majordomo tasks --window 7d
 ```
 
 - **Unset**: normal operation, at no cost.
-- **Set**: nothing dated after the bound is reported, on every source (cache, `--live`, `--nocache`) and through both front doors (CLI and MCP). Relative windows anchor to the bound, not to now: `7d` is the seven days before it, `month` the calendar month before the one containing it. A `--until` later than the bound is clamped down with a stderr note. Under a past bound `--live` degrades to the cache read (a top-up would fetch only what the bound excludes). The JSON/MCP envelope carries `world_as_of`, so a log proves the answer was bounded.
+- **Set**: nothing dated after the bound is reported, on every source (cache, `--live`, `--nocache`) and through both front doors (CLI and MCP). Relative windows anchor to the bound, not to now: `7d` is the seven days before it, `month` the calendar month before the one containing it. A `--until` later than the bound is clamped down with a stderr note. Under a past bound `--live` degrades to the cache read (a top-up would fetch only what the bound excludes). The JSON/MCP envelope carries `world_as_of`, so a log proves the answer was bounded. `send` is refused while the bound is set: a bounded run is a replay, and a send would act in the real present.
 - **Set but unparseable, or missing its timezone offset**: a hard error on every command, including ones that fetch no dates, because a silently ignored bound would produce a contaminated run that looks valid.
 
 The bound is honest about what it cannot rewind. Space and user display names are current-state (the mirror keeps no history of prior names) and the output says so. A message edited after the bound carries its post-edit text, marked `edited_after_bound` on the API path where the edit is observable. A bound older than the oldest cached message earns a warning that the store does not reach the as-of instant. For replaying the past the cache is the higher-fidelity source: the mirror retains messages the API has since dropped through deletion.

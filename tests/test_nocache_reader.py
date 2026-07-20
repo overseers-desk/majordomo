@@ -6,7 +6,7 @@ import _shim  # noqa: F401
 
 from unittest.mock import MagicMock
 
-from majordomo import db, nocache, readers
+from majordomo import api, db, readers
 
 
 def _fake_chat(spaces: list, msgs: dict):
@@ -45,7 +45,7 @@ MSGS = {
 
 
 def _reader(blocked):
-    return nocache.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=blocked)
+    return api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=blocked)
 
 
 def test_decodes_and_recovers_title():
@@ -85,24 +85,25 @@ def test_assignee_name_glob_nocache():
 
 
 def test_block_assignees_nocache():
-    r = nocache.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"], blocked_assignees=["users/1"])
+    r = api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"], blocked_assignees=["users/1"])
     assert r.tasks() == []                                              # Alice (users/1) was the only OK task
 
 
 def test_make_reader_auto_falls_back_to_nocache_when_db_down():
-    orig_connect, orig_from = db.connect, nocache.NocacheReader.from_config
+    orig_connect, orig_from = db.connect, api.NocacheReader.from_config
     db.connect = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db down"))
-    nocache.NocacheReader.from_config = staticmethod(lambda cfg, blocked, blocked_assignees=None: "NOCACHE")
+    api.NocacheReader.from_config = staticmethod(lambda cfg, blocked, blocked_assignees=None: "NOCACHE")
     try:
         assert readers.make_reader({"sieve": {}}, None) == "NOCACHE"      # auto -> nocache
-        forced_cache_raised = False
+        message = None
         try:
-            readers.make_reader({"sieve": {}}, "cache")                # forced cache -> loud
-        except RuntimeError:
-            forced_cache_raised = True
-        assert forced_cache_raised
+            readers.make_reader({"sieve": {}}, "cache")                # forced cache -> loud, one line
+        except SystemExit as exc:
+            message = str(exc)
+        assert message is not None, "forced cache with a dead DB did not fail"
+        assert "cache unreachable" in message and "db down" in message  # clean answer, cause named
     finally:
-        db.connect, nocache.NocacheReader.from_config = orig_connect, orig_from
+        db.connect, api.NocacheReader.from_config = orig_connect, orig_from
 
 
 if __name__ == "__main__":
