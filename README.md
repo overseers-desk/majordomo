@@ -9,7 +9,7 @@ When someone creates a task through Google Chat's "Create a task for @Person (vi
 - **Tasks** by assignee, space, and date; "assigned to me" and "assigned by me".
 - **Spaces**, **people** (participants with message and task counts), and raw **messages** by space or thread.
 - **Three modes, one shape.** The fast path reads an existing server-side cache of Chat (the [data model](DATA-MODEL.md)). `--live` is up-to-dateness: it serves the cache and tops it up from the Chat API with anything newer. `--nocache` reads the Chat API directly and decodes tasks itself, so the tool also works without the cache. Every result is tagged with its source; an unforced read uses the cache and falls back to the direct API automatically when the cache is unreachable.
-- **Send** a message to a space, or a reply into a thread, as the logged-in account (`majordomo send`).
+- **Send** a message to a space, or a reply into a thread, as the logged-in account, with optional file attachments (`majordomo send`).
 - **A privacy sieve** in the core drops blocked spaces (and assignees) before any caller (CLI or MCP) can see them; it refuses sends into blocked spaces the same way.
 - **Output** as a rich console table, `--json`, or `--csv`.
 
@@ -107,6 +107,7 @@ majordomo messages --thread spaces/AAAA/messages/BBBB
 majordomo send --space spaces/AAAA "On my way."
 majordomo send --thread spaces/AAAA/messages/BBBB "Done, see the doc."
 majordomo send --to alice@example.com "Lunch?"       # a person's existing 1:1 DM
+majordomo send --space spaces/AAAA "Here it is." --attach ./report.pdf  # repeat --attach for several; text optional
 majordomo mcp                       # run the MCP server (stdio)
 ```
 
