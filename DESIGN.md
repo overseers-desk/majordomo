@@ -30,7 +30,7 @@ All capabilities are reachable through both front doors:
 - Read messages and spaces over a date range — from the BI platform's cache as the fast path, or a direct Chat read paginated to completeness when that backend is absent.
 - Report task activity (creation, assignment, and other lifecycle signals): from the BI platform's `coord_tasks` reconstruction when present, from majordomo's own message decoder when standalone.
 - Report tasks by assignee, by space, and by date range.
-- Send a message into a space, or a reply into a thread, as the authenticated account.
+- Send a message into a space, or a reply into a thread, as the authenticated account, with optional file attachments.
 - Resolve user identifiers to display names via the People API, so reports name people rather than opaque IDs.
 - Apply the sieve, dropping blocked spaces from every output path.
 - Address several Google accounts by identity, without swapping configuration files.
@@ -76,11 +76,12 @@ Placing it in the core, not in a wrapper, means any front door (and any future f
 
 ## Sending
 
-`send` posts a message to a space, a reply into a thread, or a message into a person's existing 1:1 DM (`--to`, an email or `users/<id>`, resolved by the API's find-direct-message call). It works through both front doors, always over the direct Chat API (a write has no cache path). The write side follows the same discipline as the reads:
+`send` posts a message to a space, a reply into a thread, or a message into a person's existing 1:1 DM (`--to`, an email or `users/<id>`, resolved by the API's find-direct-message call), carrying message text, one or more file attachments, or both. It works through both front doors, always over the direct Chat API (a write has no cache path). The write side follows the same discipline as the reads:
 
 - The sieve applies to writes: a send into a blocked space is refused with the same wording as a space that does not exist, so a caller cannot probe the block list through send.
 - A set `WORLD_AS_OF` refuses the send outright: a bounded run is a replay, and a send would act in the real present.
 - `login` mints the send scope (`chat.messages.create`) together with the read scopes, so one token serves every path; a token minted without it points at re-running `majordomo login`.
+- An attachment is a local file, uploaded to the resolved space through the API's `media.upload` and referenced in the created message. The space is resolved and sieve-cleared before any upload, so a blocked or absent target is refused before a file leaves the machine. The upload rides the same `chat.messages.create` scope, so an attachment needs no scope the send did not already hold. When a file is attached the message text is optional (Chat carries an attachment-only message), and at least one of text or attachment is required.
 
 ## Naming and packaging convention
 

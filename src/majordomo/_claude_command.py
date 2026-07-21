@@ -29,7 +29,7 @@ COMMAND_NAME = "majordomo"
 # not the description.
 COMMAND = """---
 name: majordomo
-description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return. Also sends a Google Chat message to a space, a thread, or a person's DM (by email).
+description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM (by email).
 allowed-tools: Bash
 ---
 
@@ -74,9 +74,11 @@ Raw messages in one space, or one thread (any message resource name in the threa
 majordomo send --space spaces/AAAA "On my way."
 majordomo send --thread spaces/AAAA/messages/BBBB "Done, see the doc."
 majordomo send --to alice@example.com "Lunch?"
+majordomo send --space spaces/AAAA "Here it is." --attach ./report.pdf --attach ./chart.png
+majordomo send --space spaces/AAAA --attach ./report.pdf
 ```
 
-One target: `--space` posts to the space, `--thread` replies in a thread (any message resource name in it works), `--to` reaches a person's existing 1:1 DM by email or `users/<id>` (a person you have never DM'd is refused; majordomo does not open new DMs). Sends as the logged-in account; a token from before send existed lacks the scope, and the error says to re-run `majordomo login`. A blocked space answers "not found". While `WORLD_AS_OF` is set, a send is refused: a bounded run is a replay.
+One target: `--space` posts to the space, `--thread` replies in a thread (any message resource name in it works), `--to` reaches a person's existing 1:1 DM by email or `users/<id>` (a person you have never DM'd is refused; majordomo does not open new DMs). `--attach <path>` uploads a local file as an attachment and repeats for several; the message text then becomes optional, so a file can go on its own. Sends as the logged-in account; a token from before send existed lacks the scope, and the error says to re-run `majordomo login` (attachments need no scope beyond that). A blocked space answers "not found". While `WORLD_AS_OF` is set, a send is refused: a bounded run is a replay.
 
 ## Windows, output, source
 
