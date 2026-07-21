@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 from datetime import date, datetime
-from typing import Optional
+from typing import List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -126,17 +126,21 @@ def create_server() -> FastMCP:
         return _envelope(reader, reader.messages(space, thread=thread, start=start, end=end, limit=limit))
 
     @server.tool()
-    def send(text: str, space: Optional[str] = None, thread: Optional[str] = None,
-             to: Optional[str] = None) -> dict:
+    def send(text: Optional[str] = None, space: Optional[str] = None,
+             thread: Optional[str] = None, to: Optional[str] = None,
+             attachments: Optional[List[str]] = None) -> dict:
         """Send a message to a space, a thread, or a person's existing 1:1 DM.
         Exactly one of space/thread/to: thread takes a thread or any message
-        name in it; to takes an email or users/<id>. The sieve refuses blocked
-        spaces; a set WORLD_AS_OF refuses the send outright, a bounded run
-        being a replay.
+        name in it; to takes an email or users/<id>. attachments is a list of
+        local file paths on this host, uploaded as file attachments; text is
+        optional when at least one attachment is given. The sieve refuses
+        blocked spaces; a set WORLD_AS_OF refuses the send outright, a bounded
+        run being a replay.
         """
         cfg = _config()
         try:
-            return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread, to=to, text=text)
+            return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
+                            to=to, text=text, attachments=attachments)
         except SystemExit as exc:
             # Core refusals arrive as SystemExit; they answer this tool call,
             # they do not end the server process.

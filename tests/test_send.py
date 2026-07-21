@@ -165,3 +165,99 @@ def test_needs_exactly_one_target():
 
 def test_login_mints_the_send_scope():
     assert api.SEND_SCOPE in api.LOGIN_SCOPES
+
+
+# --- attachments ---------------------------------------------------------
+
+def _fake_media(monkeypatch):
+    """Stand in for MediaFileUpload so a test needs no google libs and no real
+    file read: it just records the path and guessed mimetype."""
+    monkeypatch.setattr(
+        api, "_media_upload",
+        lambda: (lambda path, mimetype=None: {"file": path, "mime": mimetype}),
+    )
+
+
+def test_send_with_attachment_uploads_and_attaches(tmp_path, monkeypatch):
+    _fake_media(monkeypatch)
+    f = tmp_path / "doc.pdf"
+    f.write_bytes(b"%PDF-1.4 test")
+    chat = _chat({"name": "spaces/OK/messages/NEW"})
+    chat.media().upload.return_value.execute.return_value = {"attachmentDataRef": {"resourceName": "r1"}}
+    out = api.send({}, [], space="spaces/OK", text="hi", attachments=[str(f)], service=chat)
+    assert out["name"] == "spaces/OK/messages/NEW"
+    _, up = chat.media().upload.call_args
+    assert up["parent"] == "spaces/OK"
+    assert up["body"] == {"filename": "doc.pdf"}
+    body = _create_kwargs(chat)["body"]
+    assert body["text"] == "hi"
+    assert body["attachment"] == [{"attachmentDataRef": {"resourceName": "r1"}}]
+
+
+def test_multiple_attachments_upload_each_in_order(tmp_path, monkeypatch):
+    _fake_media(monkeypatch)
+    a = tmp_path / "a.png"; a.write_bytes(b"x")
+    b = tmp_path / "b.txt"; b.write_text("y")
+    chat = _chat({"name": "spaces/OK/messages/NEW"})
+    chat.media().upload.return_value.execute.side_effect = [
+        {"attachmentDataRef": {"resourceName": "ra"}},
+        {"attachmentDataRef": {"resourceName": "rb"}},
+    ]
+    api.send({}, [], space="spaces/OK", text="hi", attachments=[str(a), str(b)], service=chat)
+    assert chat.media().upload.call_count == 2
+    assert _create_kwargs(chat)["body"]["attachment"] == [
+        {"attachmentDataRef": {"resourceName": "ra"}},
+        {"attachmentDataRef": {"resourceName": "rb"}},
+    ]
+
+
+def test_attachment_only_send_omits_text(tmp_path, monkeypatch):
+    _fake_media(monkeypatch)
+    f = tmp_path / "f.pdf"; f.write_bytes(b"z")
+    chat = _chat({"name": "spaces/OK/messages/NEW"})
+    chat.media().upload.return_value.execute.return_value = {"attachmentDataRef": {"resourceName": "r"}}
+    api.send({}, [], space="spaces/OK", attachments=[str(f)], service=chat)
+    body = _create_kwargs(chat)["body"]
+    assert "text" not in body
+    assert body["attachment"] == [{"attachmentDataRef": {"resourceName": "r"}}]
+
+
+def test_send_needs_text_or_attachment():
+    with pytest.raises(SystemExit) as ei:
+        api.send({}, [], space="spaces/OK", service=_chat())
+    assert "text, an attachment" in str(ei.value)
+
+
+def test_missing_attachment_file_fails_loud_before_upload(tmp_path, monkeypatch):
+    _fake_media(monkeypatch)
+    missing = tmp_path / "nope.pdf"
+    chat = _chat()
+    with pytest.raises(SystemExit) as ei:
+        api.send({}, [], space="spaces/OK", text="hi", attachments=[str(missing)], service=chat)
+    assert "attachment not found" in str(ei.value)
+    assert str(missing) in str(ei.value)
+    chat.media().upload.assert_not_called()
+    chat.spaces().messages().create.assert_not_called()
+
+
+def test_attachment_into_blocked_space_refused_before_upload(tmp_path, monkeypatch):
+    _fake_media(monkeypatch)
+    f = tmp_path / "f.pdf"; f.write_bytes(b"z")
+    chat = _chat()
+    with pytest.raises(SystemExit) as ei:
+        api.send({}, ["spaces/BLOCK"], space="spaces/BLOCK", text="hi",
+                 attachments=[str(f)], service=chat)
+    assert str(ei.value) == "majordomo: spaces/BLOCK: not found."
+    chat.media().upload.assert_not_called()
+    chat.spaces().messages().create.assert_not_called()
+
+
+def test_attachment_to_dm_uploads_into_the_resolved_space(tmp_path, monkeypatch):
+    _fake_media(monkeypatch)
+    f = tmp_path / "f.pdf"; f.write_bytes(b"z")
+    chat = _chat_with_dm({"users/alice@example.com": "spaces/DM1"})
+    chat.media().upload.return_value.execute.return_value = {"attachmentDataRef": {"resourceName": "r"}}
+    api.send({}, [], to="alice@example.com", attachments=[str(f)], service=chat)
+    _, up = chat.media().upload.call_args
+    assert up["parent"] == "spaces/DM1"
+    assert _create_kwargs(chat)["parent"] == "spaces/DM1"

@@ -37,6 +37,12 @@ def _require_google():
     return Credentials, Request, build
 
 
+def _media_upload():
+    from googleapiclient.http import MediaFileUpload
+
+    return MediaFileUpload
+
+
 def login(cfg: dict) -> str:
     """Mint a token via the browser OAuth flow, write it, return its path."""
     try:
@@ -150,11 +156,36 @@ def _dm_space(service, blocked: list[str], to: str) -> str:
     return space
 
 
+def _upload_attachment(service, space: str, path: str) -> dict:
+    """Upload one local file to a space and return its attachment ref.
+
+    A missing file fails loud, naming the path. A 404 (the space is gone)
+    reuses the not-found wording, so an upload cannot probe a space either.
+    """
+    import mimetypes
+
+    path = os.path.expanduser(path)
+    if not os.path.isfile(path):
+        raise SystemExit(f"majordomo: attachment not found: {path}")
+    mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    media = _media_upload()(path, mimetype=mime)
+    try:
+        return service.media().upload(
+            parent=space, body={"filename": os.path.basename(path)}, media_body=media
+        ).execute()
+    except Exception as exc:
+        if getattr(getattr(exc, "resp", None), "status", None) == 404:
+            raise SystemExit(f"majordomo: {space}: not found.") from None
+        raise
+
+
 def send(cfg: dict, blocked: list[str], *, space: str | None = None,
-         thread: str | None = None, to: str | None = None, text: str,
+         thread: str | None = None, to: str | None = None,
+         text: str | None = None, attachments: list[str] | None = None,
          service=None) -> dict:
     """Create a message in a space, in a thread, or in a person's 1:1 DM;
-    returns the created message as the API gives it. The sieve refuses a
+    returns the created message as the API gives it. Carries text, one or more
+    file attachments, or both (at least one is required). The sieve refuses a
     blocked space with the same wording as a space that does not exist, so
     send cannot probe the block list. Refuses under WORLD_AS_OF: a bounded
     run is a replay, and a send would act in the real present.
@@ -166,8 +197,12 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
         )
     if (space, thread, to).count(None) != 2:
         raise SystemExit("majordomo: send needs exactly one of space / thread / to.")
-    body: dict = {"text": text}
+    if not text and not attachments:
+        raise SystemExit("majordomo: send needs message text, an attachment, or both.")
+    body: dict = {}
     kwargs: dict = {}
+    if text:
+        body["text"] = text
     if thread:
         space, thread_name = _thread_target(thread)
         body["thread"] = {"name": thread_name}
@@ -185,6 +220,10 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
         service = build("chat", "v1", credentials=creds, cache_discovery=False)
     if to:
         space = _dm_space(service, blocked, to)
+    # The space is now resolved and sieve-cleared; upload only after that, so a
+    # blocked or absent target is refused before any file leaves the machine.
+    if attachments:
+        body["attachment"] = [_upload_attachment(service, space, p) for p in attachments]
     try:
         return service.spaces().messages().create(parent=space, body=body, **kwargs).execute()
     except Exception as exc:

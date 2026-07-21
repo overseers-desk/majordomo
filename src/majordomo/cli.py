@@ -9,7 +9,7 @@ cache is down); `--cache` / `--live` (cache + freshness top-up) / `--nocache`
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import List, Optional
 
 import typer
 
@@ -177,16 +177,19 @@ def messages(
 
 @app.command()
 def send(
-    text: str = typer.Argument(..., help="Message text."),
+    text: Optional[str] = typer.Argument(None, help="Message text. Optional when --attach is given."),
     space: Optional[str] = typer.Option(None, "--space", help="Space resource name (spaces/<id>)."),
     thread: Optional[str] = typer.Option(None, "--thread", help="Reply in this thread (or any message name in it)."),
     to: Optional[str] = typer.Option(None, "--to", help="A person, by email or users/<id>: sends in your 1:1 DM, and says so if you have none with them."),
+    attach: Optional[List[str]] = typer.Option(None, "--attach", help="A local file to attach; repeat for several. Message text becomes optional."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON of the created message."),
 ) -> None:
     """Send a Google Chat message to a space, a thread, or a person (needs the `api` extra).
 
-    An email address in --to names the person, not an email channel: the
-    message arrives in your 1:1 Chat DM with them.
+    Carries message text, one or more file attachments (--attach, repeatable),
+    or both; at least one is required. An email address in --to names the
+    person, not an email channel: the message arrives in your 1:1 Chat DM with
+    them.
 
     Refused while WORLD_AS_OF is set: a bounded run is a replay, and a send
     would act in the real present.
@@ -196,7 +199,8 @@ def send(
         raise typer.Exit(2)
     from . import api
     cfg = config.load_config()
-    created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread, to=to, text=text)
+    created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
+                       to=to, text=text, attachments=attach)
     if json_out:
         typer.echo(json.dumps(created, indent=2, default=str))
     else:
