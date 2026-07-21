@@ -1,3 +1,14 @@
+majordomo (0.1.7) unstable; urgency=medium
+
+  * Attach files to a message: `majordomo send --space <id> "text" --attach
+    ./file.pdf` uploads a local file and posts it with the message. Repeat
+    `--attach` for several files; the message text is optional when a file is
+    attached, so a file can go on its own. Works for space, thread, and DM
+    targets, through the CLI and the MCP server. The upload uses the send
+    scope the token already holds, so no new login is needed.
+
+ -- Weiwu Zhang <a@colourful.land>  Tue, 21 Jul 2026 18:12:34 +1000
+
 majordomo (0.1.6) unstable; urgency=medium
 
   * Send a private message to a person: `majordomo send --to <email> "text"`
