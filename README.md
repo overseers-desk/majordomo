@@ -90,9 +90,16 @@ MYSQL_PASSWORD=…
 MYSQL_DATABASE=…
 ```
 
-## Authenticating (OAuth for the API path)
+## Authenticating (per-account OAuth)
 
-`majordomo login` opens a browser OAuth flow and writes `~/.config/majordomo/token.json` (the two Chat read scopes plus message create), used by `--live` (for the top-up), `--nocache`, and `send`. It needs a Desktop OAuth client with the Google Chat API enabled, saved as `client_secret.json` in the config directory. A token minted before send existed lacks its scope; `send` says so and re-running `majordomo login` fixes it.
+majordomo signs in as **you**, through Google's own browser consent screen. `majordomo login` opens that flow, the account you pick grants access to its own Chat, and the resulting refresh token is stored for that account. There is no service account and no domain-wide delegation. Two things follow:
+
+- **Any account works**, consumer `@gmail.com` or Google Workspace, as long as it can grant OAuth consent. No Workspace administrator has to enable anything first.
+- **You see only what that account sees.** The tool reads the signed-in user's own spaces and nothing beyond them.
+
+The two alternatives were considered and set aside. A **service account** is a robot identity, not a person, so by itself it cannot read a given user's Chat. **Domain-wide delegation**, where a service account impersonates users, can read it, but only a Google Workspace administrator may authorize it and only for accounts inside that Workspace domain; that excludes consumer Gmail and any account you do not administer. Per-account OAuth costs one login per user and, in exchange, works for everyone.
+
+`majordomo login` writes `~/.config/majordomo/token.json` (the two Chat read scopes plus message create), used by `--live` (for the top-up), `--nocache`, and `send`. It needs a Desktop OAuth client with the Google Chat API enabled, saved as `client_secret.json` in the config directory. A token minted before send existed lacks its scope; `send` says so, and re-running `majordomo login` fixes it.
 
 ```bash
 majordomo login

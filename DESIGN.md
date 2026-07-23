@@ -64,6 +64,8 @@ The split exists because the volatile and the stable should not share a file. If
 
 This replaces the present `config/client_secret.json` and `config/token.json` pair under the repository tree; the OAuth client secret stays in its own file as Google issues it, and the per-account refresh token moves into the TOML keyed by identity.
 
+Authentication is per-account OAuth: each account signs in through Google's browser consent flow and majordomo acts as that user. It uses neither a service account nor domain-wide delegation. A service account is a non-human identity that cannot read a given user's Chat on its own, and delegation reaches only accounts inside a Google Workspace domain that an administrator has enabled, excluding consumer Gmail. Per-account consent works for any account that can grant it, at the cost of one login per user.
+
 ### Multi-account by identity
 
 Credentials are keyed by identity, so several Google accounts can be addressed by name from any front door rather than by swapping files. The shape is a `[identity.NAME]` table mapping a name to its credentials, which scales to as many accounts as a person uses.
