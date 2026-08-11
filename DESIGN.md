@@ -31,6 +31,7 @@ All capabilities are reachable through both front doors:
 - Report task activity (creation, assignment, and other lifecycle signals): from the BI platform's `coord_tasks` reconstruction when present, from majordomo's own message decoder when standalone.
 - Report tasks by assignee, by space, and by date range.
 - Send a message into a space, or a reply into a thread, as the authenticated account, with optional file attachments.
+- List the files posted in a space, a thread, or on one message, and save them to disk.
 - Resolve user identifiers to display names via the People API, so reports name people rather than opaque IDs.
 - Apply the sieve, dropping blocked spaces from every output path.
 - Address several Google accounts by identity, without swapping configuration files.
@@ -85,6 +86,19 @@ Placing it in the core, not in a wrapper, means any front door (and any future f
 - `login` mints the send scope (`chat.messages.create`) together with the read scopes, so one token serves every path; a token minted without it points at re-running `majordomo login`.
 - An attachment is a local file, uploaded to the resolved space through the API's `media.upload` and referenced in the created message. The space is resolved and sieve-cleared before any upload, so a blocked or absent target is refused before a file leaves the machine. The upload rides the same `chat.messages.create` scope, so an attachment needs no scope the send did not already hold. When a file is attached the message text is optional (Chat carries an attachment-only message), and at least one of text or attachment is required.
 
+## Attachments
+
+`attachments` reports the files posted in a space, a thread, or on one message, and with `--download` saves them into a directory. It works through both front doors and always over the direct Chat API: the mirror carries message text, not files, so there is no cache path to offer.
+
+That is also why the capability sits beside `send` in the core rather than inside the reader seam. The seam exists so the cache and the API answer interchangeably; here they cannot, and a `CacheReader.attachments` could only ever refuse. The sieve is applied in the same function instead, so neither front door reaches a blocked space.
+
+- Naming one message fetches that message alone, rather than paging its whole space. Naming a space or a thread reads the files out of the ordinary paged message read: Chat's message list carries each message's attachment field, so the listing costs no fetch per message.
+- The read scope already covers the download (`chat.messages.readonly` governs both the message list and the media fetch), so an existing token needs no re-consent.
+- `WORLD_AS_OF` bounds this like any read rather than refusing it as it refuses `send`: a file posted after the bound is not reported, and one posted before it is part of the replay.
+- The filename comes from whoever posted the file, so it is untrusted: it is stripped to a bare basename before it joins the destination directory, and a name with nothing left after stripping fails loud rather than being invented, an unmatchable download being worse than a stop.
+- An existing file at the target path is left as it is and named. That also catches the case of two attachments on one message sharing a filename.
+- A Drive-backed attachment carries a Drive reference in place of Chat file data; majordomo holds no Drive scope, so it lists but does not download, and says which file and why.
+
 ## Naming and packaging convention
 
 The distribution name on PyPI and the Debian package name follow the lowercase-hyphen convention (`majordomo`). The import package uses underscores because hyphens are not valid in Python identifiers; for a single word the two are the same.
@@ -128,6 +142,7 @@ Decided:
 - Task activity reported from the BI platform's reconstruction (`coord_tasks`) when present, from majordomo's own message decoder when standalone; the decoder is retained so majordomo runs without that backend.
 - Sieve enforced in the core, never only in a front door.
 - Send reachable through both front doors: one command shape (`send --space|--thread TEXT`), the sieve refusing blocked targets indistinguishably from missing ones, refused entirely under `WORLD_AS_OF`, its scope minted by every `login`.
+- Attachments (listed, and saved with `--download`) reachable through both front doors, always over the direct API because the mirror carries no file rows, and so placed beside `send` in the core rather than in the reader seam, with the sieve applied in the same function. Bounded under `WORLD_AS_OF` as a read rather than refused as `send` is.
 - Reading Google directly is the baseline every install can do, so the Google client libraries are core dependencies and the cache driver is the `bi` install option. The reverse would ship public software whose one usable path was optional.
 - The direct-API module and config table are named `api`; `nocache` names only the read mode.
 - Orchestration kept external.

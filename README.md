@@ -114,6 +114,8 @@ majordomo tasks --to-me --window month
 majordomo tasks --assignee-name '*Alice*' --since 2026-01-01
 majordomo messages --space spaces/AAAA --window 7d
 majordomo messages --thread spaces/AAAA/messages/BBBB
+majordomo attachments --space spaces/AAAA --window 30d       # what files were posted
+majordomo attachments --message spaces/AAAA/messages/BBBB --download ~/Downloads
 majordomo send --space spaces/AAAA "On my way."
 majordomo send --thread spaces/AAAA/messages/BBBB "Done, see the doc."
 majordomo send --to alice@example.com "Lunch?"       # a person's existing 1:1 DM
@@ -121,9 +123,10 @@ majordomo send --space spaces/AAAA "Here it is." --attach ./report.pdf  # repeat
 majordomo mcp                       # run the MCP server (stdio)
 ```
 
-- Source: default cache with an automatic direct-API fallback. `--cache` forces the cache; `--live` adds a freshness top-up from the API; `--nocache` reads the API directly.
+- Source: default cache with an automatic direct-API fallback. `--cache` forces the cache; `--live` adds a freshness top-up from the API; `--nocache` reads the API directly. `attachments` is the exception: files are read over the API always, the cache mirroring message text and not the files themselves.
 - Window: `7d | 30d | month | year | all`, or `--since` / `--until` (ISO dates).
 - Output: default console, `--json`, or `--csv`.
+- `attachments` lists what was posted; add `--download DIR` to save each file into an existing directory under the name it was posted with, and the path written appears in the output. A file already at that name is left alone and named, so a download never clobbers.
 
 ## Replay bounds: `WORLD_AS_OF`
 

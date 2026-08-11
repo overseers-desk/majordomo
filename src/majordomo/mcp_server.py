@@ -46,8 +46,8 @@ def _reader(source: Optional[str]):
         raise RuntimeError(str(exc)) from None
 
 
-def _envelope(reader, rows: list[dict]) -> dict:
-    out = {"source": reader.source, "count": len(rows), "rows": _jsonable(rows)}
+def _envelope(source: str, rows: list[dict]) -> dict:
+    out = {"source": source, "count": len(rows), "rows": _jsonable(rows)}
     bounded = os.environ.get(config.WORLD_AS_OF_ENV)
     if bounded:
         # Auditability: a bounded answer says so, so a benchmark log proves it.
@@ -64,7 +64,7 @@ def create_server() -> FastMCP:
         """List spaces with message and task counts. minimal_messages hides spaces
         with fewer than N messages (0 shows all; cache only). source: cache | live | nocache."""
         _cfg, reader = _reader(source)
-        return _envelope(reader, reader.spaces(minimal_messages=minimal_messages))
+        return _envelope(reader.source, reader.spaces(minimal_messages=minimal_messages))
 
     @server.tool()
     def people(window: str = "year", since: Optional[str] = None, until: Optional[str] = None,
@@ -75,7 +75,7 @@ def create_server() -> FastMCP:
         """
         _cfg, reader = _reader(source)
         start, end = dates.resolve(window, since, until)
-        return _envelope(reader, reader.people(start=start, end=end))
+        return _envelope(reader.source, reader.people(start=start, end=end))
 
     @server.tool()
     def tasks(
@@ -108,7 +108,7 @@ def create_server() -> FastMCP:
             end=end,
             limit=limit,
         )
-        return _envelope(reader, rows)
+        return _envelope(reader.source, rows)
 
     @server.tool()
     def messages(
@@ -123,7 +123,38 @@ def create_server() -> FastMCP:
         """Report messages in a space or thread over a date range. Needs space or thread."""
         _cfg, reader = _reader(source)
         start, end = dates.resolve(window, since, until)
-        return _envelope(reader, reader.messages(space, thread=thread, start=start, end=end, limit=limit))
+        return _envelope(reader.source, reader.messages(space, thread=thread, start=start, end=end, limit=limit))
+
+    @server.tool()
+    def attachments(
+        space: Optional[str] = None,
+        thread: Optional[str] = None,
+        message: Optional[str] = None,
+        window: str = "month",
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        limit: int = readers.reports.ATTACHMENT_LIMIT,
+        download_to: Optional[str] = None,
+    ) -> dict:
+        """List the files posted in a space, a thread, or on one message.
+
+        Exactly one of space/thread/message: thread takes a thread or any
+        message name in it, message takes one message resource name. Set
+        download_to to an existing directory on this host to also save each
+        file there under the name it was posted with; the path written comes
+        back on the row. An existing file of that name is left alone and named.
+        Reads over the Chat API in every case, the cache mirroring message
+        text and not files. The sieve refuses blocked spaces.
+        """
+        cfg = _config()
+        start, end = dates.resolve(window, since, until)
+        try:
+            rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
+                                   message=message, start=start, end=end, limit=limit,
+                                   download_to=download_to)
+        except SystemExit as exc:
+            raise RuntimeError(str(exc)) from None
+        return _envelope("nocache", rows)
 
     @server.tool()
     def send(text: Optional[str] = None, space: Optional[str] = None,

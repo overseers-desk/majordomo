@@ -29,7 +29,7 @@ COMMAND_NAME = "majordomo"
 # not the description.
 COMMAND = """---
 name: majordomo
-description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM (by email).
+description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return. Lists and downloads the files (video, photo, document) someone posted to a space, thread or message. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM (by email).
 allowed-tools: Bash
 ---
 
@@ -67,6 +67,15 @@ majordomo messages --thread spaces/AAAA/messages/BBBB
 ```
 
 Raw messages in one space, or one thread (any message resource name in the thread).
+
+## Attachments
+
+```bash
+majordomo attachments --space spaces/AAAA --window 30d
+majordomo attachments --message spaces/AAAA/messages/BBBB --download ./inbox
+```
+
+The files posted in one space, one thread, or on one message (`--message`, the cheapest scope when you already have the message from a `messages` read). Listing reports the filename, type and sender; `--download <dir>` also writes each file into that existing directory under the name it was posted with, and each row then carries the `path` written. An existing file of that name is kept and named rather than overwritten. Always reads over the Chat API, the cache holding message text and not files, so this needs `majordomo login`; the read scope already covers it. A file held in Drive rather than Chat is listed but not downloaded, and says so.
 
 ## Send
 

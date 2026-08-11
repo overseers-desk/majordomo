@@ -175,6 +175,42 @@ def messages(
     _warn_if_capped(rows, limit)
 
 
+@app.command(epilog=_WORLD_EPILOG)
+def attachments(
+    space: Optional[str] = typer.Option(None, "--space", help="Space resource name (spaces/<id>)."),
+    thread: Optional[str] = typer.Option(None, "--thread", help="A thread (or any message name in it)."),
+    message: Optional[str] = typer.Option(None, "--message", help="One message, by resource name: just its files."),
+    window: str = typer.Option("month", "--window", help=_WINDOW),
+    since: Optional[str] = typer.Option(None, "--since", help="ISO date lower bound (overrides window)."),
+    until: Optional[str] = typer.Option(None, "--until", help="ISO date upper bound."),
+    limit: int = typer.Option(readers.reports.ATTACHMENT_LIMIT, "--limit", help="Maximum rows."),
+    download: Optional[str] = typer.Option(None, "--download", help="Existing directory to save the files into."),
+    json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
+    csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
+) -> None:
+    """List the files posted in a space, a thread, or on one message, and save them.
+
+    Exactly one of --space / --thread / --message. Without --download this
+    only reports what is there; with it, each file is written into that
+    directory under the name it was posted with, and the path appears in the
+    output. An existing file of that name is left alone and named.
+
+    Reads over the Chat API, which needs `majordomo login`: the cache mirrors
+    message text, not files.
+    """
+    if (space, thread, message).count(None) != 2:
+        typer.echo("majordomo: attachments needs exactly one of --space / --thread / --message.", err=True)
+        raise typer.Exit(2)
+    from . import api
+    cfg = config.load_config()
+    start, end = dates.resolve(window, since, until)
+    rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
+                           message=message, start=start, end=end, limit=limit,
+                           download_to=download)
+    emit(rows, models.ATTACHMENT_COLUMNS, "nocache", json_out, csv_out)
+    _warn_if_capped(rows, limit)
+
+
 @app.command()
 def send(
     text: Optional[str] = typer.Argument(None, help="Message text. Optional when --attach is given."),

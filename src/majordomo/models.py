@@ -48,3 +48,13 @@ MESSAGE_COLUMNS: list[Column] = [
     ("Type", "sender_type"),
     ("Text", lambda r: (r.get("text") or "").replace("\n", " ")[:100]),
 ]
+
+# "Saved" carries the path a download wrote, and renders empty on a plain
+# listing, so listing and downloading report in one shape.
+ATTACHMENT_COLUMNS: list[Column] = [
+    ("Time", "create_time"),
+    ("Sender", "sender_name"),
+    ("File", lambda r: r.get("content_name") or ""),
+    ("Type", "content_type"),
+    ("Saved", "path"),
+]

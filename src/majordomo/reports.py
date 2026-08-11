@@ -19,6 +19,9 @@ from . import config, db, sieve
 
 TASK_LIMIT = 1000
 MESSAGE_LIMIT = 2000
+# Attachments are read over the API alone (the mirror keeps no file rows), but
+# every report's row cap has one home, so this one sits with its siblings.
+ATTACHMENT_LIMIT = 500
 # Freshness only polls the API for spaces active within this many days; a space
 # dormant longer has no new messages worth a call (the live top-up's recency cut).
 FRESH_HORIZON_DAYS = 30

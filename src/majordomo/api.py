@@ -1,10 +1,11 @@
-"""Direct Chat API access: OAuth login, the no-cache read path, and send.
-Reads the Chat API directly and decodes tasks itself (decoder.py), so majordomo
-works without the BI backend. Needs the `api` extra (google-api-python-client,
-google-auth). Read records are tagged ``source = "nocache"``; the sieve (spaces
-+ assignees) is applied here too. `login` mints the token. Names come from the
-API and the prose @name (no People API). A no-cache read is windowed and slow
-under Google's read quota, which is why the default path is the BI cache.
+"""Direct Chat API access: OAuth login, the no-cache read path, send, and
+attachments. Reads the Chat API directly and decodes tasks itself (decoder.py),
+so majordomo works without the BI backend. Needs the `api` extra
+(google-api-python-client, google-auth). Read records are tagged
+``source = "nocache"``; the sieve (spaces + assignees) is applied here too.
+`login` mints the token. Names come from the API and the prose @name (no People
+API). A no-cache read is windowed and slow under Google's read quota, which is
+why the default path is the BI cache.
 """
 
 from __future__ import annotations
@@ -44,6 +45,12 @@ def _media_upload():
     from googleapiclient.http import MediaFileUpload
 
     return MediaFileUpload
+
+
+def _media_download():
+    from googleapiclient.http import MediaIoBaseDownload
+
+    return MediaIoBaseDownload
 
 
 def login(cfg: dict) -> str:
@@ -413,3 +420,147 @@ class NocacheReader:
                         row["edited_after_bound"] = True
                 rows.append(row)
         return sieve.filter_rows(self.blocked, rows)[:limit]
+
+
+# --- attachments ---------------------------------------------------------
+#
+# The files posted to a space, listed and fetched. This is a read, but it sits
+# outside the reader seam beside `send` rather than inside it: the seam exists
+# so cache and API answer interchangeably, and the mirror carries no file rows
+# at all, so a CacheReader method here could only ever refuse. Both front doors
+# call this one function, and the sieve is applied in it.
+
+# The one attachment kind Chat serves as bytes. A Drive-backed attachment
+# carries a driveDataRef instead and is fetched through the Drive API, which
+# majordomo holds no scope for.
+UPLOADED = "UPLOADED_CONTENT"
+
+
+def _attachment_rows(msg: dict, space: str, space_display: str | None) -> list[dict]:
+    """One row per file hanging off a message, in the order Chat lists them."""
+    rows = []
+    for att in msg.get("attachment") or []:
+        rows.append({
+            "attachment_name": att.get("name"),
+            "message_name": msg.get("name"),
+            "space_name": space,
+            "space_display": space_display,
+            "sender_name": (msg.get("sender") or {}).get("name"),
+            "create_time": _parse_dt(msg.get("createTime")),
+            "content_name": att.get("contentName"),
+            "content_type": att.get("contentType"),
+            "source": att.get("source"),
+            "resource_name": (att.get("attachmentDataRef") or {}).get("resourceName"),
+        })
+    return rows
+
+
+def _safe_basename(content_name: str | None, attachment_name: str | None) -> str:
+    """The filename to write, stripped to a bare basename.
+
+    Whoever posted the file chose its name, so it is untrusted input: a
+    contentName of "../../x" would otherwise write outside the destination.
+    A name that is empty or all path once stripped fails loud rather than
+    inventing one, because a silently renamed download is a file nobody can
+    match back to the message.
+    """
+    base = os.path.basename((content_name or "").strip())
+    if not base or base in (".", ".."):
+        raise SystemExit(
+            f"majordomo: attachment {attachment_name} has no usable filename "
+            f"({content_name!r}); download it by another means."
+        )
+    return base
+
+
+def _fetch(service, row: dict, dest_dir: str) -> str:
+    """Download one attachment's bytes into dest_dir; return the path written.
+
+    Refuses to overwrite: a file already at the target path is left as it is
+    and named, because clobbering a download the caller may have edited is
+    worse than stopping. This also catches two attachments on one message that
+    share a filename, the second hitting the first one's write.
+    """
+    import io
+
+    if row["source"] != UPLOADED:
+        raise SystemExit(
+            f"majordomo: {row['content_name']} is a {row['source']} attachment, "
+            "held in Drive rather than Chat; majordomo reads Chat only."
+        )
+    path = os.path.join(dest_dir, _safe_basename(row["content_name"], row["attachment_name"]))
+    if os.path.exists(path):
+        raise SystemExit(f"majordomo: {path} already exists; not overwriting.")
+    request = service.media().download_media(resourceName=row["resource_name"])
+    buf = io.BytesIO()
+    downloader = _media_download()(buf, request)
+    done = False
+    while not done:
+        _status, done = downloader.next_chunk()
+    with open(path, "wb") as fh:
+        fh.write(buf.getvalue())
+    return path
+
+
+def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
+                thread: str | None = None, message: str | None = None,
+                start: datetime | None = None, end: datetime | None = None,
+                limit: int = 500, download_to: str | None = None,
+                service=None) -> list[dict]:
+    """The files posted in a space, a thread, or on one message.
+
+    Exactly one of space / thread / message names the scope. Reports one row
+    per file; with ``download_to`` set, also writes each file into that
+    directory and adds the path written under ``path``. The API is the only
+    path, the mirror holding no attachment rows, so this needs `majordomo
+    login`. WORLD_AS_OF bounds it like any read: a file posted after the bound
+    is not reported.
+    """
+    if (space, thread, message).count(None) != 2:
+        raise SystemExit("majordomo: attachments needs exactly one of space / thread / message.")
+    if download_to is not None:
+        download_to = os.path.expanduser(download_to)
+        if not os.path.isdir(download_to):
+            raise SystemExit(f"majordomo: no such directory: {download_to}")
+
+    # Chat suffixes a threaded message's id with ".<n>", so cutting at the dot
+    # leaves the thread key, and its first two segments are the space.
+    scope_space = space or _space_of((thread or message).split(".")[0])
+    if scope_space and not sieve.allows(blocked, scope_space):
+        # Worded as the sieve words every block: indistinguishable from absent.
+        raise SystemExit(f"majordomo: {scope_space}: not found.")
+
+    if service is None:
+        _, _, build = _require_google()
+        service = build("chat", "v1", credentials=get_credentials(cfg), cache_discovery=False)
+
+    bound = config.world_as_of()
+    reader = NocacheReader(blocked=blocked, service=service)
+    rows: list[dict] = []
+    if message:
+        # One message named: a single get, rather than paging its whole space.
+        try:
+            msg = service.spaces().messages().get(name=message).execute()
+        except Exception as exc:
+            if getattr(getattr(exc, "resp", None), "status", None) == 404:
+                raise SystemExit(f"majordomo: {message}: not found.") from None
+            raise
+        created = _parse_dt(msg.get("createTime"))
+        if not (bound is not None and created is not None and created >= bound):
+            rows = _attachment_rows(msg, scope_space, reader._space_display(scope_space))
+    else:
+        # messages.list carries each message's attachment field already, so the
+        # files come out of the same paged read the message report does, with
+        # no per-message fetch. _messages applies the WORLD_AS_OF clamp.
+        key = thread.split(".")[0] if thread else None
+        display = reader._space_display(scope_space)
+        for msg in reader._messages(scope_space, start, end):
+            if key and msg.get("name", "").split(".")[0] != key:
+                continue
+            rows += _attachment_rows(msg, scope_space, display)
+
+    rows = sieve.filter_rows(blocked, rows)[:limit]
+    if download_to is not None:
+        for row in rows:
+            row["path"] = _fetch(service, row, download_to)
+    return rows
