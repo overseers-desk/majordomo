@@ -1,3 +1,19 @@
+majordomo (0.1.8) unstable; urgency=medium
+
+  * Get the files people posted to Chat: `majordomo attachments --space <id>`
+    lists what was posted, and `--download <dir>` saves each file under the
+    name it was posted with. Narrow to one thread with `--thread`, or to a
+    single message with `--message`, which is the cheapest scope when you
+    already have the message from a `messages` read. Available through the
+    CLI and the MCP server. Reading files goes to Chat directly, the cache
+    holding message text and not the files, so this needs `majordomo login`;
+    the token you already have covers it, with no new sign-in. A file
+    already in the target directory under that name is kept, not
+    overwritten. A file held in Drive rather than Chat is listed but not
+    downloaded, and says why.
+
+ -- Weiwu Zhang <a@colourful.land>  Tue, 11 Aug 2026 12:19:58 +1000
+
 majordomo (0.1.7) unstable; urgency=medium
 
   * Attach files to a message: `majordomo send --space <id> "text" --attach
