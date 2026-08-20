@@ -25,3 +25,7 @@ debian/.debhelper/
 debian/debhelper-build-stamp
 debian/majordomo/
 .pybuild/
+
+# Google OAuth client secret and cached token (never commit)
+client_secret.json
+token.json
