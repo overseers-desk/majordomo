@@ -1,6 +1,8 @@
 """Install and keep current the majordomo command for Claude Code.
 
-This installs a Claude Code *command* (``~/.claude/commands/majordomo.md``), not
+This installs a Claude Code *command* (the commands directory of the
+configuration tree the session reads (``CLAUDE_CONFIG_DIR`` when set,
+``~/.claude`` otherwise)), not
 a skill. A user's skills directory is frequently a version-controlled, curated
 collection, so a CLI writing into it would pollute that repository; the commands
 directory is the conventional home for a tool to register itself. The ``COMMAND``
@@ -19,6 +21,7 @@ decides to call.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 COMMAND_NAME = "majordomo"
@@ -97,18 +100,29 @@ When the `WORLD_AS_OF` environment variable is set (ISO-8601 with timezone, a re
 """
 
 
+def claude_dir() -> Path:
+    """Return the Claude Code configuration directory this session reads.
+
+    ``CLAUDE_CONFIG_DIR`` names it when set, ``~/.claude`` otherwise. One
+    machine commonly carries several such directories, and a command written
+    into the wrong one is invisible to the session that needed it.
+    """
+    configured = os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(configured).expanduser() if configured else Path.home() / ".claude"
+
+
 def command_file() -> Path:
-    return Path.home() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
+    return claude_dir() / "commands" / f"{COMMAND_NAME}.md"
 
 
 def skill_dir() -> Path:
     """A skill of the same name, if the user keeps one, supersedes the command."""
-    return Path.home() / ".claude" / "skills" / COMMAND_NAME
+    return claude_dir() / "skills" / COMMAND_NAME
 
 
 def _superseded() -> bool:
     """True when Claude Code is absent, or a same-named skill supersedes the command."""
-    return not (Path.home() / ".claude").exists() or skill_dir().exists()
+    return not claude_dir().exists() or skill_dir().exists()
 
 
 def refresh() -> None:

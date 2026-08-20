@@ -244,7 +244,7 @@ def send(
 
 @app.command("install-claude-command")
 def install_claude_command() -> None:
-    """(Re)write the majordomo command into ~/.claude/commands/majordomo.md.
+    """(Re)write the majordomo command into the Claude Code commands directory.
 
     Every run already keeps that file current silently; this writes it
     explicitly and reports where, for a first install or a forced refresh.
