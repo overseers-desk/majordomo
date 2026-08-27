@@ -1,5 +1,9 @@
 # majordomo
 
+[![Code Quality Checks](https://github.com/overseers-desk/majordomo/actions/workflows/code_checks.yml/badge.svg)](https://github.com/overseers-desk/majordomo/actions/workflows/code_checks.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-green)](LICENSE)
+
 A command-line tool that reads Google Chat, reports task activity, and sends messages. The command line is the primary interface; an MCP server is a secondary interface for AI agents. Both are thin front doors over one shared core.
 
 ## What it does
