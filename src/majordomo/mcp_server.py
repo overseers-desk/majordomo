@@ -1,4 +1,4 @@
-"""majordomo MCP server — the secondary front door (mirrors mailroom's shape).
+"""majordomo MCP server: the secondary front door (mirrors courier's shape).
 
 Exposes the same reports as the CLI, over MCP, by going through the same reader
 seam (`readers.make_reader`). The sieve is applied in the reader, so a tool
