@@ -35,8 +35,13 @@ SPACE_COLUMNS: list[Column] = [
     ("ID", "space_name"),
 ]
 
+# "Person" is the newest spelling seen; "Also" the older ones, so a rename
+# reads as one person, not two.
 PEOPLE_COLUMNS: list[Column] = [
     ("Person", lambda r: r.get("display") or "(no name)"),
+    ("Also", lambda r: " | ".join((r.get("names") or [])[1:])),
+    ("Email", "email"),
+    ("DM", "dm_space"),
     ("Msgs", "msgs"),
     ("Tasks", "tasks"),
     ("User ID", "user_id"),

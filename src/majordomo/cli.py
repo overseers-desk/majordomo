@@ -40,6 +40,15 @@ app = typer.Typer(
 )
 
 _WINDOW = "7d | 30d | month | year | all."
+_PERSON = "A person: users/<id>, an email, or a name."
+_SPACE = "A space: spaces/<id> or its display name."
+# How a name reaches a person, documented once where the flags are discovered.
+_WHO_EPILOG = (
+    "A name matches the spellings majordomo has seen in task assignments and "
+    "@-mentions, whole name first and then as a substring; several matches fail "
+    "naming each with its users/<id>, and old spellings stay after a rename. An "
+    "email resolves over the Chat API (majordomo login). "
+) + _WORLD_EPILOG
 
 
 @app.callback()
@@ -109,29 +118,35 @@ def spaces(
         )
 
 
-@app.command(epilog=_WORLD_EPILOG)
+@app.command(epilog=_WHO_EPILOG)
 def people(
     ctx: typer.Context,
+    person: Optional[str] = typer.Option(None, "--person", help=_PERSON + " Just this one."),
     window: str = typer.Option("year", "--window", help=_WINDOW),
     since: Optional[str] = typer.Option(None, "--since", help="ISO date lower bound (overrides window)."),
     until: Optional[str] = typer.Option(None, "--until", help="ISO date upper bound."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
     csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
-    """List participants (senders and assignees) with message and task counts."""
+    """List participants: every spelling they have been called, email and DM space where known, with message and task counts.
+
+    The names, email and DM space are not windowed; the window bounds the
+    counts only. --person narrows to one person and is the check to make
+    before using a name elsewhere.
+    """
     _cfg, reader = _open(ctx)
     start, end = dates.resolve(window, since, until)
-    emit(reader.people(start=start, end=end), models.PEOPLE_COLUMNS, reader.source, json_out, csv_out)
+    emit(reader.people(person=person, start=start, end=end), models.PEOPLE_COLUMNS, reader.source, json_out, csv_out)
 
 
-@app.command(epilog=_WORLD_EPILOG)
+@app.command(epilog=_WHO_EPILOG)
 def tasks(
     ctx: typer.Context,
     to_me: bool = typer.Option(False, "--to-me", help="Tasks assigned to you."),
     by_me: bool = typer.Option(False, "--by-me", help="Tasks you assigned."),
-    assignee: Optional[str] = typer.Option(None, "--assignee", help="Tasks assigned to this users/<id>."),
+    assignee: Optional[str] = typer.Option(None, "--assignee", help="Tasks assigned to a person. " + _PERSON),
     assignee_name: Optional[str] = typer.Option(None, "--assignee-name", help="Assignee name glob, e.g. '*Alice*'."),
-    space: Optional[str] = typer.Option(None, "--space", help="Limit to this space (spaces/<id>)."),
+    space: Optional[str] = typer.Option(None, "--space", help="Limit to one space. " + _SPACE),
     window: str = typer.Option("month", "--window", help=_WINDOW),
     since: Optional[str] = typer.Option(None, "--since", help="ISO date lower bound (overrides window)."),
     until: Optional[str] = typer.Option(None, "--until", help="ISO date upper bound."),
@@ -156,11 +171,14 @@ def tasks(
     _warn_if_capped(rows, limit)
 
 
-@app.command(epilog=_WORLD_EPILOG)
+@app.command(epilog=_WHO_EPILOG)
 def messages(
     ctx: typer.Context,
-    space: Optional[str] = typer.Option(None, "--space", help="Space resource name (spaces/<id>)."),
+    space: Optional[str] = typer.Option(None, "--space", help=_SPACE),
     thread: Optional[str] = typer.Option(None, "--thread", help="A thread (or any message name in it)."),
+    person: Optional[str] = typer.Option(
+        None, "--person",
+        help=_PERSON + " Alone: your direct messages with them, both sides. With --space: only their messages there."),
     window: str = typer.Option("month", "--window", help=_WINDOW),
     since: Optional[str] = typer.Option(None, "--since", help="ISO date lower bound (overrides window)."),
     until: Optional[str] = typer.Option(None, "--until", help="ISO date upper bound."),
@@ -168,19 +186,25 @@ def messages(
     json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
     csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
-    """Report messages in a space or a thread over a date range."""
+    """Report messages in a space, a thread, or with a person, over a date range.
+
+    Rows are oldest-first; a capped answer keeps the newest.
+    """
     _cfg, reader = _open(ctx)
     start, end = dates.resolve(window, since, until)
-    rows = reader.messages(space, thread=thread, start=start, end=end, limit=limit)
+    rows = reader.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
     emit(rows, models.MESSAGE_COLUMNS, reader.source, json_out, csv_out)
     _warn_if_capped(rows, limit)
 
 
-@app.command(epilog=_WORLD_EPILOG)
+@app.command(epilog=_WHO_EPILOG)
 def attachments(
-    space: Optional[str] = typer.Option(None, "--space", help="Space resource name (spaces/<id>)."),
+    space: Optional[str] = typer.Option(None, "--space", help=_SPACE),
     thread: Optional[str] = typer.Option(None, "--thread", help="A thread (or any message name in it)."),
     message: Optional[str] = typer.Option(None, "--message", help="One message, by resource name: just its files."),
+    person: Optional[str] = typer.Option(
+        None, "--person",
+        help=_PERSON + " Alone: the files in your direct messages with them. With --space: only the files they posted there."),
     window: str = typer.Option("month", "--window", help=_WINDOW),
     since: Optional[str] = typer.Option(None, "--since", help="ISO date lower bound (overrides window)."),
     until: Optional[str] = typer.Option(None, "--until", help="ISO date upper bound."),
@@ -189,35 +213,34 @@ def attachments(
     json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
     csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
-    """List the files posted in a space, a thread, or on one message, and save them.
+    """List the files posted in a space, a thread, on one message, or by a person, and save them.
 
-    Exactly one of --space / --thread / --message. Without --download this
-    only reports what is there; with it, each file is written into that
-    directory under the name it was posted with, and the path appears in the
-    output. An existing file of that name is left alone and named.
+    One of --space / --thread / --message / --person (--person pairs with
+    --space). Rows are oldest-first and a capped answer keeps the newest.
+    Without --download this only reports what is there; with it, each file is
+    written into that directory under the name it was posted with, and the
+    path appears in the output. An existing file of that name is left alone
+    and named.
 
     Reads over the Chat API, which needs `majordomo login`: the cache mirrors
     message text, not files.
     """
-    if (space, thread, message).count(None) != 2:
-        typer.echo("majordomo: attachments needs exactly one of --space / --thread / --message.", err=True)
-        raise typer.Exit(2)
     from . import api
     cfg = config.load_config()
     start, end = dates.resolve(window, since, until)
     rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
-                           message=message, start=start, end=end, limit=limit,
+                           message=message, person=person, start=start, end=end, limit=limit,
                            download_to=download)
     emit(rows, models.ATTACHMENT_COLUMNS, "nocache", json_out, csv_out)
     _warn_if_capped(rows, limit)
 
 
-@app.command()
+@app.command(epilog=_WHO_EPILOG)
 def send(
     text: Optional[str] = typer.Argument(None, help="Message text. Optional when --attach is given."),
-    space: Optional[str] = typer.Option(None, "--space", help="Space resource name (spaces/<id>)."),
+    space: Optional[str] = typer.Option(None, "--space", help=_SPACE),
     thread: Optional[str] = typer.Option(None, "--thread", help="Reply in this thread (or any message name in it)."),
-    to: Optional[str] = typer.Option(None, "--to", help="A person, by email or users/<id>: sends in your 1:1 DM, and says so if you have none with them."),
+    to: Optional[str] = typer.Option(None, "--to", help=_PERSON + " Sends in your 1:1 DM, and says so if you have none with them."),
     attach: Optional[List[str]] = typer.Option(None, "--attach", help="A local file to attach; repeat for several. Message text becomes optional."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON of the created message."),
 ) -> None:
@@ -230,9 +253,6 @@ def send(
 
     Sending needs `majordomo login` first. Refused while WORLD_AS_OF is set.
     """
-    if (space, thread, to).count(None) != 2:
-        typer.echo("majordomo: send needs exactly one of --space / --thread / --to.", err=True)
-        raise typer.Exit(2)
     from . import api
     cfg = config.load_config()
     created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,

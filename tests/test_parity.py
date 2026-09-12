@@ -68,5 +68,24 @@ def test_messages_needs_space_or_thread():
     raise AssertionError("messages with neither space nor thread should exit")
 
 
+
+def test_messages_sender_filter_and_annotations_sql():
+    captured = {}
+
+    def fake(conn, sql, params=()):
+        captured["sql"], captured["params"] = sql, list(params)
+        return []
+
+    orig = db.query
+    db.query = fake
+    try:
+        reports.messages(None, [], space="spaces/X", sender="users/7")
+    finally:
+        db.query = orig
+    assert "m.sender_name = %s" in captured["sql"]
+    assert "users/7" in captured["params"]
+    assert "m.annotations_json" in captured["sql"]
+
+
 if __name__ == "__main__":
     _shim.run(dict(globals()))

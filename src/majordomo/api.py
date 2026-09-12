@@ -14,7 +14,7 @@ import fnmatch
 import os
 from datetime import datetime
 
-from . import config, decoder, sieve
+from . import config, decoder, known, readers, sieve
 
 PEOPLE_LIMIT = 1000
 # The one write scope: creating messages. Nothing else is writable.
@@ -231,8 +231,14 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
             )
         _, _, build = _require_google()
         service = build("chat", "v1", credentials=creds, cache_discovery=False)
+    reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg))
     if to:
-        space = _dm_space(service, blocked, to)
+        space = reader.dm_space_for(to)
+    elif space:
+        space = reader.resolve_space(space)
+        if not sieve.allows(blocked, space):
+            raise SystemExit(f"majordomo: {space}: not found.")
+    reader.known.save()
     # The space is now resolved and sieve-cleared; upload only after that, so a
     # blocked or absent target is refused before any file leaves the machine.
     if attachments:
@@ -275,7 +281,8 @@ def _space_of(thread_key: str) -> str | None:
 class NocacheReader:
     source = "nocache"
 
-    def __init__(self, creds=None, blocked=None, blocked_assignees=None, service=None):
+    def __init__(self, creds=None, blocked=None, blocked_assignees=None, service=None,
+                 kn: known.Known | None = None, me: str | None = None):
         self.blocked = blocked or []
         self.blocked_assignees = blocked_assignees or []
         if service is not None:
@@ -284,10 +291,52 @@ class NocacheReader:
             _, _, build = _require_google()
             self.chat = build("chat", "v1", credentials=creds, cache_discovery=False)
         self._spaces: list[dict] | None = None
+        self.known = kn or known.Known()
+        # The account's own id, so the other party of a DM can be told apart.
+        self.me = me
 
     @classmethod
-    def from_config(cls, cfg: dict, blocked: list[str], blocked_assignees: list[str] | None = None) -> "NocacheReader":
-        return cls(get_credentials(cfg), blocked, blocked_assignees)
+    def from_config(cls, cfg: dict, blocked: list[str], blocked_assignees: list[str] | None = None,
+                    kn: known.Known | None = None) -> "NocacheReader":
+        return cls(get_credentials(cfg), blocked, blocked_assignees, kn=kn, me=config.me_user_id(cfg))
+
+    # --- people and spaces by name ---------------------------------------
+
+    def _counterpart(self, space: str) -> str | None:
+        """The human in a DM who is not the account itself, from its messages."""
+        resp = self.chat.spaces().messages().list(parent=space, pageSize=100).execute()
+        for m in resp.get("messages", []):
+            sender = m.get("sender") or {}
+            if sender.get("type") == "HUMAN" and sender.get("name") and sender.get("name") != self.me:
+                return sender["name"]
+        return None
+
+    def _by_email(self, email: str) -> str | None:
+        space = _dm_space(self.chat, self.blocked, email)
+        user = self._counterpart(space)
+        if user:
+            self.known.remember(user, known.EMAIL, email, None, "api")
+            self.known.remember(user, known.DM_SPACE, space, None, "api")
+        return user
+
+    def resolve_person(self, who: str) -> str:
+        return self.known.resolve_person(who, by_email=self._by_email)
+
+    def resolve_space(self, who: str) -> str:
+        return self.known.resolve_space(who, seed=self.spaces)
+
+    def dm_space_for(self, who: str) -> str:
+        """The direct-message space with a person: an email or id straight
+        through the API's lookup, a name through the file first."""
+        who = who.strip()
+        if not (known.is_id(who) or known.is_email(who)):
+            who = self.resolve_person(who)
+        space = self.known.dm_space_of(who) if known.is_id(who) else None
+        if space is None:
+            space = _dm_space(self.chat, self.blocked, who)
+            if known.is_id(who):
+                self.known.remember(who, known.DM_SPACE, space, None, "api")
+        return space
 
     def _all_spaces(self) -> list[dict]:
         if self._spaces is None:
@@ -336,10 +385,17 @@ class NocacheReader:
         rows = [{"space_name": s.get("name"), "space_display": s.get("displayName"),
                  "space_type": s.get("spaceType"), "messages": None, "tasks": None}
                 for s in found]
+        for r in rows:
+            self.known.remember(r["space_name"], known.NAME, r["space_display"], None, "api")
+        self.known.save()
         return sieve.filter_rows(self.blocked, rows)
 
     def tasks(self, *, to_user=None, by_user=None, assignee=None, assignee_name=None,
               space=None, start=None, end=None, limit=1000) -> list[dict]:
+        if assignee:
+            assignee = self.resolve_person(assignee)
+        if space:
+            space = self.resolve_space(space)
         targets = [space] if space else [s.get("name") for s in self._all_spaces()]
         out: list[dict] = []
         for sp in targets:
@@ -352,6 +408,7 @@ class NocacheReader:
             disp = self._space_display(sp)
             for t in decoded:
                 aid, adisp = t["assignee_user_name"], t["assignee_display"]
+                self.known.remember(aid, known.NAME, adisp, _parse_dt(t["created_at"]), "task")
                 if (to_user and aid != to_user) or (assignee and aid != assignee):
                     continue
                 if assignee_name and not (adisp and fnmatch.fnmatch(adisp, assignee_name)):
@@ -369,14 +426,16 @@ class NocacheReader:
                     "status": "open",
                 })
         out.sort(key=lambda r: r["created_at"] or datetime.min, reverse=True)
+        self.known.save()
         out = sieve.filter_rows(self.blocked, out)
         out = sieve.filter_assignees(self.blocked_assignees, out)
         return out[:limit]
 
-    def people(self, *, start=None, end=None) -> list[dict]:
+    def people(self, *, person=None, start=None, end=None) -> list[dict]:
         by_id: dict[str, dict] = {}
         for s in self._all_spaces():
             for m in self._messages(s.get("name"), start, end):
+                self.known.learn_mentions(m.get("text"), m.get("annotations"), _parse_dt(m.get("createTime")))
                 sender = (m.get("sender") or {}).get("name")
                 if sender:
                     by_id.setdefault(sender, {"user_id": sender, "display": None, "msgs": 0, "tasks": 0})["msgs"] += 1
@@ -387,10 +446,24 @@ class NocacheReader:
                     e["tasks"] += 1
                     if not e["display"]:
                         e["display"] = t["assignee_display"]
+                    self.known.remember(t["assignee_user_name"], known.NAME, t["assignee_display"],
+                                        _parse_dt(t["created_at"]), "task")
         rows = sorted(by_id.values(), key=lambda r: r["msgs"] + r["tasks"], reverse=True)[:PEOPLE_LIMIT]
+        who = self.resolve_person(person) if person else None
+        rows = readers.decorate_people(self.known, rows, who)
+        self.known.save()
         return sieve.filter_assignees(self.blocked_assignees, rows, id_key="user_id", name_key="display")
 
-    def messages(self, space: str | None = None, *, thread=None, start=None, end=None, limit=2000) -> list[dict]:
+    def messages(self, space: str | None = None, *, person=None, thread=None, start=None, end=None,
+                 limit=2000) -> list[dict]:
+        sender = None
+        if space:
+            space = self.resolve_space(space)
+        if person:
+            if space or thread:
+                sender = self.resolve_person(person)
+            else:
+                space = self.dm_space_for(person)
         if thread:
             key = thread.split(".")[0]
             sp = _space_of(key)
@@ -407,6 +480,9 @@ class NocacheReader:
             for m in self._messages(sp, start, end):
                 if thread and m.get("name", "").split(".")[0] != key:
                     continue
+                self.known.learn_mentions(m.get("text"), m.get("annotations"), _parse_dt(m.get("createTime")))
+                if sender and (m.get("sender") or {}).get("name") != sender:
+                    continue
                 row = {"name": m.get("name"), "space_name": sp, "space_display": self._space_display(sp),
                        "sender_name": (m.get("sender") or {}).get("name"),
                        "sender_type": (m.get("sender") or {}).get("type"),
@@ -421,6 +497,7 @@ class NocacheReader:
                 rows.append(row)
         # Chat pages a space oldest-first, so the tail is the recent end: the
         # cap keeps that, matching the cache backend row for row.
+        self.known.save()
         return sieve.filter_rows(self.blocked, rows)[-limit:]
 
 
@@ -506,38 +583,50 @@ def _fetch(service, row: dict, dest_dir: str) -> str:
 
 def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
                 thread: str | None = None, message: str | None = None,
+                person: str | None = None,
                 start: datetime | None = None, end: datetime | None = None,
                 limit: int = 500, download_to: str | None = None,
                 service=None) -> list[dict]:
-    """The files posted in a space, a thread, or on one message.
+    """The files posted in a space, a thread, on one message, or by a person.
 
-    Exactly one of space / thread / message names the scope. Reports one row
+    One of space / thread / message / person names the scope; a person alone
+    means the direct-message space with them, and a person with a space keeps
+    only the files that person posted there. Reports one row
     per file; with ``download_to`` set, also writes each file into that
     directory and adds the path written under ``path``. The API is the only
     path, the mirror holding no attachment rows, so this needs `majordomo
     login`. WORLD_AS_OF bounds it like any read: a file posted after the bound
     is not reported.
     """
-    if (space, thread, message).count(None) != 2:
-        raise SystemExit("majordomo: attachments needs exactly one of space / thread / message.")
+    given = sorted(n for n, v in (("space", space), ("thread", thread), ("message", message), ("person", person)) if v)
+    if not (len(given) == 1 or given == ["person", "space"]):
+        raise SystemExit("majordomo: attachments needs one of space / thread / message / person "
+                         "(a person may also be paired with a space).")
     if download_to is not None:
         download_to = os.path.expanduser(download_to)
         if not os.path.isdir(download_to):
             raise SystemExit(f"majordomo: no such directory: {download_to}")
-
-    # Chat suffixes a threaded message's id with ".<n>", so cutting at the dot
-    # leaves the thread key, and its first two segments are the space.
-    scope_space = space or _space_of((thread or message).split(".")[0])
-    if scope_space and not sieve.allows(blocked, scope_space):
-        # Worded as the sieve words every block: indistinguishable from absent.
-        raise SystemExit(f"majordomo: {scope_space}: not found.")
 
     if service is None:
         _, _, build = _require_google()
         service = build("chat", "v1", credentials=get_credentials(cfg), cache_discovery=False)
 
     bound = config.world_as_of()
-    reader = NocacheReader(blocked=blocked, service=service)
+    reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg))
+    sender = None
+    if space:
+        space = reader.resolve_space(space)
+    if person:
+        if space:
+            sender = reader.resolve_person(person)
+        else:
+            space = reader.dm_space_for(person)
+    # Chat suffixes a threaded message's id with ".<n>", so cutting at the dot
+    # leaves the thread key, and its first two segments are the space.
+    scope_space = space or _space_of((thread or message).split(".")[0])
+    if scope_space and not sieve.allows(blocked, scope_space):
+        # Worded as the sieve words every block: indistinguishable from absent.
+        raise SystemExit(f"majordomo: {scope_space}: not found.")
     rows: list[dict] = []
     if message:
         # One message named: a single get, rather than paging its whole space.
@@ -559,7 +648,11 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
         for msg in reader._messages(scope_space, start, end):
             if key and msg.get("name", "").split(".")[0] != key:
                 continue
+            reader.known.learn_mentions(msg.get("text"), msg.get("annotations"), _parse_dt(msg.get("createTime")))
+            if sender and (msg.get("sender") or {}).get("name") != sender:
+                continue
             rows += _attachment_rows(msg, scope_space, display)
+    reader.known.save()
 
     # The newest files are the ones a capped listing is asked for, and the API
     # pages oldest-first, so the cap takes the tail.

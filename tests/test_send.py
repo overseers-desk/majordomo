@@ -261,3 +261,27 @@ def test_attachment_to_dm_uploads_into_the_resolved_space(tmp_path, monkeypatch)
     _, up = chat.media().upload.call_args
     assert up["parent"] == "spaces/DM1"
     assert _create_kwargs(chat)["parent"] == "spaces/DM1"
+
+
+def test_to_accepts_a_known_name(tmp_path, monkeypatch):
+    from majordomo import known
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    kn = known.Known(tmp_path / "majordomo" / "known.tsv")
+    kn.remember("users/123", known.NAME, "Alice Smith", None, "mention")
+    kn.save()
+    chat = _chat_with_dm({"users/123": "spaces/DM2"})
+    api.send({}, [], to="alice", text="hi", service=chat)
+    assert _create_kwargs(chat)["parent"] == "spaces/DM2"
+
+
+def test_to_unknown_name_is_refused():
+    with pytest.raises(SystemExit, match="no one seen as"):
+        api.send({}, [], to="Nobody Known", text="hi", service=_chat_with_dm({}))
+
+
+def test_space_by_display_name_sends_there(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    chat = _chat({"name": "spaces/OK/messages/NEW"})
+    chat.spaces().list.return_value.execute.return_value = {"spaces": [{"name": "spaces/OK", "displayName": "Ops Room"}]}
+    api.send({}, [], space="ops room", text="hi", service=chat)
+    assert _create_kwargs(chat)["parent"] == "spaces/OK"
