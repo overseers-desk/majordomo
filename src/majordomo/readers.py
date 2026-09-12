@@ -219,22 +219,21 @@ class FreshReader:
             )
         return live
 
-    def tasks(self, *, to_user=None, by_user=None, assignee=None, assignee_name=None,
+    def tasks(self, *, to_user=None, by_user=None, assignee=None,
               space=None, start=None, end=None, limit=reports.TASK_LIMIT) -> list[dict]:
         if assignee:
             assignee = self.cache.resolve_person(assignee)
         if space:
             space = self.cache.resolve_space(space)
         base = self.cache.tasks(to_user=to_user, by_user=by_user, assignee=assignee,
-                                assignee_name=assignee_name, space=space, start=start, end=end, limit=limit)
+                                space=space, start=start, end=end, limit=limit)
         targets = self._bounded_targets(self._targets(space))
         if not targets:
             return base
         nc = self._nocache()
         fresh: list[dict] = []
         for sp, wm in targets:
-            fresh += nc.tasks(to_user=to_user, by_user=by_user, assignee=assignee,
-                              assignee_name=assignee_name, space=sp,
+            fresh += nc.tasks(to_user=to_user, by_user=by_user, assignee=assignee, space=sp,
                               start=self._api_start(wm, start), end=end, limit=limit)
         return self._merge(base, fresh, key="source_message_name", time_key="created_at", reverse=True, limit=limit)
 

@@ -1,7 +1,7 @@
 """The core cache reports. The space sieve is applied in every one — a `NOT IN`
 clause plus a post-filter — so a blocked space cannot reach a caller. SQL shapes
-mirror the BI project's coord reader. (Assignee blocking and the assignee-name
-glob's defence-in-depth live in the reader layer.)
+mirror the BI project's coord reader. (Assignee blocking lives in the reader
+layer.)
 
 WORLD_AS_OF (WORLD_AS_OF.design.md) is enforced here, inside the backend, not
 at the front door: every dated read already carries an end-exclusive upper
@@ -84,12 +84,6 @@ def _floor_check(conn, *, space: str | None = None) -> None:
         )
 
 
-def _glob_to_like(pattern: str) -> str:
-    """fnmatch-style glob -> SQL LIKE (with ESCAPE '\\'). Supports * and ?."""
-    out = pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return out.replace("*", "%").replace("?", "_")
-
-
 def spaces(conn, blocked: list[str], *, minimal_messages: int = 1) -> list[dict]:
     """Spaces with at least `minimal_messages` mirrored messages (default 1, so
     Google's auto-created empty meeting groups drop out; 0 shows them).
@@ -165,7 +159,6 @@ def tasks(
     to_user: str | None = None,
     by_user: str | None = None,
     assignee: str | None = None,
-    assignee_name: str | None = None,
     space: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
@@ -184,10 +177,6 @@ def tasks(
         if val:
             where.append(f"{col} = %s")
             params.append(val)
-    if assignee_name:
-        # Backslash is MySQL's default LIKE escape, so _glob_to_like's \% \_ work.
-        where.append("COALESCE(u.display_name, t.assignee_display) LIKE %s")
-        params.append(_glob_to_like(assignee_name))
     if start:
         where.append("t.created_at >= %s")
         params.append(start)

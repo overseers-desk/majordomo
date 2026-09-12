@@ -1,4 +1,4 @@
-"""Parity features: glob->LIKE, assignee blocking, CSV output, thread filter."""
+"""Parity features: assignee blocking, CSV output, thread and sender filters."""
 
 import _shim  # noqa: F401
 
@@ -6,12 +6,6 @@ import io
 import sys
 
 from majordomo import db, models, output, reports, sieve
-
-
-def test_glob_to_like():
-    assert reports._glob_to_like("*Alice*") == "%Alice%"
-    assert reports._glob_to_like("a?c") == "a_c"
-    assert reports._glob_to_like("100%_x") == "100\\%\\_x"
 
 
 def test_filter_assignees_by_id_or_name():
