@@ -106,5 +106,85 @@ def test_make_reader_auto_falls_back_to_nocache_when_db_down():
         db.connect, api.NocacheReader.from_config = orig_connect, orig_from
 
 
+
+# --- people and spaces by name, through known.py ---------------------------
+
+def _chat_with_dm(user_to_space):
+    import types
+    chat = _fake_chat(SPACES, MSGS)
+
+    def find_dm(name=None):
+        page = MagicMock()
+        if name in user_to_space:
+            page.execute.return_value = {"name": user_to_space[name], "spaceType": "DIRECT_MESSAGE"}
+        else:
+            err = Exception("404")
+            err.resp = types.SimpleNamespace(status=404)
+            page.execute.side_effect = err
+        return page
+
+    chat.spaces().findDirectMessage.side_effect = find_dm
+    return chat
+
+
+def test_a_read_learns_names_and_a_name_then_resolves(tmp_path):
+    from majordomo import known
+    kn = known.Known(tmp_path / "known.tsv")
+    r = api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=[], kn=kn)
+    r.tasks()
+    assert kn.names_of("users/1") == ["Alice"]
+    assert r.resolve_person("alice") == "users/1"
+    assert (tmp_path / "known.tsv").exists()
+
+
+def test_space_by_display_name(tmp_path):
+    from majordomo import known
+    kn = known.Known(tmp_path / "known.tsv")
+    r = api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"], kn=kn)
+    assert r.resolve_space("work") == "spaces/OK"
+    try:
+        r.resolve_space("Private")  # blocked spaces are never listed, so never named
+    except SystemExit as exc:
+        assert "no space named" in str(exc)
+    else:
+        raise AssertionError("a blocked space must not resolve by name")
+
+
+def test_person_alone_reads_the_dm(tmp_path):
+    from majordomo import known
+    kn = known.Known(tmp_path / "known.tsv")
+    msgs = dict(MSGS, **{"spaces/DM9": [
+        {"name": "spaces/DM9/messages/D.1", "createTime": "2026-06-02T08:00:00Z", "text": "hi",
+         "sender": {"name": "users/9", "type": "HUMAN"}}]})
+    chat = _chat_with_dm({"users/9": "spaces/DM9"})
+    chat.spaces().messages().list.side_effect = lambda parent=None, **kw: _page(msgs.get(parent, []))
+    r = api.NocacheReader(service=chat, blocked=[], kn=kn, me="users/me")
+    rows = r.messages(person="users/9")
+    assert [x["name"] for x in rows] == ["spaces/DM9/messages/D.1"]
+    assert kn.dm_space_of("users/9") == "spaces/DM9"
+    assert r.messages(space="spaces/OK", person="users/9") and all(
+        x["sender_name"] == "users/9" for x in r.messages(space="spaces/OK", person="users/9"))
+
+
+def test_email_resolves_through_the_dm(tmp_path):
+    from majordomo import known
+    kn = known.Known(tmp_path / "known.tsv")
+    msgs = {"spaces/DM9": [
+        {"name": "spaces/DM9/messages/D.1", "createTime": "2026-06-02T08:00:00Z", "text": "hi",
+         "sender": {"name": "users/9", "type": "HUMAN"}}]}
+    chat = _chat_with_dm({"users/nine@example.com": "spaces/DM9"})
+    chat.spaces().messages().list.side_effect = lambda parent=None, **kw: _page(msgs.get(parent, []))
+    r = api.NocacheReader(service=chat, blocked=[], kn=kn, me="users/me")
+    assert r.resolve_person("nine@example.com") == "users/9"
+    assert kn.email_of("users/9") == "nine@example.com"
+    assert r.resolve_person("nine@example.com") == "users/9"  # second time from the file
+
+
+def _page(messages):
+    page = MagicMock()
+    page.execute.return_value = {"messages": messages}
+    return page
+
+
 if __name__ == "__main__":
     _shim.run(dict(globals()))

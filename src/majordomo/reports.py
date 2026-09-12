@@ -223,12 +223,16 @@ def messages(
     *,
     space: str | None = None,
     thread: str | None = None,
+    sender: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
     limit: int = MESSAGE_LIMIT,
 ) -> list[dict]:
+    """Messages in a space or a thread, oldest-first, optionally only those a
+    given ``users/<id>`` sent. Each row carries the mirror's ``annotations_json``
+    so the reader can learn the @-mention spellings it holds."""
     if not space and not thread:
-        raise SystemExit("majordomo: messages needs --space or --thread.")
+        raise SystemExit("majordomo: messages needs --space, --thread, or --person.")
     if space and not sieve.allows(blocked, space):
         return []
     end = config.world_clamp(end)
@@ -241,6 +245,9 @@ def messages(
     if space:
         where.append("m.space_name = %s")
         params.append(space)
+    if sender:
+        where.append("m.sender_name = %s")
+        params.append(sender)
     if start:
         where.append("m.create_time >= %s")
         params.append(start)
@@ -258,7 +265,8 @@ def messages(
         f"""
         SELECT * FROM (
             SELECT m.name, m.space_name, s.display_name AS space_display,
-                   m.sender_name, m.sender_type, m.create_time, m.text
+                   m.sender_name, m.sender_type, m.create_time, m.text,
+                   m.annotations_json
               FROM googlechat_messages m
               LEFT JOIN googlechat_spaces s ON s.name = m.space_name
              WHERE {" AND ".join(where)}
@@ -270,3 +278,61 @@ def messages(
         params + [limit],
     )
     return sieve.filter_rows(blocked, rows)
+
+
+# --- what the mirror knows about people: seeds for known.py -----------------
+
+def mention_rows(conn, blocked: list[str]) -> list[dict]:
+    """Every message carrying a user mention: text, annotations and time, for
+    the reader to turn into (id, spelling, date) facts. One pass over the
+    mention-bearing rows, which the sieve bounds like every read."""
+    clause, params = sieve.clause(blocked, "space_name")
+    return db.query(
+        conn,
+        f"""
+        SELECT text, annotations_json, create_time
+          FROM googlechat_messages
+         WHERE annotations_json LIKE '%%USER_MENTION%%' AND {clause}
+        """,
+        params,
+    )
+
+
+def task_names(conn, blocked: list[str]) -> list[dict]:
+    """Each (assignee id, prose @name) a task creation froze, with the first
+    and last time it was used."""
+    clause, params = sieve.clause(blocked, "space_name")
+    return db.query(
+        conn,
+        f"""
+        SELECT assignee_user_name AS user_id, assignee_display AS display,
+               MIN(created_at) AS first_seen, MAX(created_at) AS last_seen
+          FROM coord_tasks
+         WHERE assignee_user_name IS NOT NULL AND assignee_display IS NOT NULL AND {clause}
+         GROUP BY assignee_user_name, assignee_display
+        """,
+        params,
+    )
+
+
+def dm_spaces(conn, blocked: list[str], *, user: str | None = None) -> list[dict]:
+    """Direct-message spaces and who sent messages in each, busiest first.
+    With ``user`` set, only the spaces that person sent messages in: for
+    anyone but the account itself that is their one DM with it."""
+    clause, params = sieve.clause(blocked, "m.space_name")
+    where = [clause, "s.space_type = 'DIRECT_MESSAGE'", "m.sender_name IS NOT NULL"]
+    if user:
+        where.append("m.sender_name = %s")
+        params = params + [user]
+    return db.query(
+        conn,
+        f"""
+        SELECT m.space_name, m.sender_name, m.sender_type, COUNT(*) AS msgs
+          FROM googlechat_messages m
+          JOIN googlechat_spaces s ON s.name = m.space_name
+         WHERE {" AND ".join(where)}
+         GROUP BY m.space_name, m.sender_name, m.sender_type
+         ORDER BY msgs DESC
+        """,
+        params,
+    )

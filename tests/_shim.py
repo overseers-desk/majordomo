@@ -4,8 +4,11 @@ standalone runner so a test file works under both ``pytest`` and ``python3``.
 
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+# A test run learns into a throwaway state directory, never the user's own.
+os.environ.setdefault("XDG_STATE_HOME", tempfile.mkdtemp(prefix="majordomo-test-"))
 
 
 def run(namespace: dict) -> None:

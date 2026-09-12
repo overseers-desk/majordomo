@@ -245,3 +245,56 @@ def test_download_is_not_refused_under_a_bound(tmp_path, monkeypatch):
     rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
     assert (tmp_path / "clip.mp4").read_bytes() == b"OLD"
     assert rows[0]["path"] == str(tmp_path / "clip.mp4")
+
+
+# --- by person -------------------------------------------------------------
+
+def _with_dm(chat, user_to_space):
+    def find_dm(name=None):
+        page = MagicMock()
+        if name in user_to_space:
+            page.execute.return_value = {"name": user_to_space[name], "spaceType": "DIRECT_MESSAGE"}
+        else:
+            err = Exception("404")
+            err.resp = types.SimpleNamespace(status=404)
+            page.execute.side_effect = err
+        return page
+    chat.spaces().findDirectMessage.side_effect = find_dm
+    return chat
+
+
+def _known(tmp_path):
+    from majordomo import known
+    return known.Known(tmp_path / "known.tsv")
+
+
+def test_person_alone_lists_the_dm_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    listed = [_msg(_att("a.png", content_type="image/png"), name="spaces/DM1/messages/M.1"),
+              dict(_msg(_att("b.png", content_type="image/png"), name="spaces/DM1/messages/M.2"),
+                   sender={"name": "users/me", "type": "HUMAN"})]
+    chat = _with_dm(_chat(listed=listed), {"users/sam": "spaces/DM1"})
+    rows = api.attachments({}, [], person="users/sam", service=chat)
+    assert [r["content_name"] for r in rows] == ["a.png", "b.png"]  # both sides of the DM
+    assert all(r["space_name"] == "spaces/DM1" for r in rows)
+
+
+def test_person_with_space_keeps_their_files_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    listed = [_msg(_att("a.png")), dict(_msg(_att("b.png"), name="spaces/OK/messages/T.2"),
+                                        sender={"name": "users/other", "type": "HUMAN"})]
+    rows = api.attachments({}, [], space="spaces/OK", person="users/sam", service=_chat(listed=listed))
+    assert [r["content_name"] for r in rows] == ["a.png"]
+
+
+def test_space_by_display_name(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    rows = api.attachments({}, [], space="marketing", service=_chat(listed=[_msg(_att())]))
+    assert rows and rows[0]["space_name"] == SPACE
+
+
+def test_person_pairs_only_with_space():
+    with pytest.raises(SystemExit):
+        api.attachments({}, [], person="users/sam", thread="spaces/OK/messages/T", service=_chat())
+    with pytest.raises(SystemExit):
+        api.attachments({}, [], service=_chat())

@@ -67,15 +67,21 @@ def create_server() -> FastMCP:
         return _envelope(reader.source, reader.spaces(minimal_messages=minimal_messages))
 
     @server.tool()
-    def people(window: str = "year", since: Optional[str] = None, until: Optional[str] = None,
-               source: Optional[str] = None) -> dict:
-        """List participants (senders and assignees) with message and task counts.
-
-        window is one of 7d, 30d, month, year, all; since/until are ISO dates.
+    def people(person: Optional[str] = None, window: str = "year", since: Optional[str] = None,
+               until: Optional[str] = None, source: Optional[str] = None) -> dict:
+        """List participants: every spelling each has been called, email and DM
+        space where known, with message and task counts. person (users/<id>,
+        an email, or a name) narrows to one; the names, email and DM space are
+        not windowed, only the counts are. window is one of 7d, 30d, month,
+        year, all; since/until are ISO dates.
         """
         _cfg, reader = _reader(source)
         start, end = dates.resolve(window, since, until)
-        return _envelope(reader.source, reader.people(start=start, end=end))
+        try:
+            rows = reader.people(person=person, start=start, end=end)
+        except SystemExit as exc:
+            raise RuntimeError(str(exc)) from None
+        return _envelope(reader.source, rows)
 
     @server.tool()
     def tasks(
@@ -92,54 +98,75 @@ def create_server() -> FastMCP:
     ) -> dict:
         """Report tasks by assignee/space/date. to_me/by_me need [me].user_id.
 
+        assignee is a person: users/<id>, an email, or a name (a name matches
+        the spellings seen in tasks and @-mentions, whole then substring, and
+        must match one person). space is spaces/<id> or its display name.
         assignee_name is a glob over the prose @name; window is one of 7d, 30d,
         month, year, all; since/until are ISO dates. source: cache | live | nocache.
         """
         cfg, reader = _reader(source)
         me = config.require_user_id(cfg) if (to_me or by_me) else None
         start, end = dates.resolve(window, since, until)
-        rows = reader.tasks(
-            to_user=me if to_me else None,
-            by_user=me if by_me else None,
-            assignee=assignee,
-            assignee_name=assignee_name,
-            space=space,
-            start=start,
-            end=end,
-            limit=limit,
-        )
+        try:
+            rows = reader.tasks(
+                to_user=me if to_me else None,
+                by_user=me if by_me else None,
+                assignee=assignee,
+                assignee_name=assignee_name,
+                space=space,
+                start=start,
+                end=end,
+                limit=limit,
+            )
+        except SystemExit as exc:
+            raise RuntimeError(str(exc)) from None
         return _envelope(reader.source, rows)
 
     @server.tool()
     def messages(
         space: Optional[str] = None,
         thread: Optional[str] = None,
+        person: Optional[str] = None,
         window: str = "month",
         since: Optional[str] = None,
         until: Optional[str] = None,
         limit: int = readers.reports.MESSAGE_LIMIT,
         source: Optional[str] = None,
     ) -> dict:
-        """Report messages in a space or thread over a date range. Needs space or thread."""
+        """Report messages in a space, a thread, or with a person, over a date
+        range. person is users/<id>, an email, or a name: alone it reads your
+        direct messages with them, both sides; with space it keeps only their
+        messages there. space is spaces/<id> or its display name. Rows are
+        oldest-first and a capped answer keeps the newest.
+        """
         _cfg, reader = _reader(source)
         start, end = dates.resolve(window, since, until)
-        return _envelope(reader.source, reader.messages(space, thread=thread, start=start, end=end, limit=limit))
+        try:
+            rows = reader.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
+        except SystemExit as exc:
+            raise RuntimeError(str(exc)) from None
+        return _envelope(reader.source, rows)
 
     @server.tool()
     def attachments(
         space: Optional[str] = None,
         thread: Optional[str] = None,
         message: Optional[str] = None,
+        person: Optional[str] = None,
         window: str = "month",
         since: Optional[str] = None,
         until: Optional[str] = None,
         limit: int = readers.reports.ATTACHMENT_LIMIT,
         download_to: Optional[str] = None,
     ) -> dict:
-        """List the files posted in a space, a thread, or on one message.
+        """List the files posted in a space, a thread, on one message, or by a person.
 
-        Exactly one of space/thread/message: thread takes a thread or any
-        message name in it, message takes one message resource name. Set
+        One of space/thread/message/person: thread takes a thread or any
+        message name in it, message takes one message resource name, person
+        (users/<id>, an email, or a name) alone means the files in your
+        direct messages with them and with space only the files they posted
+        there. space is spaces/<id> or its display name. Rows are oldest-first
+        and a capped answer keeps the newest. Set
         download_to to an existing directory on this host to also save each
         file there under the name it was posted with; the path written comes
         back on the row. An existing file of that name is left alone and named.
@@ -150,7 +177,7 @@ def create_server() -> FastMCP:
         start, end = dates.resolve(window, since, until)
         try:
             rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
-                                   message=message, start=start, end=end, limit=limit,
+                                   message=message, person=person, start=start, end=end, limit=limit,
                                    download_to=download_to)
         except SystemExit as exc:
             raise RuntimeError(str(exc)) from None
@@ -162,7 +189,8 @@ def create_server() -> FastMCP:
              attachments: Optional[List[str]] = None) -> dict:
         """Send a message to a space, a thread, or a person's existing 1:1 DM.
         Exactly one of space/thread/to: thread takes a thread or any message
-        name in it; to takes an email or users/<id>. attachments is a list of
+        name in it; to takes a person (users/<id>, an email, or a name); space
+        takes spaces/<id> or a display name. attachments is a list of
         local file paths on this host, uploaded as file attachments; text is
         optional when at least one attachment is given. The sieve refuses
         blocked spaces; a set WORLD_AS_OF refuses the send outright, a bounded
