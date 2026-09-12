@@ -114,11 +114,14 @@ majordomo login
 ```bash
 majordomo spaces
 majordomo people --window year
+majordomo people --person Alice       # one person: every spelling, email, DM space
 majordomo tasks --to-me --window month
-majordomo tasks --assignee-name '*Alice*' --since 2026-01-01
-majordomo messages --space spaces/AAAA --window 7d
+majordomo tasks --assignee Alice --since 2026-01-01
+majordomo messages --space "Back Office" --window 7d
+majordomo messages --person Alice --window 7d        # your DM with Alice, both sides
 majordomo messages --thread spaces/AAAA/messages/BBBB
 majordomo attachments --space spaces/AAAA --window 30d       # what files were posted
+majordomo attachments --person Alice --window all            # the files in your DM
 majordomo attachments --message spaces/AAAA/messages/BBBB --download ~/Downloads
 majordomo send --space spaces/AAAA "On my way."
 majordomo send --thread spaces/AAAA/messages/BBBB "Done, see the doc."
@@ -128,6 +131,7 @@ majordomo mcp                       # run the MCP server (stdio)
 ```
 
 - Source: default cache with an automatic direct-API fallback. `--cache` forces the cache; `--live` adds a freshness top-up from the API; `--nocache` reads the API directly. `attachments` is the exception: files are read over the API always, the cache mirroring message text and not the files themselves.
+- A person (`--person`, `--assignee`, `--to`) is `users/<id>`, an email, or a name majordomo has seen in a task assignment or an @-mention; a name must match one person, and an ambiguous one lists the candidates with their ids. A space (`--space`) is `spaces/<id>` or its display name. What majordomo learns about people and spaces is kept in `known.tsv` under `$XDG_STATE_HOME/majordomo/` (`~/.local/state/majordomo/` when unset).
 - Window: `7d | 30d | month | year | all`, or `--since` / `--until` (ISO dates).
 - Output: default console, `--json`, or `--csv`.
 - `attachments` lists what was posted; add `--download DIR` to save each file into an existing directory under the name it was posted with, and the path written appears in the output. A file already at that name is left alone and named, so a download never clobbers.

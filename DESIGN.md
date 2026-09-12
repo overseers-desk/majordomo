@@ -32,7 +32,7 @@ All capabilities are reachable through both front doors:
 - Report tasks by assignee, by space, and by date range.
 - Send a message into a space, or a reply into a thread, as the authenticated account, with optional file attachments.
 - List the files posted in a space, a thread, or on one message, and save them to disk.
-- Resolve user identifiers to display names via the People API, so reports name people rather than opaque IDs.
+- Name people and spaces: take a person as an id, an email or a name, a space as an id or a display name, and report people by the names they have been called, without the People API (see "Naming people and spaces").
 - Apply the sieve, dropping blocked spaces from every output path.
 - Address several Google accounts by identity, without swapping configuration files.
 - Emit JSON for scripting alongside human-readable output.
@@ -67,9 +67,21 @@ This replaces the present `config/client_secret.json` and `config/token.json` pa
 
 Authentication is per-account OAuth: each account signs in through Google's browser consent flow and majordomo acts as that user. It uses neither a service account nor domain-wide delegation. A service account is a non-human identity that cannot read a given user's Chat on its own, and delegation reaches only accounts inside a Google Workspace domain that an administrator has enabled, excluding consumer Gmail. Per-account consent works for any account that can grant it, at the cost of one login per user.
 
+### The state file
+
+A third file kind sits apart from both: what the program learns and keeps between runs, under the XDG state directory (`$XDG_STATE_HOME/majordomo/`, `~/.local/state/majordomo/` when unset, on Linux and macOS alike). It is neither hand-edited nor a credential, and it is not a cache: an email-to-id binding comes from an email typed once, and a name learnt on the direct-API path comes only from what an earlier read carried, so deleting the file changes what resolves. One TSV, `known.tsv`, one fact per row: a subject (`users/<id>` or `spaces/<id>`), a kind (`name`, `email`, `dm_space`), the value, when it was first and last seen, and the source. Under `WORLD_AS_OF` it is read and never written, and a spelling first seen after the bound is invisible.
+
 ### Multi-account by identity
 
 Credentials are keyed by identity, so several Google accounts can be addressed by name from any front door rather than by swapping files. The shape is a `[identity.NAME]` table mapping a name to its credentials, which scales to as many accounts as a person uses.
+
+## Naming people and spaces
+
+A message names its sender by `users/<id>` and nothing else, in the mirror and from the Chat API alike; the user table carries no display name or email, and membership is not mirrored. A person's name exists only as frozen prose: the `@name` of a task creation and the text at the offset of every `USER_MENTION` annotation. Both are exact at the moment they were written, which is what keeps `people` free of the rewind gap that a current-state display name would open under `WORLD_AS_OF`, and spellings drift over time (a suffix added, a Cyrillic letter in place of a Latin one), so a person is a set of dated spellings, not one name.
+
+Every command that takes a person (`--person`, `--assignee`, `--to`) accepts `users/<id>`, an email, or a name; every command that takes a space accepts `spaces/<id>` or its display name. Resolution runs inside the core, in the reader or in the send and attachments functions, so both front doors pass the string through and neither can bypass the sieve on the resolved space. A name is matched case-insensitively against every spelling seen, whole name first and then as a substring, and must match one person: several fail naming each with its id, none fails saying so. An email resolves through the API's find-direct-message call, the id then being the other human in that DM. `--person` alone on `messages` and `attachments` means the direct-message space with that person, both sides; with `--space` it keeps only that person's rows.
+
+Every read teaches the state file what it surfaced: the mentions in each message it returned, the assignee of each task, each space's display name, and each DM it resolved. Nothing is entered by hand; a person renamed in Chat is picked up from the next mention carrying the new spelling, and the old spellings stay. On the cache path the same facts are derivable from the mirror in one pass, which is how a name the file has never seen is first found; on the direct-API path the file is the only memory.
 
 ## The sieve
 
@@ -79,7 +91,7 @@ Placing it in the core, not in a wrapper, means any front door (and any future f
 
 ## Sending
 
-`send` posts a message to a space, a reply into a thread, or a message into a person's existing 1:1 DM (`--to`, an email or `users/<id>`, resolved by the API's find-direct-message call), carrying message text, one or more file attachments, or both. It works through both front doors, always over the direct Chat API (a write has no cache path). The write side follows the same discipline as the reads:
+`send` posts a message to a space (`--space`, an id or a display name), a reply into a thread, or a message into a person's existing 1:1 DM (`--to`, a `users/<id>`, an email or a name, resolved by the API's find-direct-message call), carrying message text, one or more file attachments, or both. It works through both front doors, always over the direct Chat API (a write has no cache path). The write side follows the same discipline as the reads:
 
 - The sieve applies to writes: a send into a blocked space is refused with the same wording as a space that does not exist, so a caller cannot probe the block list through send.
 - A set `WORLD_AS_OF` refuses the send outright: a bounded run is a replay, and a send would act in the real present.
@@ -88,7 +100,7 @@ Placing it in the core, not in a wrapper, means any front door (and any future f
 
 ## Attachments
 
-`attachments` reports the files posted in a space, a thread, or on one message, and with `--download` saves them into a directory. It works through both front doors and always over the direct Chat API: the mirror carries message text, not files, so there is no cache path to offer.
+`attachments` reports the files posted in a space, a thread, on one message, or by a person (`--person` alone being the direct-message space with them, and with `--space` only the files they posted there), and with `--download` saves them into a directory. It works through both front doors and always over the direct Chat API: the mirror carries message text, not files, so there is no cache path to offer.
 
 That is also why the capability sits beside `send` in the core rather than inside the reader seam. The seam exists so the cache and the API answer interchangeably; here they cannot, and a `CacheReader.attachments` could only ever refuse. The sieve is applied in the same function instead, so neither front door reaches a blocked space.
 
