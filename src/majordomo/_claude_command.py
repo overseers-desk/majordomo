@@ -32,7 +32,7 @@ COMMAND_NAME = "majordomo"
 # not the description.
 COMMAND = """---
 name: majordomo
-description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return. Lists and downloads the files (video, photo, document) someone posted to a space, thread or message. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM (by email).
+description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return. Reads the messages and files (video, photo, document) in a space, a thread, or a person's DM, naming people by name, email or id and spaces by name. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM.
 allowed-tools: Bash
 ---
 
@@ -42,43 +42,56 @@ majordomo reports Google Chat task activity, and sends messages, over the `major
 
 A read uses the server-side cache by default and falls back to reading the Chat API directly when the cache is unreachable. `--cache` or `--nocache` before the command forces one source; `--nocache` needs a prior `majordomo login`, and `--cache` needs the cache driver (`majordomo[bi]`).
 
+## Naming a person or a space
+
+Wherever a command takes a person (`--person`, `--assignee`, `--to`), the value is one of: `users/<id>`; an email address; or a name. A name is matched, case-insensitively, against every spelling majordomo has seen for anyone in task assignments and @-mentions, whole name first and then as a substring, and it must match exactly one person: a name matching several fails and lists them with their ids, and a name never seen fails and says so. Give the id or the email then. An email resolves through the Chat API and needs `majordomo login`. Old spellings stay after a rename, so a person renamed in Chat still resolves by either name once a mention with the new spelling has been read.
+
+Wherever a command takes a space (`--space`), the value is `spaces/<id>` or the space's display name, matched the same way.
+
+majordomo records what it learns about people and spaces on every read (ids, spellings and when each was seen, emails, DM spaces, space names) in `known.tsv` under `$XDG_STATE_HOME/majordomo/` (`~/.local/state/majordomo/` when unset); no command enters a person by hand.
+
 ## Tasks
 
 ```bash
 majordomo tasks --to-me --window month
 majordomo tasks --by-me --window year
-majordomo tasks --assignee-name '*Alice*' --since 2026-01-01 --json > "$RESULTS"
-majordomo tasks --space spaces/AAAA --until 2026-06-30
+majordomo tasks --assignee Alice --since 2026-01-01 --json > "$RESULTS"
+majordomo tasks --space "Back Office" --until 2026-06-30
 ```
 
-`--to-me` and `--by-me` resolve through `[me].user_id` in the config; `--assignee users/<id>` or `--assignee-name '<glob>'` name someone else. `--space spaces/<id>` limits to one space. Every task reads as `open`: Chat does not reliably carry completion.
+`--to-me` and `--by-me` resolve through `[me].user_id` in the config; `--assignee` names someone else. `--space` limits to one space. Every task reads as `open`: Chat does not reliably carry completion.
 
 ## Spaces and people
 
 ```bash
 majordomo spaces
 majordomo people --window year
+majordomo people --person Alice
 ```
 
-`spaces` lists each space with its message and task counts; it hides spaces under one message by default (Google auto-creates an empty group per meeting), and `--minimal-messages=0` shows all. `people` lists participants (senders and assignees) with message and task counts, and is how you find your own `users/<id>` for the config.
+`spaces` lists each space with its message and task counts; it hides spaces under one message by default (Google auto-creates an empty group per meeting), and `--minimal-messages=0` shows all. `people` lists everyone seen: their `users/<id>`, the newest spelling they have been called and the older ones, their email and the DM space you share with them where known, with message and task counts. The identity columns are not windowed; the window bounds the counts only. `--person WHO` narrows to one person and is the check to make before using a name elsewhere; it is also how you find your own `users/<id>` for the config.
 
 ## Messages
 
 ```bash
 majordomo messages --space spaces/AAAA --window 7d
+majordomo messages --space "Back Office" --person Alice --window 30d
+majordomo messages --person Alice --window 7d
 majordomo messages --thread spaces/AAAA/messages/BBBB
 ```
 
-Raw messages in one space, or one thread (any message resource name in the thread).
+Raw messages in one space, one thread (any message resource name in the thread), or with one person: `--person` alone reads your direct messages with them, both sides; with `--space` it keeps only their messages there. Rows are oldest-first and a capped answer keeps the newest.
 
 ## Attachments
 
 ```bash
 majordomo attachments --space spaces/AAAA --window 30d
+majordomo attachments --person Alice --window all
+majordomo attachments --space "Back Office" --person Alice
 majordomo attachments --message spaces/AAAA/messages/BBBB --download ./inbox
 ```
 
-The files posted in one space, one thread, or on one message (`--message`, the cheapest scope when you already have the message from a `messages` read). Listing reports the filename, type and sender; `--download <dir>` also writes each file into that existing directory under the name it was posted with, and each row then carries the `path` written. An existing file of that name is kept and named rather than overwritten. Always reads over the Chat API, the cache holding message text and not files, so this needs `majordomo login`; the read scope already covers it. A file held in Drive rather than Chat is listed but not downloaded, and says so.
+The files posted in one space, one thread, on one message (`--message`, the cheapest scope when you already have the message from a `messages` read), or by one person (`--person` alone: the files in your direct messages with them, both sides; with `--space`: only the files they posted there). Listing reports the filename, type and sender, oldest-first, and a capped answer keeps the newest; `--download <dir>` also writes each file into that existing directory under the name it was posted with, and each row then carries the `path` written. An existing file of that name is kept and named rather than overwritten. Always reads over the Chat API, the cache holding message text and not files, so this needs `majordomo login`; the read scope already covers it. A file held in Drive rather than Chat is listed but not downloaded, and says so.
 
 ## Send
 
@@ -86,11 +99,12 @@ The files posted in one space, one thread, or on one message (`--message`, the c
 majordomo send --space spaces/AAAA "On my way."
 majordomo send --thread spaces/AAAA/messages/BBBB "Done, see the doc."
 majordomo send --to alice@example.com "Lunch?"
-majordomo send --space spaces/AAAA "Here it is." --attach ./report.pdf --attach ./chart.png
+majordomo send --to Alice "Lunch?"
+majordomo send --space "Back Office" "Here it is." --attach ./report.pdf --attach ./chart.png
 majordomo send --space spaces/AAAA --attach ./report.pdf
 ```
 
-One target: `--space` posts to the space, `--thread` replies in a thread (any message resource name in it works), `--to` reaches a person's existing 1:1 DM by email or `users/<id>` (a person you have never DM'd is refused; majordomo does not open new DMs). `--attach <path>` uploads a local file as an attachment and repeats for several; the message text then becomes optional, so a file can go on its own. Sends as the logged-in account; a token from before send existed lacks the scope, and the error says to re-run `majordomo login` (attachments need no scope beyond that). A blocked space answers "not found". While `WORLD_AS_OF` is set, a send is refused: a bounded run is a replay.
+One target: `--space` posts to the space, `--thread` replies in a thread (any message resource name in it works), `--to` reaches a person's existing 1:1 DM (a person you have never DM'd is refused; majordomo does not open new DMs). `--attach <path>` uploads a local file as an attachment and repeats for several; the message text then becomes optional, so a file can go on its own. Sends as the logged-in account; a token from before send existed lacks the scope, and the error says to re-run `majordomo login` (attachments need no scope beyond that). A blocked space answers "not found". While `WORLD_AS_OF` is set, a send is refused: a bounded run is a replay.
 
 ## Windows, output, source
 
