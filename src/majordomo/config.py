@@ -1,9 +1,14 @@
-"""Load majordomo's two config files from ``~/.config/majordomo/``.
+"""Load majordomo's two config files from ``~/.config/majordomo/``, and name
+the state directory.
 
 - ``config.toml`` — human-edited: ``[me]`` (the configured subject) and
   ``[sieve]`` (blocked spaces).
 - ``.env`` — the MariaDB connection (``MYSQL_*``), copied from the BI project;
   a read-only DB user swaps in later without any code change.
+- ``$XDG_STATE_HOME/majordomo/`` (``~/.local/state/majordomo/`` when unset, on
+  Linux and macOS alike), program-written: what majordomo has learnt about
+  people and spaces between runs (known.py). Not a cache: the facts there are
+  not all re-derivable, so the directory is state.
 """
 
 from __future__ import annotations
@@ -16,6 +21,13 @@ from pathlib import Path
 CONFIG_DIR = Path(os.path.expanduser("~/.config/majordomo"))
 CONFIG_TOML = CONFIG_DIR / "config.toml"
 ENV_FILE = CONFIG_DIR / ".env"
+
+
+def state_dir() -> Path:
+    """The XDG state directory for majordomo, resolved per call so a test or a
+    launcher can point it elsewhere through the environment."""
+    base = os.environ.get("XDG_STATE_HOME") or (Path.home() / ".local" / "state")
+    return Path(base).expanduser() / "majordomo"
 
 # The office-wide replay bound (WORLD_AS_OF.design.md): when set, nothing dated
 # after this instant may leave majordomo. Read from the environment on every
