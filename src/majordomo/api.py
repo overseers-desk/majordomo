@@ -419,7 +419,9 @@ class NocacheReader:
                     if lu is not None and lu > bound:
                         row["edited_after_bound"] = True
                 rows.append(row)
-        return sieve.filter_rows(self.blocked, rows)[:limit]
+        # Chat pages a space oldest-first, so the tail is the recent end: the
+        # cap keeps that, matching the cache backend row for row.
+        return sieve.filter_rows(self.blocked, rows)[-limit:]
 
 
 # --- attachments ---------------------------------------------------------
@@ -559,7 +561,9 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
                 continue
             rows += _attachment_rows(msg, scope_space, display)
 
-    rows = sieve.filter_rows(blocked, rows)[:limit]
+    # The newest files are the ones a capped listing is asked for, and the API
+    # pages oldest-first, so the cap takes the tail.
+    rows = sieve.filter_rows(blocked, rows)[-limit:]
     if download_to is not None:
         for row in rows:
             row["path"] = _fetch(service, row, download_to)
