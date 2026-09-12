@@ -1,100 +1,19 @@
-majordomo (0.1.9) unstable; urgency=medium
+majordomo (0.2.0) unstable; urgency=medium
 
-  * The Claude Code command installs into the configuration directory the
-    session actually reads: $CLAUDE_CONFIG_DIR when it is set, ~/.claude
-    otherwise. A machine with several configuration trees no longer takes
-    the install in one and leaves the others without it.
+  * Select by person: --person on messages and attachments, --assignee on
+    tasks and --to on send take a users/<id>, an email, or a name seen in a
+    task assignment or an @-mention. A name matches whole then substring
+    and fails naming the candidates when several match. --person alone is
+    your direct messages with that person, both sides; with --space, only
+    their rows there.
+  * Select a space by display name wherever --space is taken.
+  * people rows carry every spelling a person has been called, their email
+    and DM space where known, unwindowed; --person narrows to one.
+  * What majordomo learns about people and spaces is kept in known.tsv
+    under $XDG_STATE_HOME/majordomo (~/.local/state/majordomo when unset),
+    written on every read and left untouched under WORLD_AS_OF.
+  * --assignee-name (a glob) retires; --assignee takes a name.
+  * A capped messages or attachments answer keeps the newest rows.
 
- -- Weiwu Zhang <a@colourful.land>  Thu, 20 Aug 2026 22:00:00 +1000
+ -- Weiwu Zhang <a@colourful.land>  Sat, 12 Sep 2026 20:45:36 +1000
 
-majordomo (0.1.8) unstable; urgency=medium
-
-  * Get the files people posted to Chat: `majordomo attachments --space <id>`
-    lists what was posted, and `--download <dir>` saves each file under the
-    name it was posted with. Narrow to one thread with `--thread`, or to a
-    single message with `--message`, which is the cheapest scope when you
-    already have the message from a `messages` read. Available through the
-    CLI and the MCP server. Reading files goes to Chat directly, the cache
-    holding message text and not the files, so this needs `majordomo login`;
-    the token you already have covers it, with no new sign-in. A file
-    already in the target directory under that name is kept, not
-    overwritten. A file held in Drive rather than Chat is listed but not
-    downloaded, and says why.
-
- -- Weiwu Zhang <a@colourful.land>  Tue, 11 Aug 2026 12:19:58 +1000
-
-majordomo (0.1.7) unstable; urgency=medium
-
-  * Attach files to a message: `majordomo send --space <id> "text" --attach
-    ./file.pdf` uploads a local file and posts it with the message. Repeat
-    `--attach` for several files; the message text is optional when a file is
-    attached, so a file can go on its own. Works for space, thread, and DM
-    targets, through the CLI and the MCP server. The upload uses the send
-    scope the token already holds, so no new login is needed.
-
- -- Weiwu Zhang <a@colourful.land>  Tue, 21 Jul 2026 18:12:34 +1000
-
-majordomo (0.1.6) unstable; urgency=medium
-
-  * Send a private message to a person: `majordomo send --to <email> "text"`
-    (or `--to users/<id>`) delivers into your 1:1 Chat DM with them, so
-    reaching someone no longer means hunting for a space id. Available
-    through the CLI and the MCP server. A person you have no DM with is
-    refused by name; majordomo opens no new DMs.
-  * `send --help` states what `--to` does rather than what it presumes.
-
- -- Weiwu Zhang <a@colourful.land>  Mon, 20 Jul 2026 17:45:09 +1000
-
-majordomo (0.1.5) unstable; urgency=medium
-
-  * Add `majordomo send`: post a message to a space, or reply in a thread,
-    through the CLI and the MCP server. The privacy sieve refuses blocked
-    spaces; a set WORLD_AS_OF refuses every send; `login` now also mints
-    the message-create scope (re-run it once before the first send).
-  * Rename the direct-API surface to `api`: the pip extra becomes
-    `majordomo[api]` and the optional config table `[api]`. The
-    `--nocache` read flag keeps its name.
-
- -- Weiwu Zhang <a@colourful.land>  Thu, 16 Jul 2026 16:21:25 +1000
-
-majordomo (0.1.4) unstable; urgency=medium
-
-  * Add `--live` (cache plus active-space top-up) and rename the API-bypass
-    path to `--nocache`.
-  * Publish to PyPI (`pip install majordomo`); the Homebrew formula now tracks
-    the PyPI sdist.
-
- -- Weiwu Zhang <a@colourful.land>  Tue, 30 Jun 2026 22:31:35 +1000
-
-majordomo (0.1.3) unstable; urgency=medium
-
-  * Security: stop Typer dumping locals on crash (the live-login traceback
-    exposed the OAuth client secret and authorization code); guard the login
-    flow with a clean error.
-
- -- Weiwu Zhang <a@colourful.land>  Mon, 29 Jun 2026 14:46:05 +1000
-
-majordomo (0.1.2) unstable; urgency=medium
-
-  * No functional changes since 0.1.1. Republished after verifying the package
-    end to end: it installs from the apt dependencies alone and runs against a
-    live cache.
-
- -- Weiwu Zhang <a@colourful.land>  Mon, 29 Jun 2026 14:20:50 +1000
-
-majordomo (0.1.1) unstable; urgency=medium
-
-  * Register a Claude Code command, kept current on every run
-    (`majordomo install-claude-command` writes ~/.claude/commands/majordomo.md;
-    a same-named skill supersedes it).
-
- -- Weiwu Zhang <a@colourful.land>  Mon, 29 Jun 2026 00:07:58 +1000
-
-majordomo (0.1.0) unstable; urgency=medium
-
-  * Initial release. Read and report Google Chat task activity: tasks by
-    assignee, space, and date; spaces, people, messages, and threads. A cache
-    fast path with a live Chat-API fallback, a privacy sieve, and an optional
-    MCP front door.
-
- -- Weiwu Zhang <a@colourful.land>  Sun, 28 Jun 2026 17:19:15 +1000
