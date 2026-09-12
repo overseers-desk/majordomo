@@ -10,7 +10,6 @@ why the default path is the BI cache.
 
 from __future__ import annotations
 
-import fnmatch
 import os
 from datetime import datetime
 
@@ -390,7 +389,7 @@ class NocacheReader:
         self.known.save()
         return sieve.filter_rows(self.blocked, rows)
 
-    def tasks(self, *, to_user=None, by_user=None, assignee=None, assignee_name=None,
+    def tasks(self, *, to_user=None, by_user=None, assignee=None,
               space=None, start=None, end=None, limit=1000) -> list[dict]:
         if assignee:
             assignee = self.resolve_person(assignee)
@@ -410,8 +409,6 @@ class NocacheReader:
                 aid, adisp = t["assignee_user_name"], t["assignee_display"]
                 self.known.remember(aid, known.NAME, adisp, _parse_dt(t["created_at"]), "task")
                 if (to_user and aid != to_user) or (assignee and aid != assignee):
-                    continue
-                if assignee_name and not (adisp and fnmatch.fnmatch(adisp, assignee_name)):
                     continue
                 if by_user and sender_of.get(t["source_message_name"]) != by_user:
                     continue

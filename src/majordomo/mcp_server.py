@@ -88,7 +88,6 @@ def create_server() -> FastMCP:
         to_me: bool = False,
         by_me: bool = False,
         assignee: Optional[str] = None,
-        assignee_name: Optional[str] = None,
         space: Optional[str] = None,
         window: str = "month",
         since: Optional[str] = None,
@@ -101,8 +100,8 @@ def create_server() -> FastMCP:
         assignee is a person: users/<id>, an email, or a name (a name matches
         the spellings seen in tasks and @-mentions, whole then substring, and
         must match one person). space is spaces/<id> or its display name.
-        assignee_name is a glob over the prose @name; window is one of 7d, 30d,
-        month, year, all; since/until are ISO dates. source: cache | live | nocache.
+        window is one of 7d, 30d, month, year, all; since/until are ISO dates.
+        source: cache | live | nocache.
         """
         cfg, reader = _reader(source)
         me = config.require_user_id(cfg) if (to_me or by_me) else None
@@ -112,7 +111,6 @@ def create_server() -> FastMCP:
                 to_user=me if to_me else None,
                 by_user=me if by_me else None,
                 assignee=assignee,
-                assignee_name=assignee_name,
                 space=space,
                 start=start,
                 end=end,

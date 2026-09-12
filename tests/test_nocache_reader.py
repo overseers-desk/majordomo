@@ -78,10 +78,16 @@ def test_people_broadened_counts_senders_and_assignees():
     assert by["users/1"]["tasks"] == 1 and by["users/1"]["display"] == "Alice"
 
 
-def test_assignee_name_glob_nocache():
+def test_assignee_by_name_nocache():
     r = _reader(["spaces/BLOCK"])
-    assert len(r.tasks(assignee_name="*Ali*")) == 1
-    assert len(r.tasks(assignee_name="*Zzz*")) == 0
+    r.tasks()  # a first read teaches the spellings
+    assert len(r.tasks(assignee="Ali")) == 1
+    try:
+        r.tasks(assignee="Zzz")
+    except SystemExit as exc:
+        assert "no one seen as" in str(exc)
+    else:
+        raise AssertionError("an unseen name must fail")
 
 
 def test_block_assignees_nocache():

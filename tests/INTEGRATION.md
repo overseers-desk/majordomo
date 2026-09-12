@@ -67,7 +67,7 @@ scoped so neither does a global scan:
 
 - `spaces`: default, `--minimal-messages 0`, `--json`, `--csv` (cache/auto).
 - `people`: every window (`7d 30d month year all`), `--since/--until`, `--json`, `--csv` (cache/auto); on `--live` it is cache-backed (identities are stable), so it is exercised once as a fast no-API check.
-- `tasks`: default, `--to-me`, `--by-me`, `--assignee-name`, `--space`, `--window all`, `--limit`, `--json`, `--csv` (cache/auto); on `--live`, `--space` (top-up of one space) and one unscoped `--window 7d` (top-up bounded to the recently-active spaces, never all ~191); on `--nocache`, `--space` (direct, scoped).
+- `tasks`: default, `--to-me`, `--by-me`, `--space`, `--window all`, `--limit`, `--json`, `--csv` (cache/auto); on `--live`, `--space` (top-up of one space) and one unscoped `--window 7d` (top-up bounded to the recently-active spaces, never all ~191); on `--nocache`, `--space` (direct, scoped).
 - `messages`: `--space` (group and DM), `--window all`, `--json`, `--csv`, and `--thread` from a lifted message name, on both `--live` (top-up) and `--nocache` (direct), always scoped to a fixture.
 
 **Daily-DM freshness:** the subject DMs daily, so the newest message in `TEST_DM`

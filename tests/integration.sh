@@ -101,7 +101,7 @@ matrix() {
   run "$tag tasks"                        $MAJORDOMO $SRC tasks
   run "$tag tasks --to-me"                $MAJORDOMO $SRC tasks --to-me
   run "$tag tasks --by-me"                $MAJORDOMO $SRC tasks --by-me
-  run "$tag tasks --assignee-name '*'"    $MAJORDOMO $SRC tasks --assignee-name '*'
+  run "$tag people"                       $MAJORDOMO $SRC people
   run "$tag tasks --space TEST_SPACE"     $MAJORDOMO $SRC tasks --space "$TEST_SPACE"
   run "$tag tasks --window all"           $MAJORDOMO $SRC tasks --window all
   run "$tag tasks --limit 5"              $MAJORDOMO $SRC tasks --limit 5
