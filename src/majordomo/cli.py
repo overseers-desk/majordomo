@@ -67,7 +67,8 @@ def _open(ctx: typer.Context):
 def _warn_if_capped(rows: list, limit: int) -> None:
     if len(rows) >= limit:
         typer.echo(
-            f"majordomo: capped at {limit} row(s); narrow --window/--space or raise --limit.",
+            f"majordomo: capped at {limit} row(s), keeping the newest; "
+            "narrow --window/--space or raise --limit to see older ones.",
             err=True,
         )
 

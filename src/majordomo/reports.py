@@ -250,16 +250,22 @@ def messages(
     sclause, sparams = sieve.clause(blocked, "m.space_name")
     where.append(sclause)
     params.extend(sparams)
+    # The cap takes the newest rows and the report renders them oldest-first:
+    # a truncated answer to "what was said here" wants the recent end, and the
+    # inner DESC is what decides which rows survive.
     rows = db.query(
         conn,
         f"""
-        SELECT m.name, m.space_name, s.display_name AS space_display,
-               m.sender_name, m.sender_type, m.create_time, m.text
-          FROM googlechat_messages m
-          LEFT JOIN googlechat_spaces s ON s.name = m.space_name
-         WHERE {" AND ".join(where)}
-         ORDER BY m.create_time ASC
-         LIMIT %s
+        SELECT * FROM (
+            SELECT m.name, m.space_name, s.display_name AS space_display,
+                   m.sender_name, m.sender_type, m.create_time, m.text
+              FROM googlechat_messages m
+              LEFT JOIN googlechat_spaces s ON s.name = m.space_name
+             WHERE {" AND ".join(where)}
+             ORDER BY m.create_time DESC
+             LIMIT %s
+        ) r
+         ORDER BY r.create_time ASC
         """,
         params + [limit],
     )
