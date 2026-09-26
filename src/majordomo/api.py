@@ -392,9 +392,12 @@ class NocacheReader:
         the caller resolves it through known.py like any other id.
         """
         try:
+            # One read per space: a burst over every space trips the project's
+            # membership_reads quota with 429, which num_retries backs off and
+            # retries (the client's own exponential backoff, up to ~64 s).
             resp = self.chat.spaces().members().list(
                 parent=space, filter='role = "ROLE_MANAGER"', pageSize=1
-            ).execute()
+            ).execute(num_retries=6)
         except Exception as exc:
             if getattr(getattr(exc, "resp", None), "status", None) == 403:
                 raise SystemExit(
@@ -431,14 +434,17 @@ class NocacheReader:
             })
         for r in rows:
             self.known.remember(r["space_name"], known.NAME, r["space_display"], None, "api")
+        rows = sieve.filter_rows(self.blocked, rows)
         if owner:
             for r in rows:
-                uid = self._owner_of(r["space_name"])
+                # A direct message has no Owner role, so it costs no lookup.
+                uid = (None if r["space_type"] == "DIRECT_MESSAGE"
+                       else self._owner_of(r["space_name"]))
                 r["owner_user_id"] = uid
                 names = self.known.names_of(uid) if uid else []
                 r["owner_display"] = names[0] if names else None
         self.known.save()
-        return sieve.filter_rows(self.blocked, rows)
+        return rows
 
     def tasks(self, *, to_user=None, by_user=None, assignee=None,
               space=None, start=None, end=None, limit=1000) -> list[dict]:
