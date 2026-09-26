@@ -113,18 +113,17 @@ def spaces(
     """List spaces with their message and task counts.
 
     Domain (a Google Workspace domain space, versus a consumer/personal one)
-    and, with --owner, who owns it are read straight from the Chat API, so
-    they populate only on --nocache/--live-with-nocache reads; the cache
-    mirror carries neither and those columns render blank on a plain --cache
-    read. --owner always reads the API directly, one membership lookup per
-    space, regardless of the source flags.
+    is read straight from the Chat API, so it populates only on --nocache
+    (--live still serves spaces from the cache, and --cache never leaves it);
+    the mirror carries neither it nor an Owner, so both columns render blank
+    on --cache/--live. --owner always reads the API directly, one membership
+    lookup per space, regardless of the source flags.
     """
     if owner:
         from . import api
         cfg = config.load_config()
-        reader = api.NocacheReader.from_config(cfg, config.block_spaces(cfg))
-        rows = reader.spaces(minimal_messages=minimal_messages, owner=True)
-        source = reader.source
+        rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
+        source = "nocache"
     else:
         _cfg, reader = _open(ctx)
         rows = reader.spaces(minimal_messages=minimal_messages)

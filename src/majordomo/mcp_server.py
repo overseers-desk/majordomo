@@ -73,11 +73,10 @@ def create_server() -> FastMCP:
         if owner:
             cfg = _config()
             try:
-                reader = api.NocacheReader.from_config(cfg, config.block_spaces(cfg))
-                rows = reader.spaces(minimal_messages=minimal_messages, owner=True)
+                rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
             except SystemExit as exc:
                 raise RuntimeError(str(exc)) from None
-            return _envelope(reader.source, rows)
+            return _envelope("nocache", rows)
         _cfg, reader = _reader(source)
         return _envelope(reader.source, reader.spaces(minimal_messages=minimal_messages))
 
