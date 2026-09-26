@@ -6,6 +6,13 @@ so majordomo works without the BI backend. Needs the `api` extra
 `login` mints the token. Names come from the API and the prose @name (no People
 API). A no-cache read is windowed and slow under Google's read quota, which is
 why the default path is the BI cache.
+
+`spaces()` also reports whether each space belongs to a Google Workspace
+domain (``customer`` set) or a consumer account (unset), free of charge inside
+the same `spaces.list` call, plus its `externalUserAllowed` bit. Resolving who
+*owns* a space is a separate, costed call per space (`spaces.members.list`
+filtered to `ROLE_MANAGER`, Chat's "Owner" role in the UI; see
+``MEMBERSHIPS_SCOPE``), opted into with ``owner=True``.
 """
 
 from __future__ import annotations
@@ -18,12 +25,18 @@ from . import config, decoder, known, readers, sieve
 PEOPLE_LIMIT = 1000
 # The one write scope: creating messages. Nothing else is writable.
 SEND_SCOPE = "https://www.googleapis.com/auth/chat.messages.create"
-# Scopes for a freshly-minted token: both reads plus send, minted together so
-# one login serves every path.
+# Needed only to list a space's members, which is how an Owner is found
+# (spaces.get's own fields answer "domain or consumer" for free, no scope
+# beyond chat.spaces.readonly). Added here after send existed, so a token
+# minted before it lacks it; `spaces --owner` says so and points at `login`.
+MEMBERSHIPS_SCOPE = "https://www.googleapis.com/auth/chat.memberships.readonly"
+# Scopes for a freshly-minted token: both reads, send, and memberships, minted
+# together so one login serves every path.
 LOGIN_SCOPES = [
     "https://www.googleapis.com/auth/chat.spaces.readonly",
     "https://www.googleapis.com/auth/chat.messages.readonly",
     SEND_SCOPE,
+    MEMBERSHIPS_SCOPE,
 ]
 
 
@@ -370,7 +383,29 @@ class NocacheReader:
                 break
         return out
 
-    def spaces(self, minimal_messages: int = 1) -> list[dict]:
+    def _owner_of(self, space: str) -> str | None:
+        """The ``users/<id>`` with ``Membership.role = ROLE_MANAGER``, Chat's
+        "Owner" role in the UI (its separate `ROLE_ASSISTANT_MANAGER` is the
+        UI's "Manager" and is not this). None when the space carries no owner
+        membership (a direct message, for instance). Under plain user auth the
+        API gives back only the member's ``name``, never a display name, so
+        the caller resolves it through known.py like any other id.
+        """
+        try:
+            resp = self.chat.spaces().members().list(
+                parent=space, filter='role = "ROLE_MANAGER"', pageSize=1
+            ).execute()
+        except Exception as exc:
+            if getattr(getattr(exc, "resp", None), "status", None) == 403:
+                raise SystemExit(
+                    "majordomo: the OAuth token lacks the memberships scope "
+                    f"({MEMBERSHIPS_SCOPE}) that --owner needs; re-run `majordomo login`."
+                ) from None
+            raise
+        members = resp.get("memberships", [])
+        return (members[0].get("member") or {}).get("name") if members else None
+
+    def spaces(self, minimal_messages: int = 1, owner: bool = False) -> list[dict]:
         # The Chat API gives no message count cheaply, so minimal_messages is not
         # applied here (the CLI notes the filter is cache-only).
         found = self._all_spaces()
@@ -381,11 +416,27 @@ class NocacheReader:
             # (created before ~mid-2021) is kept as current-state and flagged.
             found = [s for s in found
                      if (ct := _parse_dt(s.get("createTime"))) is None or ct < bound]
-        rows = [{"space_name": s.get("name"), "space_display": s.get("displayName"),
-                 "space_type": s.get("spaceType"), "messages": None, "tasks": None}
-                for s in found]
+        rows = []
+        for s in found:
+            # `customer` (a Workspace domain id) comes back free on the same
+            # call; its absence is the consumer/personal-account case. A
+            # DIRECT_MESSAGE space never carries it either way, so domain_owned
+            # is only meaningful for named spaces and group chats.
+            customer = s.get("customer")
+            rows.append({
+                "space_name": s.get("name"), "space_display": s.get("displayName"),
+                "space_type": s.get("spaceType"), "messages": None, "tasks": None,
+                "customer": customer, "domain_owned": customer is not None,
+                "external_user_allowed": bool(s.get("externalUserAllowed")),
+            })
         for r in rows:
             self.known.remember(r["space_name"], known.NAME, r["space_display"], None, "api")
+        if owner:
+            for r in rows:
+                uid = self._owner_of(r["space_name"])
+                r["owner_user_id"] = uid
+                names = self.known.names_of(uid) if uid else []
+                r["owner_display"] = names[0] if names else None
         self.known.save()
         return sieve.filter_rows(self.blocked, rows)
 

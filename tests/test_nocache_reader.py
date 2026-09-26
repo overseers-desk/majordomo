@@ -192,5 +192,86 @@ def _page(messages):
     return page
 
 
+# --- domain / owner ----------------------------------------------------------
+
+DOMAIN_SPACES = [
+    {"name": "spaces/DOMAIN", "displayName": "Back Office", "spaceType": "SPACE",
+     "customer": "customers/C123", "externalUserAllowed": True},
+    {"name": "spaces/CONSUMER", "displayName": "Side Chat", "spaceType": "SPACE"},
+]
+
+
+def test_spaces_reports_domain_fields_free_of_extra_calls():
+    r = api.NocacheReader(service=_fake_chat(DOMAIN_SPACES, {}), blocked=[])
+    rows = {row["space_name"]: row for row in r.spaces()}
+    assert rows["spaces/DOMAIN"]["domain_owned"] is True
+    assert rows["spaces/DOMAIN"]["customer"] == "customers/C123"
+    assert rows["spaces/DOMAIN"]["external_user_allowed"] is True
+    assert rows["spaces/CONSUMER"]["domain_owned"] is False
+    assert rows["spaces/CONSUMER"]["customer"] is None
+    assert rows["spaces/CONSUMER"]["external_user_allowed"] is False
+    # owner is not resolved unless asked for
+    assert "owner_user_id" not in rows["spaces/DOMAIN"]
+
+
+def _chat_with_members(spaces, members_by_space):
+    chat = _fake_chat(spaces, {})
+
+    def members_list(parent=None, **kw):
+        page = MagicMock()
+        page.execute.return_value = {"memberships": members_by_space.get(parent, [])}
+        return page
+
+    chat.spaces().members().list.side_effect = members_list
+    return chat
+
+
+def test_spaces_owner_resolves_the_role_manager_member(tmp_path):
+    from majordomo import known
+    kn = known.Known(tmp_path / "known.tsv")
+    kn.remember("users/OWNER", known.NAME, "Alice Smith", None, "mention")
+    kn.save()
+    chat = _chat_with_members(DOMAIN_SPACES, {
+        "spaces/DOMAIN": [{"member": {"name": "users/OWNER", "type": "HUMAN"}}],
+        "spaces/CONSUMER": [],
+    })
+    r = api.NocacheReader(service=chat, blocked=[], kn=kn)
+    rows = {row["space_name"]: row for row in r.spaces(owner=True)}
+    assert rows["spaces/DOMAIN"]["owner_user_id"] == "users/OWNER"
+    assert rows["spaces/DOMAIN"]["owner_display"] == "Alice Smith"
+    # No ROLE_MANAGER membership (e.g. a direct message): owner is unknown, not an error.
+    assert rows["spaces/CONSUMER"]["owner_user_id"] is None
+    assert rows["spaces/CONSUMER"]["owner_display"] is None
+    # The role filter Chat's UI calls "Owner" was actually requested.
+    _, kwargs = chat.spaces().members().list.call_args_list[0]
+    assert kwargs["filter"] == 'role = "ROLE_MANAGER"'
+
+
+def test_spaces_owner_scope_insufficient_points_at_login():
+    import types
+
+    chat = _fake_chat(DOMAIN_SPACES, {})
+
+    def members_list(parent=None, **kw):
+        page = MagicMock()
+        err = Exception("insufficient scope")
+        err.resp = types.SimpleNamespace(status=403)
+        page.execute.side_effect = err
+        return page
+
+    chat.spaces().members().list.side_effect = members_list
+    r = api.NocacheReader(service=chat, blocked=[])
+    try:
+        r.spaces(owner=True)
+    except SystemExit as exc:
+        assert "memberships" in str(exc) and "majordomo login" in str(exc)
+    else:
+        raise AssertionError("a token without the memberships scope must be refused cleanly")
+
+
+def test_login_mints_the_memberships_scope():
+    assert api.MEMBERSHIPS_SCOPE in api.LOGIN_SCOPES
+
+
 if __name__ == "__main__":
     _shim.run(dict(globals()))

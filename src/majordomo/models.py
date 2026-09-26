@@ -27,11 +27,25 @@ TASK_COLUMNS: list[Column] = [
     ("Title", lambda r: r.get("title") or ""),
 ]
 
+def _domain_label(row: dict) -> object:
+    # None means "not read over the API", not "unknown": cache rows carry no
+    # such key at all (the mirror does not store it), so this renders blank
+    # rather than claiming a domain or a consumer account either way.
+    owned = row.get("domain_owned")
+    return {True: "domain", False: "consumer"}.get(owned, "")
+
+
+def _owner_label(row: dict) -> object:
+    return row.get("owner_display") or row.get("owner_user_id") or ""
+
+
 SPACE_COLUMNS: list[Column] = [
     ("Space", _space_label),
     ("Type", "space_type"),
     ("Msgs", "messages"),
     ("Tasks", "tasks"),
+    ("Domain", _domain_label),
+    ("Owner", _owner_label),
     ("ID", "space_name"),
 ]
 
