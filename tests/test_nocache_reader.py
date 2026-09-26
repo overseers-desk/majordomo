@@ -275,3 +275,16 @@ def test_login_mints_the_memberships_scope():
 
 if __name__ == "__main__":
     _shim.run(dict(globals()))
+
+
+def test_spaces_owner_skips_direct_messages_and_blocked_spaces():
+    spaces = DOMAIN_SPACES + [
+        {"name": "spaces/DM", "spaceType": "DIRECT_MESSAGE"},
+    ]
+    chat = _chat_with_members(spaces, {})
+    r = api.NocacheReader(service=chat, blocked=["spaces/CONSUMER"])
+    rows = {row["space_name"]: row for row in r.spaces(owner=True)}
+    assert rows["spaces/DM"]["owner_user_id"] is None
+    assert "spaces/CONSUMER" not in rows
+    asked = [kw["parent"] for _, kw in chat.spaces().members().list.call_args_list]
+    assert asked == ["spaces/DOMAIN"]
