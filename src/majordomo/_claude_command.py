@@ -32,7 +32,7 @@ COMMAND_NAME = "majordomo"
 # not the description.
 COMMAND = """---
 name: majordomo
-description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return. Reads the messages and files (video, photo, document) in a space, a thread, or a person's DM, naming people by name, email or id and spaces by name. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM.
+description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return. Reads the messages and files (video, photo, document) in a space, a thread, or a person's DM, naming people by name, email or id and spaces by name. Reports whether a space is a Google Workspace domain space or a consumer/personal one, and who owns it. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM.
 allowed-tools: Bash
 ---
 
@@ -65,11 +65,12 @@ majordomo tasks --space "Back Office" --until 2026-06-30
 
 ```bash
 majordomo spaces
+majordomo spaces --owner
 majordomo people --window year
 majordomo people --person Alice
 ```
 
-`spaces` lists each space with its message and task counts; it hides spaces under one message by default (Google auto-creates an empty group per meeting), and `--minimal-messages=0` shows all. `people` lists everyone seen: their `users/<id>`, the newest spelling they have been called and the older ones, their email and the DM space you share with them where known, with message and task counts. The identity columns are not windowed; the window bounds the counts only. `--person WHO` narrows to one person and is the check to make before using a name elsewhere; it is also how you find your own `users/<id>` for the config.
+`spaces` lists each space with its message and task counts; it hides spaces under one message by default (Google auto-creates an empty group per meeting), and `--minimal-messages=0` shows all. It also reports whether each space belongs to a Google Workspace domain or a consumer/personal account (from the space's `customer` field), read straight over the Chat API: this and `--owner` (below) render blank on a plain cache read, since the cache mirror holds neither. `--owner` additionally resolves who owns each space (the Membership with `role = ROLE_MANAGER`, which the Chat UI itself labels "Owner"), one extra API call per space; it needs the memberships scope, and a token minted before it existed is refused with a pointer to re-run `majordomo login`. `people` lists everyone seen: their `users/<id>`, the newest spelling they have been called and the older ones, their email and the DM space you share with them where known, with message and task counts. The identity columns are not windowed; the window bounds the counts only. `--person WHO` narrows to one person and is the check to make before using a name elsewhere; it is also how you find your own `users/<id>` for the config.
 
 ## Messages
 

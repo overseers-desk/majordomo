@@ -12,6 +12,7 @@ When someone creates a task through Google Chat's "Create a task for @Person (vi
 
 - **Tasks** by assignee, space, and date; "assigned to me" and "assigned by me".
 - **Spaces**, **people** (participants with message and task counts), and raw **messages** by space or thread.
+- **Domain or consumer, and who owns it.** `spaces` reports whether each space belongs to a Google Workspace domain or a consumer/personal account, straight from the Chat API; `--owner` also resolves the space's Owner.
 - **Three modes, one shape.** The fast path reads an existing server-side cache of Chat (the [data model](DATA-MODEL.md)). `--live` is up-to-dateness: it serves the cache and tops it up from the Chat API with anything newer. `--nocache` reads the Chat API directly and decodes tasks itself, so the tool also works without the cache. Every result is tagged with its source; an unforced read uses the cache and falls back to the direct API automatically when the cache is unreachable.
 - **Send** a message to a space, or a reply into a thread, as the logged-in account, with optional file attachments (`majordomo send`).
 - **A privacy sieve** in the core drops blocked spaces (and assignees) before any caller (CLI or MCP) can see them; it refuses sends into blocked spaces the same way.
@@ -103,7 +104,7 @@ majordomo signs in as **you**, through Google's own browser consent screen. `maj
 
 The two alternatives were considered and set aside. A **service account** is a robot identity, not a person, so by itself it cannot read a given user's Chat. **Domain-wide delegation**, where a service account impersonates users, can read it, but only a Google Workspace administrator may authorize it and only for accounts inside that Workspace domain; that excludes consumer Gmail and any account you do not administer. Per-account OAuth costs one login per user and, in exchange, works for everyone.
 
-`majordomo login` writes `~/.config/majordomo/token.json` (the two Chat read scopes plus message create), used by `--live` (for the top-up), `--nocache`, and `send`. It needs a Desktop OAuth client with the Google Chat API enabled, saved as `client_secret.json` in the config directory. A token minted before send existed lacks its scope; `send` says so, and re-running `majordomo login` fixes it.
+`majordomo login` writes the token file (the two Chat read scopes, message create, and memberships) used by `--live` (for the top-up), `--nocache`, `send`, and `spaces --owner`. It needs a Desktop OAuth client with the Google Chat API enabled, saved as `client_secret.json` in the config directory. A token minted before one of these existed lacks its scope; the command that needs it says so, and re-running `majordomo login` fixes it.
 
 ```bash
 majordomo login
@@ -113,6 +114,7 @@ majordomo login
 
 ```bash
 majordomo spaces
+majordomo spaces --owner              # who owns each space too (needs a re-login for the memberships scope)
 majordomo people --window year
 majordomo people --person Alice       # one person: every spelling, email, DM space
 majordomo tasks --to-me --window month
@@ -130,11 +132,12 @@ majordomo send --space spaces/AAAA "Here it is." --attach ./report.pdf  # repeat
 majordomo mcp                       # run the MCP server (stdio)
 ```
 
-- Source: default cache with an automatic direct-API fallback. `--cache` forces the cache; `--live` adds a freshness top-up from the API; `--nocache` reads the API directly. `attachments` is the exception: files are read over the API always, the cache mirroring message text and not the files themselves.
+- Source: default cache with an automatic direct-API fallback. `--cache` forces the cache; `--live` adds a freshness top-up from the API; `--nocache` reads the API directly. `attachments` is the exception: files are read over the API always, the cache mirroring message text and not the files themselves. `spaces`'s domain and Owner fields are the same exception: read over the API directly, so they populate on `--nocache`/`--owner` and render blank on a plain cache read, the mirror storing neither.
 - A person (`--person`, `--assignee`, `--to`) is `users/<id>`, an email, or a name majordomo has seen in a task assignment or an @-mention; a name must match one person, and an ambiguous one lists the candidates with their ids. A space (`--space`) is `spaces/<id>` or its display name. What majordomo learns about people and spaces is kept in `known.tsv` under `$XDG_STATE_HOME/majordomo/` (`~/.local/state/majordomo/` when unset).
 - Window: `7d | 30d | month | year | all`, or `--since` / `--until` (ISO dates).
 - Output: default console, `--json`, or `--csv`.
 - `attachments` lists what was posted; add `--download DIR` to save each file into an existing directory under the name it was posted with, and the path written appears in the output. A file already at that name is left alone and named, so a download never clobbers.
+- `spaces` also reports each space's domain (a Google Workspace domain space, or a consumer/personal one) straight from the Chat API; `--owner` resolves who owns it too, one extra call per space.
 
 ## Replay bounds: `WORLD_AS_OF`
 
