@@ -27,8 +27,8 @@ PEOPLE_LIMIT = 1000
 SEND_SCOPE = "https://www.googleapis.com/auth/chat.messages.create"
 # Needed only to list a space's members, which is how an Owner is found
 # (spaces.get's own fields answer "domain or consumer" for free, no scope
-# beyond chat.spaces.readonly). Added here after send existed, so a token
-# minted before it lacks it; `spaces --owner` says so and points at `login`.
+# beyond chat.spaces.readonly). A token minted before this scope existed
+# lacks it; `spaces --owner` says so and points at `login`.
 MEMBERSHIPS_SCOPE = "https://www.googleapis.com/auth/chat.memberships.readonly"
 # Scopes for a freshly-minted token: both reads, send, and memberships, minted
 # together so one login serves every path.
@@ -547,6 +547,16 @@ class NocacheReader:
         # cap keeps that, matching the cache backend row for row.
         self.known.save()
         return sieve.filter_rows(self.blocked, rows)[-limit:]
+
+
+def owned_spaces(cfg: dict, blocked: list[str], *, minimal_messages: int = 1, owner: bool = False) -> list[dict]:
+    """Spaces with their domain/consumer status and, with ``owner=True``, who
+    owns each one. Always reads the direct API regardless of the caller's
+    --cache/--live/--nocache choice, the same as `attachments`: both front
+    doors call this one function rather than building a `NocacheReader`
+    themselves, so the "always direct" exception has one home.
+    """
+    return NocacheReader.from_config(cfg, blocked).spaces(minimal_messages=minimal_messages, owner=owner)
 
 
 # --- attachments ---------------------------------------------------------
