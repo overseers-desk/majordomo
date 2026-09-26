@@ -60,9 +60,24 @@ def create_server() -> FastMCP:
     server = FastMCP("majordomo")
 
     @server.tool()
-    def spaces(minimal_messages: int = 1, source: Optional[str] = None) -> dict:
-        """List spaces with message and task counts. minimal_messages hides spaces
-        with fewer than N messages (0 shows all; cache only). source: cache | live | nocache."""
+    def spaces(minimal_messages: int = 1, owner: bool = False, source: Optional[str] = None) -> dict:
+        """List spaces with message and task counts, and whether each belongs to a
+        Google Workspace domain or a consumer/personal account (domain_owned,
+        from the space's `customer` field; blank on a cache-only read, the
+        mirror not storing it). minimal_messages hides spaces with fewer than N
+        messages (0 shows all; cache only). owner=True also resolves each
+        space's Owner (owner_user_id/owner_display), one extra direct-API call
+        per space regardless of source, needing the memberships scope (a token
+        minted before it must re-run `majordomo login`). source: cache | live | nocache.
+        """
+        if owner:
+            cfg = _config()
+            try:
+                reader = api.NocacheReader.from_config(cfg, config.block_spaces(cfg))
+                rows = reader.spaces(minimal_messages=minimal_messages, owner=True)
+            except SystemExit as exc:
+                raise RuntimeError(str(exc)) from None
+            return _envelope(reader.source, rows)
         _cfg, reader = _reader(source)
         return _envelope(reader.source, reader.spaces(minimal_messages=minimal_messages))
 
