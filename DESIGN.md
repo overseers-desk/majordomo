@@ -26,7 +26,7 @@ The sieve's two block lists (`block_spaces` and `block_assignees`) live in the h
 
 All capabilities are reachable through both front doors:
 
-- List spaces the account belongs to.
+- List spaces the account belongs to, whether each belongs to a Google Workspace domain or a consumer/personal account, and (on request) who owns it.
 - Read messages and spaces over a date range — from the BI platform's cache as the fast path, or a direct Chat read paginated to completeness when that backend is absent.
 - Report task activity (creation, assignment, and other lifecycle signals): from the BI platform's `coord_tasks` reconstruction when present, from majordomo's own message decoder when standalone.
 - Report tasks by assignee, by space, and by date range.
@@ -110,6 +110,14 @@ That is also why the capability sits beside `send` in the core rather than insid
 - The filename comes from whoever posted the file, so it is untrusted: it is stripped to a bare basename before it joins the destination directory, and a name with nothing left after stripping fails loud rather than being invented, an unmatchable download being worse than a stop.
 - An existing file at the target path is left as it is and named. That also catches the case of two attachments on one message sharing a filename.
 - A Drive-backed attachment carries a Drive reference in place of Chat file data; majordomo holds no Drive scope, so it lists but does not download, and says which file and why.
+
+## Domain or consumer, and who owns a space
+
+`spaces` reports whether each space belongs to a Google Workspace domain or a consumer/personal account, and, with `--owner`, who owns it. Both come from the Space and Membership resources of the Chat API ([reference](https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces)), read fresh on every call rather than mirrored, since the BI cache holds neither:
+
+- **Domain or consumer** comes from `Space.customer` (a Workspace customer id, e.g. `customers/C0xxxxxxx`), which lands in the same `spaces.list`/`spaces.get` call that already reads `displayName` and `spaceType`: no extra API call, no extra scope beyond `chat.spaces.readonly`. Its absence means a consumer/personal account created the space. A `DIRECT_MESSAGE` space carries no `customer` either way, so the field is meaningful for named spaces and group chats, not DMs. `Space.externalUserAllowed` rides along for free too.
+- **Who owns it** comes from `Membership.role = ROLE_MANAGER` on `spaces.members.list`. Chat's API names this role `ROLE_MANAGER`, but its own UI calls it "Owner"; the API's `ROLE_ASSISTANT_MANAGER` is the separate role the UI calls "Manager", a different thing. Listing members needs `chat.memberships.readonly`, a scope beyond the three `login` already minted (read, read, send), so it joins them there, and a token minted before it existed lacks it; `--owner` says so and points at `login`. Under plain user auth the API gives back only the owning member's `users/<id>`, not a display name, so `--owner` resolves one the way every other person does: through known.py's spellings, when it has seen any.
+- `--owner` costs one `spaces.members.list` call per space, on top of the one `spaces.list` call `spaces` always makes, so it stays opt-in rather than the default.
 
 ## Naming and packaging convention
 
