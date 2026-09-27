@@ -182,5 +182,152 @@ def test_the_flow_prints_nothing_to_stdout(monkeypatch, tmp_path, capsys):
     assert set(roster.PEOPLE_SCOPES) <= set(api.LOGIN_SCOPES)
 
 
+# --- scopes_for / ensure_command_scopes: the up-front, per-command check -----
+#
+# A command works out its own shape (does it read the API directly, resolve
+# --owner, send, or show people) and asks for everything that shape needs in
+# one go, before any Chat or People call, rather than each feature finding out
+# for itself mid-command. test_consent_upfront.py checks each front door wires
+# this in; these check the mechanism: one consent for the union of what is
+# missing, and no second prompt from a later lazy check in the same command.
+
+def test_scopes_for_maps_a_shape_to_its_scopes():
+    assert api.scopes_for() == []
+    assert api.scopes_for(send=True) == [api.SEND_SCOPE]
+    assert api.scopes_for(owner=True) == [api.MEMBERSHIPS_SCOPE]
+    assert api.scopes_for(people=True) == roster.PEOPLE_SCOPES
+    assert api.scopes_for(api_read=True) == api.CHAT_READ_SCOPES
+    assert api.scopes_for(api_read=True, owner=True, people=True) == (
+        api.CHAT_READ_SCOPES + [api.MEMBERSHIPS_SCOPE] + roster.PEOPLE_SCOPES
+    )
+
+
+def test_ensure_command_scopes_asks_nothing_for_an_empty_shape(world):
+    api.ensure_command_scopes({})
+    assert world["consents"] == []
+
+
+def test_ensure_command_scopes_asks_nothing_already_granted(world):
+    world["scopes"] = api.LOGIN_SCOPES
+    api.ensure_command_scopes({}, api_read=True, owner=True, send=True, people=True)
+    assert world["consents"] == []
+
+
+def test_ensure_command_scopes_is_quiet_with_no_saved_token_at_all(world, monkeypatch):
+    def no_token(cfg):
+        raise SystemExit("majordomo: no OAuth token at ...; run `majordomo login`.")
+
+    monkeypatch.setattr(api, "get_credentials", no_token)
+    api.ensure_command_scopes({}, people=True)
+    assert world["consents"] == []
+
+
+def test_ensure_command_scopes_consents_once_for_every_missing_group(world):
+    cfg = {}
+    api.ensure_command_scopes(cfg, api_read=True, people=True)
+    assert len(world["consents"]) == 1
+    creds = api.get_credentials(cfg)
+    assert api._missing(creds, api.CHAT_READ_SCOPES + roster.PEOPLE_SCOPES) == []
+
+
+def test_up_front_success_the_lazy_check_asks_nothing_more(world):
+    """Once ensure_command_scopes has granted a scope, the lazy check that
+    would otherwise ask for it (people_service) finds it already on the token
+    it re-reads from disk, so it asks nothing itself."""
+    cfg = {}
+    api.ensure_command_scopes(cfg, people=True)
+    assert len(world["consents"]) == 1
+    assert api.people_service(cfg) == "PEOPLE"
+    assert len(world["consents"]) == 1
+
+
+def test_up_front_decline_the_lazy_check_falls_back_without_asking_again(world):
+    """A declined up-front consent is not retried by a later lazy check inside
+    the same command (same cfg); a fresh command (its own cfg) asks again."""
+    world["declines"] = True
+    cfg = {}
+    api.ensure_command_scopes(cfg, people=True)
+    assert len(world["consents"]) == 1
+    assert api.people_service(cfg) is None
+    assert len(world["consents"]) == 1  # no second prompt in this command
+    assert api.people_service({}) is None  # a new command's own cfg
+    assert len(world["consents"]) == 2
+
+
+def test_up_front_nobody_to_answer_the_lazy_check_still_tries_quietly(world, monkeypatch):
+    """consent_mode() None never opens anything, up front or lazily, so there
+    is nothing to remember and no harm in the lazy check running its own
+    (silent) check too."""
+    monkeypatch.setattr(api, "consent_mode", lambda: None)
+    cfg = {}
+    api.ensure_command_scopes(cfg, people=True)
+    assert world["consents"] == []
+    assert api.people_service(cfg) is None
+    assert world["consents"] == []
+
+
+# --- the failure reason -----------------------------------------------------
+
+def test_consent_reason_is_the_class_name_for_an_unrecognised_exception():
+    assert api._consent_reason(ValueError("CLIENT_SECRET_PLACEHOLDER")) == "ValueError"
+
+
+def test_consent_reason_never_carries_the_exception_s_own_message():
+    reason = api._consent_reason(ValueError("secret=abc123 code=xyz"))
+    assert "secret" not in reason and "abc123" not in reason and "xyz" not in reason
+
+
+def test_consent_reason_known_cases_get_a_plain_sentence():
+    import errno as _errno
+
+    class WSGITimeoutError(Exception):
+        pass
+
+    assert api._consent_reason(WSGITimeoutError("irrelevant")) == (
+        "WSGITimeoutError (timed out waiting for approval)"
+    )
+
+    port_in_use = OSError("Address already in use")
+    port_in_use.errno = _errno.EADDRINUSE
+    assert api._consent_reason(port_in_use) == f"OSError (port {api.CONSENT_PORT} already in use)"
+
+    class AccessDeniedError(Exception):
+        pass
+
+    assert api._consent_reason(AccessDeniedError("access_denied")) == (
+        "AccessDeniedError (consent declined / access_denied)"
+    )
+
+    other_os_error = OSError("permission denied")
+    other_os_error.errno = _errno.EACCES
+    assert api._consent_reason(other_os_error) == "OSError"
+
+
+def test_ensure_scopes_prints_the_failure_reason_not_the_raw_exception(world, monkeypatch):
+    monkeypatch.setattr(
+        api, "_consent",
+        lambda cfg, **kw: (_ for _ in ()).throw(
+            SystemExit("majordomo: login failed or was not completed (ValueError). "
+                       "Check /tmp/client.json and the Cloud project, then retry `majordomo login`.")
+        ),
+    )
+    assert api.people_service({}) is None
+    notes = config.drain_notes()
+    assert any("login failed or was not completed (ValueError)" in n for n in notes)
+
+
+def test_a_failed_consent_prints_only_to_stderr(world, monkeypatch, capsys):
+    monkeypatch.setattr(
+        api, "_consent",
+        lambda cfg, **kw: (_ for _ in ()).throw(
+            SystemExit("majordomo: login failed or was not completed (ValueError). Check x.")
+        ),
+    )
+    assert api.people_service({}) is None
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert "login failed" in out.err
+
+
 if __name__ == "__main__":
     _shim.run(dict(globals()))
