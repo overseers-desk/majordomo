@@ -1,3 +1,22 @@
+majordomo (0.2.1) unstable; urgency=medium
+
+  * spaces reports whether each space belongs to a Google Workspace domain
+    or was created from a personal account; spaces --owner names its owner.
+  * People are named through the Google People API (profile, Workspace
+    directory, contacts and other contacts): task assignees, message and
+    attachment senders, space owners and the people report.
+  * What majordomo learns about people and spaces is a refetchable cache,
+    people.json and spaces.json under ~/.cache/majordomo/. The old
+    known.tsv under ~/.local/state/majordomo/ is no longer read and can be
+    deleted.
+  * Upgrading needs new Google permissions (space memberships, contacts,
+    other contacts, directory, basic profile). The first command that needs
+    them opens Google's consent page once and then carries on; with nobody
+    to answer, it shows ids and says why consent did not complete.
+  * spaces --owner backs off and retries on Google's membership-read quota.
+
+ -- Weiwu Zhang <a@colourful.land>  Sun, 27 Sep 2026 23:54:33 +1000
+
 majordomo (0.2.0) unstable; urgency=medium
 
   * Select by person: --person on messages and attachments, --assignee on
