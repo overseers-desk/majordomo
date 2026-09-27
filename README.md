@@ -104,7 +104,16 @@ majordomo signs in as **you**, through Google's own browser consent screen. `maj
 
 The two alternatives were considered and set aside. A **service account** is a robot identity, not a person, so by itself it cannot read a given user's Chat. **Domain-wide delegation**, where a service account impersonates users, can read it, but only a Google Workspace administrator may authorize it and only for accounts inside that Workspace domain; that excludes consumer Gmail and any account you do not administer. Per-account OAuth costs one login per user and, in exchange, works for everyone.
 
-`majordomo login` writes the token file (the two Chat read scopes, message create, and memberships) used by `--live` (for the top-up), `--nocache`, `send`, and `spaces --owner`. It needs a Desktop OAuth client with the Google Chat API enabled, saved as `client_secret.json` in the config directory. A token minted before one of these existed lacks its scope; the command that needs it says so, and re-running `majordomo login` fixes it.
+`majordomo login` writes the token file used by `--live` (for the top-up), `--nocache`, `send`, `attachments`, `spaces --owner`, and naming people. It needs a Desktop OAuth client with the Google Chat API and the People API enabled, saved as `client_secret.json` in the config directory. The permissions it asks for:
+
+| Permission | For |
+|---|---|
+| `chat.spaces.readonly`, `chat.messages.readonly` | Reading spaces, messages and files over the Chat API |
+| `chat.messages.create` | `send`, with its attachments |
+| `chat.memberships.readonly` | `spaces --owner`: finding each space's Owner |
+| `contacts.readonly`, `contacts.other.readonly`, `directory.readonly`, `userinfo.profile` | Naming people through the People API, from your saved contacts, your "other contacts", your Workspace directory, and your own profile |
+
+**Upgrading can add permissions.** A new version may need a permission your saved login does not grant; naming people through the People API is one. The command that needs it opens Google's consent page once, and carries on after you grant it. The consent adds to what you granted before. When nobody is there to answer the page (a cron job, CI, an SSH session without a terminal), the command still answers: people show as `users/<id>`, and a line says to run `majordomo login`, which grants every permission at once.
 
 ```bash
 majordomo login
@@ -114,7 +123,7 @@ majordomo login
 
 ```bash
 majordomo spaces
-majordomo spaces --owner              # who owns each space too (needs a re-login for the memberships scope)
+majordomo spaces --owner              # who owns each space too, by name
 majordomo people --window year
 majordomo people --person Alice       # one person: every spelling, email, DM space
 majordomo tasks --to-me --window month
@@ -133,7 +142,8 @@ majordomo mcp                       # run the MCP server (stdio)
 ```
 
 - Source: default cache with an automatic direct-API fallback. `--cache` forces the cache; `--live` adds a freshness top-up from the API; `--nocache` reads the API directly. `attachments` is the exception: files are read over the API always, the cache mirroring message text and not the files themselves. `spaces`'s domain and Owner fields are the same exception: read over the API directly, so they populate on `--nocache`/`--owner` and render blank on a plain cache read, the mirror storing neither.
-- A person (`--person`, `--assignee`, `--to`) is `users/<id>`, an email, or a name majordomo has seen in a task assignment or an @-mention; a name must match one person, and an ambiguous one lists the candidates with their ids. A space (`--space`) is `spaces/<id>` or its display name. What majordomo learns about people and spaces is kept in `known.tsv` under `$XDG_STATE_HOME/majordomo/` (`~/.local/state/majordomo/` when unset).
+- Every report that shows a person names them through the Google People API: task assignees, message and file senders, space owners, and `people`. A person the API cannot name shows as `users/<id>`. What majordomo fetched is cached in `people.json` and `spaces.json` under `$XDG_CACHE_HOME/majordomo/` (`~/.cache/majordomo/` when unset), and deleting them costs only a refetch.
+- A person (`--person`, `--assignee`, `--to`) is `users/<id>`, an email, or a name. A name matches People API names, and on the cache path also the spellings seen in task assignments and @-mentions. It must match one person; an ambiguous name lists the candidates with their ids. A space (`--space`) is `spaces/<id>` or its display name.
 - Window: `7d | 30d | month | year | all`, or `--since` / `--until` (ISO dates).
 - Output: default console, `--json`, or `--csv`.
 - `attachments` lists what was posted; add `--download DIR` to save each file into an existing directory under the name it was posted with, and the path written appears in the output. A file already at that name is left alone and named, so a download never clobbers.
@@ -151,12 +161,11 @@ WORLD_AS_OF='2026-07-12T17:07:00+10:00' majordomo tasks --window 7d
 - **Set**: nothing dated after the bound is reported, on every source (cache, `--live`, `--nocache`) and through both front doors (CLI and MCP). Relative windows anchor to the bound, not to now: `7d` is the seven days before it, `month` the calendar month before the one containing it. A `--until` later than the bound is clamped down with a stderr note. Under a past bound `--live` degrades to the cache read (a top-up would fetch only what the bound excludes). The JSON/MCP envelope carries `world_as_of`, so a log proves the answer was bounded. `send` is refused while the bound is set: a bounded run is a replay, and a send would act in the real present.
 - **Set but unparseable, or missing its timezone offset**: a hard error on every command, including ones that fetch no dates, because a silently ignored bound would produce a contaminated run that looks valid.
 
-The bound is honest about what it cannot rewind. Space and user display names are current-state (the mirror keeps no history of prior names) and the output says so. A message edited after the bound carries its post-edit text, marked `edited_after_bound` on the API path where the edit is observable. A bound older than the oldest cached message earns a warning that the store does not reach the as-of instant. For replaying the past the cache is the higher-fidelity source: the mirror retains messages the API has since dropped through deletion.
+The bound is honest about what it cannot rewind. Space and user display names, People API names included, are current-state (neither the mirror nor the API keeps prior names) and the output says so. A message edited after the bound carries its post-edit text, marked `edited_after_bound` on the API path where the edit is observable. A bound older than the oldest cached message earns a warning that the store does not reach the as-of instant. For replaying the past the cache is the higher-fidelity source: the mirror retains messages the API has since dropped through deletion.
 
 ## Not yet (deferred)
 
 - **Task completion and stats.** Google Chat does not reliably carry task completion, so every task is reported as `open`; completion-rate reporting waits on a later signal.
-- **Directory name resolution.** Names come from the chat message and the Chat API directly; a bare `users/<id>` with no name attached is shown as the id.
 
 ## License
 

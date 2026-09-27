@@ -44,10 +44,12 @@ _PERSON = "A person: users/<id>, an email, or a name."
 _SPACE = "A space: spaces/<id> or its display name."
 # How a name reaches a person, documented once where the flags are discovered.
 _WHO_EPILOG = (
-    "A name matches the spellings majordomo has seen in task assignments and "
-    "@-mentions, whole name first and then as a substring; several matches fail "
-    "naming each with its users/<id>, and old spellings stay after a rename. An "
-    "email resolves over the Chat API (majordomo login). "
+    "People are shown by their People API name, kept in ~/.cache/majordomo "
+    "($XDG_CACHE_HOME); a person the API cannot name shows as users/<id>. A "
+    "name matches those names and, on the cache path, the spellings of task "
+    "assignments and @-mentions, whole name first and then as a substring; "
+    "several matches fail naming each with its users/<id>. An email resolves "
+    "through the same cache or over the Chat API (majordomo login). "
 ) + _WORLD_EPILOG
 
 
@@ -92,7 +94,12 @@ def _me(cfg: dict) -> str:
 
 @app.command()
 def login() -> None:
-    """Sign in to Google in your browser. Do this once before sending, or before reading with --live or --nocache."""
+    """Sign in to Google in your browser, granting every permission majordomo uses.
+
+    Do this once before sending, before reading with --live or --nocache, and
+    for people's names. A later version that needs a new permission asks for it
+    itself, opening the same consent page, when someone is there to answer.
+    """
     from . import api
     path = api.login(config.load_config())
     typer.echo(f"majordomo: token written to {path}")
@@ -105,8 +112,8 @@ def spaces(
         1, "--minimal-messages", help="Hide spaces with fewer than N messages (0 shows all)."),
     owner: bool = typer.Option(
         False, "--owner",
-        help="Also resolve each space's Owner (one extra API call per space; needs "
-             "`majordomo login` re-run if the token predates the memberships scope)."),
+        help="Also resolve each space's Owner (one extra API call per space; a login "
+             "without the memberships permission opens Google's consent page to add it)."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
     csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
@@ -147,7 +154,7 @@ def people(
     json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
     csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
-    """List participants: every spelling they have been called, email and DM space where known, with message and task counts.
+    """List participants: their name, the spellings they have been called, email and DM space where known, with message and task counts.
 
     The names, email and DM space are not windowed; the window bounds the
     counts only. --person narrows to one person and is the check to make
