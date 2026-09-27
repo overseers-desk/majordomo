@@ -706,6 +706,7 @@ class NocacheReader:
             msgs = self._messages(sp, start, end)
             decoded = [t for m in msgs if (t := decoder.decode_task(m, sp))]
             decoder.recover_titles(decoded, msgs)
+            decoder.apply_lifecycle(decoded, msgs)
             sender_of = {m.get("name"): (m.get("sender") or {}).get("name") for m in msgs}
             disp = self._space_display(sp)
             for t in decoded:
@@ -722,7 +723,7 @@ class NocacheReader:
                     "assignee": adisp,
                     "title": t["title"],
                     "created_at": _parse_dt(t["created_at"]),
-                    "status": "open",
+                    "status": t["status"],
                 })
         out.sort(key=lambda r: r["created_at"] or datetime.min, reverse=True)
         out = sieve.filter_rows(self.blocked, out)

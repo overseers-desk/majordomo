@@ -23,6 +23,7 @@ def test_space_of_message():
 def test_is_task_creation():
     assert decoder.is_task_creation(TASK)
     assert not decoder.is_task_creation({"text": "Completed a task (via Tasks)"})
+    assert not decoder.is_task_creation({"text": "Completed a task Created (via Tasks)"})  # anchored at the start
     assert not decoder.is_task_creation({"text": "thanks, on it"})
 
 
@@ -86,6 +87,58 @@ def test_recover_titles_none_when_no_prior_plain():
                                   "text": "Created a task for @X (via Tasks)"})]
     decoder.recover_titles(tasks, [{"name": "spaces/A/messages/T.3", "createTime": "2026-06-20T09:00:00.000000Z", "text": "after"}])
     assert tasks[0]["title"] is None
+
+
+COMPLETED = {"name": "spaces/A/messages/T.3", "createTime": "2026-06-20T09:00:00.000000Z", "text": "Completed a task (via Tasks)"}
+REOPENED = {"name": "spaces/A/messages/T.4", "createTime": "2026-06-20T09:05:00.000000Z", "text": "Re-opened a task (via Tasks)"}
+HANDOVER = {"name": "spaces/A/messages/T.5", "createTime": "2026-06-20T09:10:00.000000Z",
+            "text": "Changed task assignee from @X to @Carol (P) (via Tasks)",
+            "annotations": [{"type": "USER_MENTION", "startIndex": 27, "userMention": {"user": {"name": "users/1"}}},
+                            {"type": "USER_MENTION", "startIndex": 33, "userMention": {"user": {"name": "users/3"}}}]}
+
+
+def test_lifecycle_of_and_replay():
+    assert decoder.lifecycle_of(COMPLETED) == "completed"
+    assert decoder.lifecycle_of({"text": "Deleted a task (via Tasks)"}) == "deleted"
+    assert decoder.lifecycle_of({"text": "we Completed a task (via Tasks)"}) is None   # anchored at the start
+    assert decoder.lifecycle_of({"text": "Completed a task"}) is None                  # marker required
+    assert decoder.lifecycle_of(TASK) is None
+    assert decoder.replay_lifecycle(["completed"]) == "done"
+    assert decoder.replay_lifecycle(["completed", "reopened"]) == "open"
+    assert decoder.replay_lifecycle(["deleted", "restored"]) == "open"
+    assert decoder.replay_lifecycle([]) is None
+
+
+def test_assignee_change_of():
+    assert decoder.assignee_change_of(HANDOVER) == {"kind": "changed", "user": "users/3", "display": "Carol"}
+    assigned = {"text": "Assigned a task to @Dee (via Tasks)",
+                "annotations": [{"type": "USER_MENTION", "userMention": {"user": {"name": "users/4"}}}]}
+    assert decoder.assignee_change_of(assigned) == {"kind": "assigned", "user": "users/4", "display": "Dee"}
+    assert decoder.assignee_change_of({"text": "Unassigned a task from @X (via Tasks)"}) == {
+        "kind": "unassigned", "user": None, "display": None}
+    assert decoder.assignee_change_of(COMPLETED) is None
+
+
+def _task(name, created="2026-06-20T08:15:00.000000Z"):
+    return decoder.decode_task({"name": name, "createTime": created, "text": "Created a task for @X (via Tasks)",
+                                "annotations": [{"type": "USER_MENTION", "userMention": {"user": {"name": "users/1"}}}]})
+
+
+def test_apply_lifecycle_replays_a_single_task_thread():
+    tasks = [_task("spaces/A/messages/T.2"), _task("spaces/A/messages/U.1")]
+    decoder.apply_lifecycle(tasks, [HANDOVER, REOPENED, COMPLETED])      # time order decides, not input order
+    assert (tasks[0]["status"], tasks[0]["assignee_user_name"], tasks[0]["assignee_display"]) == ("open", "users/3", "Carol")
+    assert (tasks[1]["status"], tasks[1]["assignee_user_name"]) == ("open", "users/1")   # no events: open, untouched
+    done = [_task("spaces/A/messages/T.2")]
+    decoder.apply_lifecycle(done, [COMPLETED])
+    assert (done[0]["status"], done[0]["assignee_user_name"]) == ("done", "users/1")
+
+
+def test_apply_lifecycle_leaves_a_multi_task_thread_open():
+    tasks = [_task("spaces/A/messages/T.2"), _task("spaces/A/messages/T.6", "2026-06-20T08:30:00.000000Z")]
+    decoder.apply_lifecycle(tasks, [COMPLETED, HANDOVER])
+    assert [t["status"] for t in tasks] == ["open", "open"]
+    assert all(t["assignee_user_name"] == "users/1" for t in tasks)
 
 
 if __name__ == "__main__":

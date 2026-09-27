@@ -165,7 +165,7 @@ The bound is honest about what it cannot rewind. Space and user display names, P
 
 ## Not yet (deferred)
 
-- **Task completion and stats.** Google Chat does not reliably carry task completion, so every task is reported as `open`; completion-rate reporting waits on a later signal.
+- **Completion-rate stats.** Per-person and per-space completion rates over a window.
 
 ## License
 
