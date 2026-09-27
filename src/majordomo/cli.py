@@ -70,8 +70,14 @@ def _root(
     _claude_command.refresh()
 
 
-def _open(ctx: typer.Context):
+def _open(ctx: typer.Context, *, people: bool = False):
+    from . import api
+
     cfg = config.load_config()
+    # Up front, before the reader touches the cache or the API: everything
+    # this command's shape needs (api.ensure_command_scopes), so a decline or
+    # a timeout costs nothing already spent reading.
+    api.ensure_command_scopes(cfg, api_read=ctx.obj["source"] in ("live", "nocache"), people=people)
     return cfg, readers.make_reader(cfg, ctx.obj["source"])
 
 
@@ -98,7 +104,8 @@ def login() -> None:
 
     Do this once before sending, before reading with --live or --nocache, and
     for people's names. A later version that needs a new permission asks for it
-    itself, opening the same consent page, when someone is there to answer.
+    itself, up front before the command does anything, opening the same
+    consent page, when someone is there to answer.
     """
     from . import api
     path = api.login(config.load_config())
@@ -113,7 +120,8 @@ def spaces(
     owner: bool = typer.Option(
         False, "--owner",
         help="Also resolve each space's Owner (one extra API call per space; a login "
-             "without the memberships permission opens Google's consent page to add it)."),
+             "without the memberships permission opens Google's consent page up front, "
+             "before any space is read)."),
     json_out: bool = typer.Option(False, "--json", help="Raw JSON."),
     csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
@@ -129,6 +137,9 @@ def spaces(
     if owner:
         from . import api
         cfg = config.load_config()
+        # Up front: the membership scope and the People scope owner_display
+        # needs, before the first (slow, quota-backed-off) membership read.
+        api.ensure_command_scopes(cfg, api_read=True, owner=True, people=True)
         rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
         source = "nocache"
     else:
@@ -160,7 +171,7 @@ def people(
     counts only. --person narrows to one person and is the check to make
     before using a name elsewhere.
     """
-    _cfg, reader = _open(ctx)
+    _cfg, reader = _open(ctx, people=True)
     start, end = dates.resolve(window, since, until)
     emit(reader.people(person=person, start=start, end=end), models.PEOPLE_COLUMNS, reader.source, json_out, csv_out)
 
@@ -180,7 +191,7 @@ def tasks(
     csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
     """Report tasks, filtered by assignee, space, and date."""
-    cfg, reader = _open(ctx)
+    cfg, reader = _open(ctx, people=True)
     start, end = dates.resolve(window, since, until)
     rows = reader.tasks(
         to_user=_me(cfg) if to_me else None,
@@ -214,7 +225,7 @@ def messages(
 
     Rows are oldest-first; a capped answer keeps the newest.
     """
-    _cfg, reader = _open(ctx)
+    _cfg, reader = _open(ctx, people=True)
     start, end = dates.resolve(window, since, until)
     rows = reader.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
     emit(rows, models.MESSAGE_COLUMNS, reader.source, json_out, csv_out)
@@ -251,6 +262,8 @@ def attachments(
     """
     from . import api
     cfg = config.load_config()
+    # Always the direct API and always naming senders, regardless of flags.
+    api.ensure_command_scopes(cfg, api_read=True, people=True)
     start, end = dates.resolve(window, since, until)
     rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
                            message=message, person=person, start=start, end=end, limit=limit,
@@ -279,6 +292,7 @@ def send(
     """
     from . import api
     cfg = config.load_config()
+    api.ensure_command_scopes(cfg, send=True)
     created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
                        to=to, text=text, attachments=attach)
     if json_out:

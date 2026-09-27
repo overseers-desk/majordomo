@@ -3,10 +3,13 @@
 Exposes the same reports as the CLI, over MCP, by going through the same reader
 seam (`readers.make_reader`). The sieve is applied in the reader, so a tool
 cannot bypass it. Each tool takes an optional `source` ("cache" | "live" | "nocache");
-the default is the cache fast path with a direct-API fallback. An answer carries
-``notes`` when the core raised any (what the CLI prints on stderr: a permission
-the login lacks, for one). Needs the `mcp` extra; launched by `majordomo mcp`
-(stdio), so nothing the core runs may write to stdout.
+the default is the cache fast path with a direct-API fallback. Every tool asks,
+up front, for whatever Google permissions its shape needs
+(`api.ensure_command_scopes`), before it reads anything, over the same `cfg`
+its reader then uses. An answer carries ``notes`` when the core raised any
+(what the CLI prints on stderr: a permission the login lacks, for one). Needs
+the `mcp` extra; launched by `majordomo mcp` (stdio), so nothing the core runs
+may write to stdout.
 """
 
 from __future__ import annotations
@@ -41,8 +44,13 @@ def _config() -> dict:
         raise RuntimeError(str(exc)) from None
 
 
-def _reader(source: Optional[str]):
-    cfg = _config()
+def _reader(source: Optional[str], cfg: Optional[dict] = None):
+    # cfg, when given, is already loaded and already carries this tool call's
+    # up-front consent check (api.ensure_command_scopes): reusing it, rather
+    # than loading a fresh one here, is what lets a later lazy scope check
+    # (inside the reader) see that check's result instead of asking again.
+    if cfg is None:
+        cfg = _config()
     try:
         return cfg, readers.make_reader(cfg, source)
     except SystemExit as exc:
@@ -77,17 +85,21 @@ def create_server() -> FastMCP:
         messages (0 shows all; cache only). owner=True also resolves each
         space's Owner (owner_user_id/owner_display), one extra direct-API call
         per space regardless of source, needing the memberships permission (a
-        login without it opens Google's consent page to add it).
+        login without it opens Google's consent page up front, before any
+        space is read).
         source: cache | live | nocache.
         """
         if owner:
             cfg = _config()
+            api.ensure_command_scopes(cfg, api_read=True, owner=True, people=True)
             try:
                 rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
             except SystemExit as exc:
                 raise RuntimeError(str(exc)) from None
             return _envelope("nocache", rows)
-        _cfg, reader = _reader(source)
+        cfg = _config()
+        api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"))
+        _cfg, reader = _reader(source, cfg=cfg)
         return _envelope(reader.source, reader.spaces(minimal_messages=minimal_messages))
 
     @server.tool()
@@ -99,7 +111,9 @@ def create_server() -> FastMCP:
         not windowed, only the counts are. window is one of 7d, 30d, month,
         year, all; since/until are ISO dates.
         """
-        _cfg, reader = _reader(source)
+        cfg = _config()
+        api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"), people=True)
+        _cfg, reader = _reader(source, cfg=cfg)
         start, end = dates.resolve(window, since, until)
         try:
             rows = reader.people(person=person, start=start, end=end)
@@ -127,7 +141,9 @@ def create_server() -> FastMCP:
         window is one of 7d, 30d, month, year, all; since/until are ISO dates.
         source: cache | live | nocache.
         """
-        cfg, reader = _reader(source)
+        cfg = _config()
+        api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"), people=True)
+        cfg, reader = _reader(source, cfg=cfg)
         me = config.require_user_id(cfg) if (to_me or by_me) else None
         start, end = dates.resolve(window, since, until)
         try:
@@ -161,7 +177,9 @@ def create_server() -> FastMCP:
         messages there. space is spaces/<id> or its display name. Rows are
         oldest-first and a capped answer keeps the newest.
         """
-        _cfg, reader = _reader(source)
+        cfg = _config()
+        api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"), people=True)
+        _cfg, reader = _reader(source, cfg=cfg)
         start, end = dates.resolve(window, since, until)
         try:
             rows = reader.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
@@ -196,6 +214,7 @@ def create_server() -> FastMCP:
         text and not files. The sieve refuses blocked spaces.
         """
         cfg = _config()
+        api.ensure_command_scopes(cfg, api_read=True, people=True)
         start, end = dates.resolve(window, since, until)
         try:
             rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
@@ -219,6 +238,7 @@ def create_server() -> FastMCP:
         run being a replay.
         """
         cfg = _config()
+        api.ensure_command_scopes(cfg, send=True)
         try:
             return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
                             to=to, text=text, attachments=attachments)
