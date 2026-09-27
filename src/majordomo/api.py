@@ -3,9 +3,11 @@ attachments. Reads the Chat API directly and decodes tasks itself (decoder.py),
 so majordomo works without the BI backend. Needs the `api` extra
 (google-api-python-client, google-auth). Read records are tagged
 ``source = "nocache"``; the sieve (spaces + assignees) is applied here too.
-`login` mints the token. Names come from the API and the prose @name (no People
-API). A no-cache read is windowed and slow under Google's read quota, which is
-why the default path is the BI cache.
+`login` mints the token, and a command that finds the saved token short of a
+scope it needs runs the same consent flow itself (``ensure_scopes``). People
+are named through roster.py, which reads the People API over this token. A
+no-cache read is windowed and slow under Google's read quota, which is why the
+default path is the BI cache.
 
 `spaces()` also reports whether each space belongs to a Google Workspace
 domain (``customer`` set) or a consumer account (unset), free of charge inside
@@ -18,26 +20,33 @@ filtered to `ROLE_MANAGER`, Chat's "Owner" role in the UI; see
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime
 
-from . import config, decoder, known, readers, sieve
+from . import config, decoder, readers, roster, sieve
 
 PEOPLE_LIMIT = 1000
 # The one write scope: creating messages. Nothing else is writable.
 SEND_SCOPE = "https://www.googleapis.com/auth/chat.messages.create"
 # Needed only to list a space's members, which is how an Owner is found
 # (spaces.get's own fields answer "domain or consumer" for free, no scope
-# beyond chat.spaces.readonly). A token minted before this scope existed
-# lacks it; `spaces --owner` says so and points at `login`.
+# beyond chat.spaces.readonly).
 MEMBERSHIPS_SCOPE = "https://www.googleapis.com/auth/chat.memberships.readonly"
-# Scopes for a freshly-minted token: both reads, send, and memberships, minted
-# together so one login serves every path.
+# Scopes for a freshly-minted token: both Chat reads, send, memberships, and
+# the People API reads that name people, minted together so one login serves
+# every path.
 LOGIN_SCOPES = [
     "https://www.googleapis.com/auth/chat.spaces.readonly",
     "https://www.googleapis.com/auth/chat.messages.readonly",
     SEND_SCOPE,
     MEMBERSHIPS_SCOPE,
+    *roster.PEOPLE_SCOPES,
 ]
+# The loopback port the consent flow listens on for Google's redirect.
+CONSENT_PORT = 7276
+# How long a consent a command opened by itself waits for the person before
+# the command carries on without the new scopes.
+CONSENT_TIMEOUT = 180
 
 
 def _require_google():
@@ -65,8 +74,25 @@ def _media_download():
     return MediaIoBaseDownload
 
 
-def login(cfg: dict) -> str:
-    """Mint a token via the browser OAuth flow, write it, return its path."""
+def _open_quietly(url, new=0, autoraise=True):
+    """Open the consent page from a child process whose stdout and stderr are
+    discarded, so nothing a browser launcher prints reaches this process's
+    stdout: under the MCP server that stream is the protocol."""
+    import subprocess
+
+    subprocess.Popen([sys.executable, "-m", "webbrowser", "-t", url],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+    return True
+
+
+def _consent(cfg: dict, *, open_browser: bool = True, timeout: int | None = None) -> str:
+    """Run Google's consent flow for LOGIN_SCOPES, write the token, return its
+    path. Everything the flow prints goes to stderr. With ``timeout`` set, an
+    unanswered consent fails after that many seconds rather than waiting."""
+    import contextlib
+    import webbrowser
+
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow
     except ImportError as exc:
@@ -81,22 +107,119 @@ def login(cfg: dict) -> str:
             f"majordomo: no OAuth client at {client_file}. Create a Desktop OAuth "
             "client in Google Cloud (Chat API enabled) and save it there."
         )
+    # include_granted_scopes returns what the account already granted this
+    # client alongside the new scopes; oauthlib would otherwise reject a token
+    # whose scopes differ from the request.
+    os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+    import types
+
+    webbrowser.register("majordomo-quiet", None, types.SimpleNamespace(open=_open_quietly))
     try:
         flow = InstalledAppFlow.from_client_secrets_file(client_file, LOGIN_SCOPES)
-        creds = flow.run_local_server(port=7276, access_type="offline", prompt="consent")
+        with contextlib.redirect_stdout(sys.stderr):
+            creds = flow.run_local_server(
+                port=CONSENT_PORT, open_browser=open_browser, browser="majordomo-quiet",
+                timeout_seconds=timeout,
+                authorization_prompt_message="majordomo: grant access in your browser: {url}",
+                access_type="offline", prompt="consent", include_granted_scopes="true",
+            )
     except Exception:
         # Swallow the raw exception (and its locals): a failed OAuth exchange
         # carries the client secret and authorization code in the traceback.
         raise SystemExit(
-            "majordomo: login failed (the OAuth client may be revoked or the "
-            f"project disabled). Re-download the Desktop client secret to {client_file} "
-            "and check the Cloud project is enabled, then retry."
+            "majordomo: login failed or was not completed (the OAuth client may "
+            f"be revoked or the project disabled). Check {client_file} and the "
+            "Cloud project, then retry `majordomo login`."
         )
     os.makedirs(os.path.dirname(token_file), exist_ok=True)
     with open(token_file, "w") as fh:
         fh.write(creds.to_json())
     os.chmod(token_file, 0o600)
     return token_file
+
+
+def login(cfg: dict) -> str:
+    """Mint a token via the browser OAuth flow, write it, return its path."""
+    return _consent(cfg)
+
+
+def consent_mode() -> str | None:
+    """How a command may ask for a scope it lacks: "browser" when a browser
+    can be opened here, "url" when only a person at a terminal can take the
+    printed link, None when nobody is there to answer (cron, CI, a headless
+    server)."""
+    if os.environ.get("CI"):
+        return None
+    remote = os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY")
+    if sys.platform == "darwin" or sys.platform.startswith("win"):
+        display = not remote
+    else:
+        display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    if display:
+        return "browser"
+    try:
+        attended = sys.stdin.isatty() and sys.stderr.isatty()
+    except (AttributeError, ValueError):
+        attended = False
+    return "url" if attended else None
+
+
+def _missing(creds, needed: list[str]) -> list[str]:
+    granted = getattr(creds, "scopes", None)
+    if granted is None:
+        return []  # a token that records no scopes is taken at its word
+    return [s for s in needed if s not in granted]
+
+
+def ensure_scopes(cfg: dict, creds, needed: list[str], purpose: str):
+    """``creds`` if it holds ``needed``; else run the consent flow once, when
+    someone can answer it, and return the new credentials; else None.
+
+    Never under WORLD_AS_OF (a bounded run is read-only). A declined or
+    unanswered consent is not remembered: the next command that needs the
+    scope asks again. Whoever calls this decides what None means: a soft
+    fallback for a display name, a refusal for a send.
+    """
+    if not _missing(creds, needed):
+        return creds
+    if config.world_as_of() is not None:
+        return None
+    mode = consent_mode()
+    if mode is None:
+        return None
+    config.note_once(
+        "majordomo: this version of majordomo needs more Google permissions than "
+        f"your saved login grants ({purpose}); opening Google's consent page to grant them."
+        + ("" if mode == "browser" else
+           f" Open the link below in a browser on this machine (or forward port {CONSENT_PORT}).")
+    )
+    try:
+        _consent(cfg, open_browser=(mode == "browser"), timeout=CONSENT_TIMEOUT)
+        fresh = get_credentials(cfg)
+    except SystemExit:
+        return None
+    return None if _missing(fresh, needed) else fresh
+
+
+def people_service(cfg: dict):
+    """A People API service over the saved token, for roster.py; None, with a
+    one-line note, when the token cannot name people and could not be made to."""
+    try:
+        creds = get_credentials(cfg)
+    except SystemExit:
+        config.note_once(roster.NO_LOGIN_NOTE)
+        return None
+    creds = ensure_scopes(cfg, creds, roster.PEOPLE_SCOPES, "the People API, which names people")
+    if creds is None:
+        config.note_once(roster.LOGIN_NOTE)
+        return None
+    _, _, build = _require_google()
+    return build("people", "v1", credentials=creds, cache_discovery=False)
+
+
+def people_lookup(cfg: dict | None):
+    """The roster's lazy People lookup for a config, or None without one."""
+    return (lambda: people_service(cfg)) if cfg is not None else None
 
 
 def get_credentials(cfg: dict):
@@ -160,8 +283,9 @@ def _thread_target(thread: str) -> tuple[str, str]:
     return "/".join(key.split("/")[:2]), key.replace("/messages/", "/threads/")
 
 
-def _dm_space(service, blocked: list[str], to: str) -> str:
-    """The existing 1:1 direct-message space with a person, or a clean refusal.
+def _dm_space(service, blocked: list[str], to: str) -> dict:
+    """The existing 1:1 direct-message ``Space`` with a person, as the API
+    returns it, or a clean refusal.
 
     ``to`` is users/<id>, a bare id, or an email (the API takes the email as
     an alias for the id). A DM the sieve blocks answers exactly like one that
@@ -175,10 +299,9 @@ def _dm_space(service, blocked: list[str], to: str) -> str:
         if getattr(getattr(exc, "resp", None), "status", None) == 404:
             raise SystemExit(absent) from None
         raise
-    space = found.get("name")
-    if not sieve.allows(blocked, space):
+    if not sieve.allows(blocked, found.get("name")):
         raise SystemExit(absent)
-    return space
+    return found
 
 
 def _upload_attachment(service, space: str, path: str) -> dict:
@@ -207,7 +330,7 @@ def _upload_attachment(service, space: str, path: str) -> dict:
 def send(cfg: dict, blocked: list[str], *, space: str | None = None,
          thread: str | None = None, to: str | None = None,
          text: str | None = None, attachments: list[str] | None = None,
-         service=None) -> dict:
+         service=None, people=None) -> dict:
     """Create a message in a space, in a thread, or in a person's 1:1 DM;
     returns the created message as the API gives it. Carries text, one or more
     file attachments, or both (at least one is required). The sieve refuses a
@@ -235,22 +358,24 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
     if space and not sieve.allows(blocked, space):
         raise SystemExit(f"majordomo: {space}: not found.")
     if service is None:
-        creds = get_credentials(cfg)
-        if SEND_SCOPE not in (creds.scopes or []):
+        creds = ensure_scopes(cfg, get_credentials(cfg), [SEND_SCOPE], "sending messages")
+        if creds is None:
             raise SystemExit(
-                "majordomo: the OAuth token predates send and lacks its scope; "
-                "re-run `majordomo login`."
+                "majordomo: this version of majordomo needs more Google permissions "
+                "than your saved login grants (sending messages); run `majordomo login` "
+                "to grant them."
             )
         _, _, build = _require_google()
         service = build("chat", "v1", credentials=creds, cache_discovery=False)
-    reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg))
+        people = people_lookup(cfg)
+    reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg), people=people)
     if to:
         space = reader.dm_space_for(to)
     elif space:
         space = reader.resolve_space(space)
         if not sieve.allows(blocked, space):
             raise SystemExit(f"majordomo: {space}: not found.")
-    reader.known.save()
+    reader.roster.save()
     # The space is now resolved and sieve-cleared; upload only after that, so a
     # blocked or absent target is refused before any file leaves the machine.
     if attachments:
@@ -294,7 +419,7 @@ class NocacheReader:
     source = "nocache"
 
     def __init__(self, creds=None, blocked=None, blocked_assignees=None, service=None,
-                 kn: known.Known | None = None, me: str | None = None):
+                 ros: roster.Roster | None = None, me: str | None = None, people=None):
         self.blocked = blocked or []
         self.blocked_assignees = blocked_assignees or []
         if service is not None:
@@ -303,14 +428,17 @@ class NocacheReader:
             _, _, build = _require_google()
             self.chat = build("chat", "v1", credentials=creds, cache_discovery=False)
         self._spaces: list[dict] | None = None
-        self.known = kn or known.Known()
+        # ``people`` is the People lookup for a roster built here; a shared
+        # roster brings its own.
+        self.roster = ros or roster.Roster(lookup=people)
         # The account's own id, so the other party of a DM can be told apart.
         self.me = me
 
     @classmethod
     def from_config(cls, cfg: dict, blocked: list[str], blocked_assignees: list[str] | None = None,
-                    kn: known.Known | None = None) -> "NocacheReader":
-        return cls(get_credentials(cfg), blocked, blocked_assignees, kn=kn, me=config.me_user_id(cfg))
+                    ros: roster.Roster | None = None, creds=None) -> "NocacheReader":
+        return cls(creds or get_credentials(cfg), blocked, blocked_assignees, ros=ros,
+                   me=config.me_user_id(cfg), people=people_lookup(cfg))
 
     # --- people and spaces by name ---------------------------------------
 
@@ -323,32 +451,35 @@ class NocacheReader:
                 return sender["name"]
         return None
 
+    def _find_dm(self, who: str) -> str:
+        found = _dm_space(self.chat, self.blocked, who)
+        self.roster.remember_space(found)
+        self.roster.save()
+        return found["name"]
+
     def _by_email(self, email: str) -> str | None:
-        space = _dm_space(self.chat, self.blocked, email)
-        user = self._counterpart(space)
+        """An address the People cache does not hold: the other human in the
+        DM findDirectMessage returns for it, then named through the roster,
+        which also stores the email where People carries it."""
+        user = self._counterpart(self._find_dm(email))
         if user:
-            self.known.remember(user, known.EMAIL, email, None, "api")
-            self.known.remember(user, known.DM_SPACE, space, None, "api")
+            self.roster.ensure([user])
+            self.roster.save()
         return user
 
     def resolve_person(self, who: str) -> str:
-        return self.known.resolve_person(who, by_email=self._by_email)
+        return self.roster.resolve_person(who, by_email=self._by_email)
 
     def resolve_space(self, who: str) -> str:
-        return self.known.resolve_space(who, seed=self.spaces)
+        return self.roster.resolve_space(who, seed=self._all_spaces, blocked=self.blocked)
 
     def dm_space_for(self, who: str) -> str:
         """The direct-message space with a person: an email or id straight
-        through the API's lookup, a name through the file first."""
+        through the API's lookup, a name resolved to its id first."""
         who = who.strip()
-        if not (known.is_id(who) or known.is_email(who)):
+        if not (roster.is_id(who) or roster.is_email(who)):
             who = self.resolve_person(who)
-        space = self.known.dm_space_of(who) if known.is_id(who) else None
-        if space is None:
-            space = _dm_space(self.chat, self.blocked, who)
-            if known.is_id(who):
-                self.known.remember(who, known.DM_SPACE, space, None, "api")
-        return space
+        return self._find_dm(who)
 
     def _all_spaces(self) -> list[dict]:
         if self._spaces is None:
@@ -360,6 +491,9 @@ class NocacheReader:
                 if not token:
                     break
             self._spaces = [s for s in out if sieve.allows(self.blocked, s.get("name"))]
+            for s in self._spaces:
+                self.roster.remember_space(s)
+            self.roster.save()
         return self._spaces
 
     def _space_display(self, name: str) -> str | None:
@@ -389,7 +523,7 @@ class NocacheReader:
         UI's "Manager" and is not this). None when the space carries no owner
         membership (a direct message, for instance). Under plain user auth the
         API gives back only the member's ``name``, never a display name, so
-        the caller resolves it through known.py like any other id.
+        the caller names it through the roster like any other id.
         """
         try:
             # One read per space: a burst over every space trips the project's
@@ -401,8 +535,9 @@ class NocacheReader:
         except Exception as exc:
             if getattr(getattr(exc, "resp", None), "status", None) == 403:
                 raise SystemExit(
-                    "majordomo: the OAuth token lacks the memberships scope "
-                    f"({MEMBERSHIPS_SCOPE}) that --owner needs; re-run `majordomo login`."
+                    "majordomo: this version of majordomo needs more Google permissions "
+                    "than your saved login grants (listing space members, for --owner); "
+                    "run `majordomo login` to grant them."
                 ) from None
             raise
         members = resp.get("memberships", [])
@@ -432,18 +567,15 @@ class NocacheReader:
                 "customer": customer, "domain_owned": customer is not None,
                 "external_user_allowed": bool(s.get("externalUserAllowed")),
             })
-        for r in rows:
-            self.known.remember(r["space_name"], known.NAME, r["space_display"], None, "api")
         rows = sieve.filter_rows(self.blocked, rows)
         if owner:
             for r in rows:
                 # A direct message has no Owner role, so it costs no lookup.
-                uid = (None if r["space_type"] == "DIRECT_MESSAGE"
-                       else self._owner_of(r["space_name"]))
-                r["owner_user_id"] = uid
-                names = self.known.names_of(uid) if uid else []
-                r["owner_display"] = names[0] if names else None
-        self.known.save()
+                r["owner_user_id"] = (None if r["space_type"] == "DIRECT_MESSAGE"
+                                      else self._owner_of(r["space_name"]))
+            named = self.roster.names(r["owner_user_id"] for r in rows)
+            for r in rows:
+                r["owner_display"] = named.get(r["owner_user_id"])
         return rows
 
     def tasks(self, *, to_user=None, by_user=None, assignee=None,
@@ -464,7 +596,6 @@ class NocacheReader:
             disp = self._space_display(sp)
             for t in decoded:
                 aid, adisp = t["assignee_user_name"], t["assignee_display"]
-                self.known.remember(aid, known.NAME, adisp, _parse_dt(t["created_at"]), "task")
                 if (to_user and aid != to_user) or (assignee and aid != assignee):
                     continue
                 if by_user and sender_of.get(t["source_message_name"]) != by_user:
@@ -480,19 +611,22 @@ class NocacheReader:
                     "status": "open",
                 })
         out.sort(key=lambda r: r["created_at"] or datetime.min, reverse=True)
-        self.known.save()
         out = sieve.filter_rows(self.blocked, out)
         out = sieve.filter_assignees(self.blocked_assignees, out)
-        return out[:limit]
+        return readers.name_assignees(self.roster, self.blocked_assignees, out[:limit])
 
     def people(self, *, person=None, start=None, end=None) -> list[dict]:
         by_id: dict[str, dict] = {}
+        dm_of: dict[str, str] = {}
         for s in self._all_spaces():
+            is_dm = s.get("spaceType") == "DIRECT_MESSAGE"
             for m in self._messages(s.get("name"), start, end):
-                self.known.learn_mentions(m.get("text"), m.get("annotations"), _parse_dt(m.get("createTime")))
+                self.roster.learn_mentions(m.get("text"), m.get("annotations"), _parse_dt(m.get("createTime")))
                 sender = (m.get("sender") or {}).get("name")
                 if sender:
                     by_id.setdefault(sender, {"user_id": sender, "display": None, "msgs": 0, "tasks": 0})["msgs"] += 1
+                    if is_dm and sender != self.me:
+                        dm_of.setdefault(sender, s.get("name"))
                 t = decoder.decode_task(m, s.get("name"))
                 if t and t["assignee_user_name"]:
                     e = by_id.setdefault(t["assignee_user_name"],
@@ -500,12 +634,11 @@ class NocacheReader:
                     e["tasks"] += 1
                     if not e["display"]:
                         e["display"] = t["assignee_display"]
-                    self.known.remember(t["assignee_user_name"], known.NAME, t["assignee_display"],
-                                        _parse_dt(t["created_at"]), "task")
+                    self.roster.learn(t["assignee_user_name"], t["assignee_display"], _parse_dt(t["created_at"]))
         rows = sorted(by_id.values(), key=lambda r: r["msgs"] + r["tasks"], reverse=True)[:PEOPLE_LIMIT]
         who = self.resolve_person(person) if person else None
-        rows = readers.decorate_people(self.known, rows, who)
-        self.known.save()
+        rows = sieve.filter_assignees(self.blocked_assignees, rows, id_key="user_id", name_key="display")
+        rows = readers.decorate_people(self.roster, rows, who, dm_of)
         return sieve.filter_assignees(self.blocked_assignees, rows, id_key="user_id", name_key="display")
 
     def messages(self, space: str | None = None, *, person=None, thread=None, start=None, end=None,
@@ -534,7 +667,6 @@ class NocacheReader:
             for m in self._messages(sp, start, end):
                 if thread and m.get("name", "").split(".")[0] != key:
                     continue
-                self.known.learn_mentions(m.get("text"), m.get("annotations"), _parse_dt(m.get("createTime")))
                 if sender and (m.get("sender") or {}).get("name") != sender:
                     continue
                 row = {"name": m.get("name"), "space_name": sp, "space_display": self._space_display(sp),
@@ -551,8 +683,7 @@ class NocacheReader:
                 rows.append(row)
         # Chat pages a space oldest-first, so the tail is the recent end: the
         # cap keeps that, matching the cache backend row for row.
-        self.known.save()
-        return sieve.filter_rows(self.blocked, rows)[-limit:]
+        return readers.name_senders(self.roster, sieve.filter_rows(self.blocked, rows)[-limit:])
 
 
 def owned_spaces(cfg: dict, blocked: list[str], *, minimal_messages: int = 1, owner: bool = False) -> list[dict]:
@@ -562,7 +693,13 @@ def owned_spaces(cfg: dict, blocked: list[str], *, minimal_messages: int = 1, ow
     doors call this one function rather than building a `NocacheReader`
     themselves, so the "always direct" exception has one home.
     """
-    return NocacheReader.from_config(cfg, blocked).spaces(minimal_messages=minimal_messages, owner=owner)
+    creds = get_credentials(cfg)
+    if owner:
+        # A token short of the memberships scope gets the consent flow once;
+        # declined or unanswerable, the first member read refuses as before.
+        creds = ensure_scopes(cfg, creds, [MEMBERSHIPS_SCOPE], "listing space members, for --owner") or creds
+    return NocacheReader.from_config(cfg, blocked, creds=creds).spaces(
+        minimal_messages=minimal_messages, owner=owner)
 
 
 # --- attachments ---------------------------------------------------------
@@ -650,7 +787,7 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
                 person: str | None = None,
                 start: datetime | None = None, end: datetime | None = None,
                 limit: int = 500, download_to: str | None = None,
-                service=None) -> list[dict]:
+                service=None, people=None) -> list[dict]:
     """The files posted in a space, a thread, on one message, or by a person.
 
     One of space / thread / message / person names the scope; a person alone
@@ -674,9 +811,10 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
     if service is None:
         _, _, build = _require_google()
         service = build("chat", "v1", credentials=get_credentials(cfg), cache_discovery=False)
+        people = people_lookup(cfg)
 
     bound = config.world_as_of()
-    reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg))
+    reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg), people=people)
     sender = None
     if space:
         space = reader.resolve_space(space)
@@ -712,15 +850,13 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
         for msg in reader._messages(scope_space, start, end):
             if key and msg.get("name", "").split(".")[0] != key:
                 continue
-            reader.known.learn_mentions(msg.get("text"), msg.get("annotations"), _parse_dt(msg.get("createTime")))
             if sender and (msg.get("sender") or {}).get("name") != sender:
                 continue
             rows += _attachment_rows(msg, scope_space, display)
-    reader.known.save()
 
     # The newest files are the ones a capped listing is asked for, and the API
     # pages oldest-first, so the cap takes the tail.
-    rows = sieve.filter_rows(blocked, rows)[-limit:]
+    rows = readers.name_senders(reader.roster, sieve.filter_rows(blocked, rows)[-limit:])
     if download_to is not None:
         for row in rows:
             row["path"] = _fetch(service, row, download_to)

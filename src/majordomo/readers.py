@@ -8,8 +8,8 @@ always carries `source`, so a switch is surfaced, not silent.
 
 A person or a space reaches a reader as the caller typed it (a ``users/<id>``,
 an email or a name; a ``spaces/<id>`` or a display name) and is resolved here,
-inside the core, through known.py: both front doors pass the string through.
-Every read also teaches known.py what it surfaced.
+inside the core, through roster.py: both front doors pass the string through.
+Every person a report shows is named through the same roster.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 
-from . import config, db, known, reports, sieve
+from . import config, db, reports, roster, sieve
 
 # A "reader" is any object with `source` and the four report methods
 # (spaces / people / tasks / messages). CacheReader and api.NocacheReader are
@@ -25,48 +25,87 @@ from . import config, db, known, reports, sieve
 # space sieve and the block_assignees list and apply both.
 
 
-def decorate_people(kn: known.Known, rows: list[dict], person: str | None) -> list[dict]:
-    """Give each people row its spellings, email and DM space from known.py,
-    and narrow to one person when asked. The identity columns are not
-    windowed: a person with no activity in the window still has a row."""
+def people_lookup(cfg: dict | None):
+    """The roster's People lookup for a config (api.py holds the credentials),
+    imported late: api imports this module."""
+    from .api import people_lookup as lookup
+
+    return lookup(cfg)
+
+
+def decorate_people(ros: roster.Roster, rows: list[dict], person: str | None,
+                    dm_of: dict[str, str]) -> list[dict]:
+    """Give each people row its name, the prose spellings seen this run, its
+    email and its DM space, and narrow to one person when asked. The name is
+    the roster's (People API, current-state); the spellings are frozen prose.
+    The identity columns are not windowed: a person with no activity in the
+    window still has a row."""
     if person:
         rows = [r for r in rows if r["user_id"] == person] or [
             {"user_id": person, "display": None, "msgs": 0, "tasks": 0}]
+    named = ros.names(r["user_id"] for r in rows)
     for r in rows:
-        names = kn.names_of(r["user_id"])
-        if r.get("display") and r["display"] not in names:
-            names.append(r["display"])
+        uid = r["user_id"]
+        prose = ros.spellings_of(uid)
+        if r.get("display") and r["display"] not in prose:
+            prose.append(r["display"])
+        current = named.get(uid)
+        names = ([current] if current else []) + [p for p in prose if p != current]
         r["display"] = names[0] if names else None
         r["names"] = names
-        r["email"] = kn.email_of(r["user_id"])
-        r["dm_space"] = kn.dm_space_of(r["user_id"])
+        r["email"] = ros.email_of(uid)
+        r["dm_space"] = dm_of.get(uid)
     return rows
+
+
+def name_senders(ros: roster.Roster, rows: list[dict]) -> list[dict]:
+    """Each row's ``sender_display`` from its ``sender_name``, through the
+    one resolver."""
+    named = ros.names(r.get("sender_name") for r in rows)
+    for r in rows:
+        r["sender_display"] = named.get(r.get("sender_name"))
+    return rows
+
+
+def name_assignees(ros: roster.Roster, blocked_assignees: list[str], rows: list[dict]) -> list[dict]:
+    """Each task row's ``assignee`` through the one resolver, falling back to
+    the name the row came with. The caller has applied block_assignees to the
+    names the rows came with; it is applied again on the resolved name, so a
+    person blocked by either name stays out."""
+    named = ros.names(r.get("assignee_user_name") for r in rows)
+    for r in rows:
+        r["assignee"] = named.get(r.get("assignee_user_name")) or r.get("assignee")
+    return sieve.filter_assignees(blocked_assignees, rows)
 
 
 class CacheReader:
     source = "cache"
 
     def __init__(self, conn, blocked: list[str], blocked_assignees: list[str] | None = None,
-                 cfg: dict | None = None, kn: known.Known | None = None):
+                 cfg: dict | None = None, ros: roster.Roster | None = None):
         self.conn = conn
         self.blocked = blocked
         self.blocked_assignees = blocked_assignees or []
         self._cfg = cfg or {}
-        self.known = kn or known.Known()
+        self.roster = ros or roster.Roster(lookup=people_lookup(cfg))
 
-    # --- what the mirror teaches known.py --------------------------------
+    # --- what the mirror teaches the roster, for this run ------------------
 
     def _seed_names(self) -> None:
         for r in reports.mention_rows(self.conn, self.blocked):
-            self.known.learn_mentions(r["text"], r["annotations_json"], r["create_time"])
+            self.roster.learn_mentions(r["text"], r["annotations_json"], r["create_time"])
         for r in reports.task_names(self.conn, self.blocked):
-            self.known.remember(r["user_id"], known.NAME, r["display"], r["first_seen"], "task")
-            self.known.remember(r["user_id"], known.NAME, r["display"], r["last_seen"], "task")
+            self.roster.learn(r["user_id"], r["display"], r["last_seen"])
+
+    def _dm_spaces(self, user: str | None = None) -> dict[str, str]:
+        """users/<id> -> the DM space they sent messages in, from the mirror.
+        Needs [me].user_id to tell the other party from the account itself."""
         me = config.me_user_id(self._cfg)
-        if me:
-            for r in reports.dm_spaces(self.conn, self.blocked):
-                if r["sender_name"] != me:
-                    self.known.remember(r["sender_name"], known.DM_SPACE, r["space_name"], None, "cache")
+        out: dict[str, str] = {}
+        for r in reports.dm_spaces(self.conn, self.blocked, user=user):
+            if r["sender_name"] != me:
+                out.setdefault(r["sender_name"], r["space_name"])
+        return out
 
     def _seed_spaces(self) -> None:
         self.spaces(minimal_messages=0)
@@ -75,27 +114,22 @@ class CacheReader:
         # The mirror holds no emails; the Chat API resolves one, given a token.
         from .api import NocacheReader
         try:
-            nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees, kn=self.known)
+            nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees, ros=self.roster)
         except SystemExit as exc:
             raise SystemExit(f"majordomo: {email}: an email resolves over the Chat API; {exc}") from None
         return nc._by_email(email)
 
     def resolve_person(self, who: str) -> str:
-        return self.known.resolve_person(who, by_email=self._by_email, seed=self._seed_names)
+        return self.roster.resolve_person(who, by_email=self._by_email, seed=self._seed_names)
 
     def resolve_space(self, who: str) -> str:
-        return self.known.resolve_space(who, seed=self._seed_spaces)
+        return self.roster.resolve_space(who, seed=self._seed_spaces, blocked=self.blocked)
 
     def dm_space_for(self, who: str) -> str:
-        """The direct-message space with a person, from the file or from the
-        mirror (the DM they sent messages in). A blocked DM answers like none."""
+        """The direct-message space with a person, from the mirror (the DM
+        they sent messages in). A blocked DM answers like none."""
         user = self.resolve_person(who)
-        found = self.known.dm_space_of(user)
-        if found is None:
-            rows = [r for r in reports.dm_spaces(self.conn, self.blocked, user=user)]
-            if rows:
-                found = rows[0]["space_name"]
-                self.known.remember(user, known.DM_SPACE, found, None, "cache")
+        found = next(iter(reports.dm_spaces(self.conn, self.blocked, user=user)), {}).get("space_name")
         if found is None or not sieve.allows(self.blocked, found):
             raise SystemExit(f"majordomo: no direct message space with {user}.")
         return found
@@ -105,16 +139,15 @@ class CacheReader:
     def spaces(self, minimal_messages: int = 1) -> list[dict]:
         rows = reports.spaces(self.conn, self.blocked, minimal_messages=minimal_messages)
         for r in rows:
-            self.known.remember(r["space_name"], known.NAME, r.get("space_display"), None, "cache")
-        self.known.save()
+            self.roster.learn_space_name(r["space_name"], r.get("space_display"))
         return rows
 
     def people(self, *, person: str | None = None, **kw) -> list[dict]:
         rows = reports.people(self.conn, self.blocked, **kw)
         self._seed_names()
         who = self.resolve_person(person) if person else None
-        rows = decorate_people(self.known, rows, who)
-        self.known.save()
+        rows = sieve.filter_assignees(self.blocked_assignees, rows, id_key="user_id", name_key="display")
+        rows = decorate_people(self.roster, rows, who, self._dm_spaces())
         return sieve.filter_assignees(self.blocked_assignees, rows, id_key="user_id", name_key="display")
 
     def tasks(self, *, assignee=None, space=None, **filters) -> list[dict]:
@@ -123,10 +156,8 @@ class CacheReader:
         if space:
             space = self.resolve_space(space)
         rows = reports.tasks(self.conn, self.blocked, assignee=assignee, space=space, **filters)
-        for r in rows:
-            self.known.remember(r["assignee_user_name"], known.NAME, r.get("assignee"), r.get("created_at"), "task")
-        self.known.save()
-        return sieve.filter_assignees(self.blocked_assignees, rows)
+        rows = sieve.filter_assignees(self.blocked_assignees, rows)
+        return name_assignees(self.roster, self.blocked_assignees, rows)
 
     def messages(self, space: str | None = None, *, person: str | None = None, **kw) -> list[dict]:
         sender = None
@@ -138,10 +169,7 @@ class CacheReader:
             else:
                 space = self.dm_space_for(person)
         rows = reports.messages(self.conn, self.blocked, space=space, sender=sender, **kw)
-        for r in rows:
-            self.known.learn_mentions(r.get("text"), r.pop("annotations_json", None), r.get("create_time"))
-        self.known.save()
-        return rows
+        return name_senders(self.roster, rows)
 
 
 class FreshReader:
@@ -167,7 +195,7 @@ class FreshReader:
     def _nocache(self):
         if self._nc is None:
             from .api import NocacheReader
-            self._nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees, kn=self.cache.known)
+            self._nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees, ros=self.cache.roster)
         return self._nc
 
     # Stable dimensions never need a freshness fetch.

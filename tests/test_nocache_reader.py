@@ -44,8 +44,24 @@ MSGS = {
 }
 
 
-def _reader(blocked):
-    return api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=blocked)
+def _people(directory):
+    """A fake People service answering getBatchGet from {people/<id>: name}."""
+    svc = MagicMock()
+
+    def batch_get(resourceNames=None, **kw):
+        req = MagicMock()
+        req.execute.return_value = {"responses": [
+            {"requestedResourceName": n, "person": {"resourceName": n, "names": [
+                {"displayName": directory[n], "metadata": {"source": {"type": "PROFILE"}}}]}}
+            for n in resourceNames if n in directory]}
+        return req
+
+    svc.people().getBatchGet.side_effect = batch_get
+    return lambda: svc
+
+
+def _reader(blocked, people=None):
+    return api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=blocked, people=people)
 
 
 def test_decodes_and_recovers_title():
@@ -78,9 +94,11 @@ def test_people_broadened_counts_senders_and_assignees():
     assert by["users/1"]["tasks"] == 1 and by["users/1"]["display"] == "Alice"
 
 
-def test_assignee_by_name_nocache():
+def test_assignee_by_name_nocache(tmp_path):
+    from majordomo import roster
     r = _reader(["spaces/BLOCK"])
-    r.tasks()  # a first read teaches the spellings
+    r.roster = roster.Roster(tmp_path, lookup=_people({"people/1": "Alice Quill"}))
+    r.tasks()  # a first read names the assignee into the cache file
     assert len(r.tasks(assignee="Ali")) == 1
     try:
         r.tasks(assignee="Zzz")
@@ -113,7 +131,7 @@ def test_make_reader_auto_falls_back_to_nocache_when_db_down():
 
 
 
-# --- people and spaces by name, through known.py ---------------------------
+# --- people and spaces by name, through roster.py ---------------------------
 
 def _chat_with_dm(user_to_space):
     import types
@@ -133,20 +151,38 @@ def _chat_with_dm(user_to_space):
     return chat
 
 
-def test_a_read_learns_names_and_a_name_then_resolves(tmp_path):
-    from majordomo import known
-    kn = known.Known(tmp_path / "known.tsv")
-    r = api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=[], kn=kn)
-    r.tasks()
-    assert kn.names_of("users/1") == ["Alice"]
+def test_a_read_names_people_and_a_name_then_resolves(tmp_path):
+    from majordomo import roster
+    ros = roster.Roster(tmp_path, lookup=_people({"people/1": "Alice Quill", "people/9": "Nine Pike"}))
+    r = api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=[], ros=ros)
+    rows = r.tasks()
+    assert [x["assignee"] for x in rows if x["space_name"] == "spaces/OK"] == ["Alice Quill"]
     assert r.resolve_person("alice") == "users/1"
-    assert (tmp_path / "known.tsv").exists()
+    assert (tmp_path / "people.json").exists() and (tmp_path / "spaces.json").exists()
+    senders = r.messages(space="spaces/OK")
+    assert {x["sender_display"] for x in senders} == {"Nine Pike"}
+
+
+def test_without_people_the_prose_name_and_the_id_remain(tmp_path):
+    from majordomo import roster
+    r = api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"],
+                          ros=roster.Roster(tmp_path, lookup=lambda: None))
+    assert [x["assignee"] for x in r.tasks()] == ["Alice"]
+    assert {x["sender_display"] for x in r.messages(space="spaces/OK")} == {None}
+
+
+def test_block_assignees_holds_on_the_resolved_name(tmp_path):
+    from majordomo import roster
+    r = api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"],
+                          blocked_assignees=["Alice Quill"],
+                          ros=roster.Roster(tmp_path, lookup=_people({"people/1": "Alice Quill"})))
+    assert r.tasks() == []
 
 
 def test_space_by_display_name(tmp_path):
-    from majordomo import known
-    kn = known.Known(tmp_path / "known.tsv")
-    r = api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"], kn=kn)
+    from majordomo import roster
+    r = api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"],
+                          ros=roster.Roster(tmp_path))
     assert r.resolve_space("work") == "spaces/OK"
     try:
         r.resolve_space("Private")  # blocked spaces are never listed, so never named
@@ -157,33 +193,31 @@ def test_space_by_display_name(tmp_path):
 
 
 def test_person_alone_reads_the_dm(tmp_path):
-    from majordomo import known
-    kn = known.Known(tmp_path / "known.tsv")
+    from majordomo import roster
+    ros = roster.Roster(tmp_path)
     msgs = dict(MSGS, **{"spaces/DM9": [
         {"name": "spaces/DM9/messages/D.1", "createTime": "2026-06-02T08:00:00Z", "text": "hi",
          "sender": {"name": "users/9", "type": "HUMAN"}}]})
     chat = _chat_with_dm({"users/9": "spaces/DM9"})
     chat.spaces().messages().list.side_effect = lambda parent=None, **kw: _page(msgs.get(parent, []))
-    r = api.NocacheReader(service=chat, blocked=[], kn=kn, me="users/me")
+    r = api.NocacheReader(service=chat, blocked=[], ros=ros, me="users/me")
     rows = r.messages(person="users/9")
     assert [x["name"] for x in rows] == ["spaces/DM9/messages/D.1"]
-    assert kn.dm_space_of("users/9") == "spaces/DM9"
+    assert ros.spaces["spaces/DM9"]["space"] == {"name": "spaces/DM9", "spaceType": "DIRECT_MESSAGE"}
     assert r.messages(space="spaces/OK", person="users/9") and all(
         x["sender_name"] == "users/9" for x in r.messages(space="spaces/OK", person="users/9"))
 
 
 def test_email_resolves_through_the_dm(tmp_path):
-    from majordomo import known
-    kn = known.Known(tmp_path / "known.tsv")
+    from majordomo import roster
+    ros = roster.Roster(tmp_path)
     msgs = {"spaces/DM9": [
         {"name": "spaces/DM9/messages/D.1", "createTime": "2026-06-02T08:00:00Z", "text": "hi",
          "sender": {"name": "users/9", "type": "HUMAN"}}]}
     chat = _chat_with_dm({"users/nine@example.com": "spaces/DM9"})
     chat.spaces().messages().list.side_effect = lambda parent=None, **kw: _page(msgs.get(parent, []))
-    r = api.NocacheReader(service=chat, blocked=[], kn=kn, me="users/me")
+    r = api.NocacheReader(service=chat, blocked=[], ros=ros, me="users/me")
     assert r.resolve_person("nine@example.com") == "users/9"
-    assert kn.email_of("users/9") == "nine@example.com"
-    assert r.resolve_person("nine@example.com") == "users/9"  # second time from the file
 
 
 def _page(messages):
@@ -227,17 +261,15 @@ def _chat_with_members(spaces, members_by_space):
 
 
 def test_spaces_owner_resolves_the_role_manager_member(tmp_path):
-    from majordomo import known
-    kn = known.Known(tmp_path / "known.tsv")
-    kn.remember("users/OWNER", known.NAME, "Alice Smith", None, "mention")
-    kn.save()
+    from majordomo import roster
+    ros = roster.Roster(tmp_path, lookup=_people({"people/42": "Alice Smith"}))
     chat = _chat_with_members(DOMAIN_SPACES, {
-        "spaces/DOMAIN": [{"member": {"name": "users/OWNER", "type": "HUMAN"}}],
+        "spaces/DOMAIN": [{"member": {"name": "users/42", "type": "HUMAN"}}],
         "spaces/CONSUMER": [],
     })
-    r = api.NocacheReader(service=chat, blocked=[], kn=kn)
+    r = api.NocacheReader(service=chat, blocked=[], ros=ros)
     rows = {row["space_name"]: row for row in r.spaces(owner=True)}
-    assert rows["spaces/DOMAIN"]["owner_user_id"] == "users/OWNER"
+    assert rows["spaces/DOMAIN"]["owner_user_id"] == "users/42"
     assert rows["spaces/DOMAIN"]["owner_display"] == "Alice Smith"
     # No ROLE_MANAGER membership (e.g. a direct message): owner is unknown, not an error.
     assert rows["spaces/CONSUMER"]["owner_user_id"] is None
@@ -264,7 +296,7 @@ def test_spaces_owner_scope_insufficient_points_at_login():
     try:
         r.spaces(owner=True)
     except SystemExit as exc:
-        assert "memberships" in str(exc) and "majordomo login" in str(exc)
+        assert "--owner" in str(exc) and "majordomo login" in str(exc)
     else:
         raise AssertionError("a token without the memberships scope must be refused cleanly")
 

@@ -3,8 +3,10 @@
 Exposes the same reports as the CLI, over MCP, by going through the same reader
 seam (`readers.make_reader`). The sieve is applied in the reader, so a tool
 cannot bypass it. Each tool takes an optional `source` ("cache" | "live" | "nocache");
-the default is the cache fast path with a direct-API fallback. Needs the `mcp` extra;
-launched by `majordomo mcp` (stdio).
+the default is the cache fast path with a direct-API fallback. An answer carries
+``notes`` when the core raised any (what the CLI prints on stderr: a permission
+the login lacks, for one). Needs the `mcp` extra; launched by `majordomo mcp`
+(stdio), so nothing the core runs may write to stdout.
 """
 
 from __future__ import annotations
@@ -26,6 +28,9 @@ def _jsonable(rows: list[dict]) -> list[dict]:
 
 
 def _config() -> dict:
+    # Every tool call starts here: a note left from an earlier call that
+    # returned no envelope (send) belongs to that call, not this one.
+    config.drain_notes()
     try:
         return config.load_config()
     except SystemExit as exc:
@@ -48,6 +53,10 @@ def _reader(source: Optional[str]):
 
 def _envelope(source: str, rows: list[dict]) -> dict:
     out = {"source": source, "count": len(rows), "rows": _jsonable(rows)}
+    notes = config.drain_notes()
+    if notes:
+        # What the CLI prints on stderr, carried to a caller that reads none.
+        out["notes"] = notes
     bounded = os.environ.get(config.WORLD_AS_OF_ENV)
     if bounded:
         # Auditability: a bounded answer says so, so a benchmark log proves it.
@@ -67,8 +76,9 @@ def create_server() -> FastMCP:
         mirror not storing it). minimal_messages hides spaces with fewer than N
         messages (0 shows all; cache only). owner=True also resolves each
         space's Owner (owner_user_id/owner_display), one extra direct-API call
-        per space regardless of source, needing the memberships scope (a token
-        minted before it must re-run `majordomo login`). source: cache | live | nocache.
+        per space regardless of source, needing the memberships permission (a
+        login without it opens Google's consent page to add it).
+        source: cache | live | nocache.
         """
         if owner:
             cfg = _config()
@@ -83,8 +93,8 @@ def create_server() -> FastMCP:
     @server.tool()
     def people(person: Optional[str] = None, window: str = "year", since: Optional[str] = None,
                until: Optional[str] = None, source: Optional[str] = None) -> dict:
-        """List participants: every spelling each has been called, email and DM
-        space where known, with message and task counts. person (users/<id>,
+        """List participants: each one's name, the spellings they have been
+        called, email and DM space where known, with message and task counts. person (users/<id>,
         an email, or a name) narrows to one; the names, email and DM space are
         not windowed, only the counts are. window is one of 7d, 30d, month,
         year, all; since/until are ISO dates.
@@ -112,8 +122,8 @@ def create_server() -> FastMCP:
         """Report tasks by assignee/space/date. to_me/by_me need [me].user_id.
 
         assignee is a person: users/<id>, an email, or a name (a name matches
-        the spellings seen in tasks and @-mentions, whole then substring, and
-        must match one person). space is spaces/<id> or its display name.
+        People API names and, on the cache path, the spellings seen in tasks
+        and @-mentions, whole then substring, and must match one person). space is spaces/<id> or its display name.
         window is one of 7d, 30d, month, year, all; since/until are ISO dates.
         source: cache | live | nocache.
         """

@@ -116,8 +116,9 @@ def spaces(conn, blocked: list[str], *, minimal_messages: int = 1) -> list[dict]
 
 def people(conn, blocked: list[str], *, start: datetime | None = None, end: datetime | None = None) -> list[dict]:
     """All participants (message senders union task assignees) over the window,
-    with message and task counts. Display names come only from the prose @name
-    on the task side (the mirror carries no user display names)."""
+    with message and task counts. ``display`` is the prose @name on the task
+    side (the mirror carries no user display names); the reader names each
+    person through roster.py."""
     end = config.world_clamp(end)
     _floor_check(conn)
     clause, sp = sieve.clause(blocked, "space_name")
@@ -218,8 +219,7 @@ def messages(
     limit: int = MESSAGE_LIMIT,
 ) -> list[dict]:
     """Messages in a space or a thread, oldest-first, optionally only those a
-    given ``users/<id>`` sent. Each row carries the mirror's ``annotations_json``
-    so the reader can learn the @-mention spellings it holds."""
+    given ``users/<id>`` sent."""
     if not space and not thread:
         raise SystemExit("majordomo: messages needs --space, --thread, or --person.")
     if space and not sieve.allows(blocked, space):
@@ -254,8 +254,7 @@ def messages(
         f"""
         SELECT * FROM (
             SELECT m.name, m.space_name, s.display_name AS space_display,
-                   m.sender_name, m.sender_type, m.create_time, m.text,
-                   m.annotations_json
+                   m.sender_name, m.sender_type, m.create_time, m.text
               FROM googlechat_messages m
               LEFT JOIN googlechat_spaces s ON s.name = m.space_name
              WHERE {" AND ".join(where)}
@@ -269,38 +268,43 @@ def messages(
     return sieve.filter_rows(blocked, rows)
 
 
-# --- what the mirror knows about people: seeds for known.py -----------------
+# --- the prose spellings the mirror holds: roster.py's name seeds ----------
 
 def mention_rows(conn, blocked: list[str]) -> list[dict]:
     """Every message carrying a user mention: text, annotations and time, for
-    the reader to turn into (id, spelling, date) facts. One pass over the
-    mention-bearing rows, which the sieve bounds like every read."""
+    the reader to turn into (id, spelling, date) spellings. One pass over the
+    mention-bearing rows, which the sieve bounds like every read, and
+    WORLD_AS_OF too, so a replay never learns a later spelling."""
     clause, params = sieve.clause(blocked, "space_name")
+    bound = config.world_as_of()
     return db.query(
         conn,
         f"""
         SELECT text, annotations_json, create_time
           FROM googlechat_messages
          WHERE annotations_json LIKE '%%USER_MENTION%%' AND {clause}
+               {"AND create_time < %s" if bound else ""}
         """,
-        params,
+        params + ([bound] if bound else []),
     )
 
 
 def task_names(conn, blocked: list[str]) -> list[dict]:
-    """Each (assignee id, prose @name) a task creation froze, with the first
-    and last time it was used."""
+    """Each (assignee id, prose @name) a task creation froze, with the last
+    time it was used, bounded by WORLD_AS_OF like mention_rows."""
     clause, params = sieve.clause(blocked, "space_name")
+    bound = config.world_as_of()
     return db.query(
         conn,
         f"""
         SELECT assignee_user_name AS user_id, assignee_display AS display,
-               MIN(created_at) AS first_seen, MAX(created_at) AS last_seen
+               MAX(created_at) AS last_seen
           FROM coord_tasks
          WHERE assignee_user_name IS NOT NULL AND assignee_display IS NOT NULL AND {clause}
+               {"AND created_at < %s" if bound else ""}
          GROUP BY assignee_user_name, assignee_display
         """,
-        params,
+        params + ([bound] if bound else []),
     )
 
 

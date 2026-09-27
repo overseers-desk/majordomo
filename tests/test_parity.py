@@ -63,7 +63,7 @@ def test_messages_needs_space_or_thread():
 
 
 
-def test_messages_sender_filter_and_annotations_sql():
+def test_messages_sender_filter_sql():
     captured = {}
 
     def fake(conn, sql, params=()):
@@ -78,7 +78,6 @@ def test_messages_sender_filter_and_annotations_sql():
         db.query = orig
     assert "m.sender_name = %s" in captured["sql"]
     assert "users/7" in captured["params"]
-    assert "m.annotations_json" in captured["sql"]
 
 
 if __name__ == "__main__":
