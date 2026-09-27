@@ -113,7 +113,7 @@ The two alternatives were considered and set aside. A **service account** is a r
 | `chat.memberships.readonly` | `spaces --owner`: finding each space's Owner |
 | `contacts.readonly`, `contacts.other.readonly`, `directory.readonly`, `userinfo.profile` | Naming people through the People API, from your saved contacts, your "other contacts", your Workspace directory, and your own profile |
 
-**Upgrading can add permissions.** A new version may need a permission your saved login does not grant; naming people through the People API is one. The command that needs it opens Google's consent page once, and carries on after you grant it. The consent adds to what you granted before. When nobody is there to answer the page (a cron job, CI, an SSH session without a terminal), the command still answers: people show as `users/<id>`, and a line says to run `majordomo login`, which grants every permission at once.
+**Upgrading can add permissions.** A new version may need a permission your saved login does not grant; naming people through the People API is one. Before it does anything else, the command works out every permission its own shape needs (reading the API directly, `--owner`, sending, showing people) and opens Google's consent page once for whatever is missing. That happens up front, so a decline or an unanswered page costs nothing already spent reading. The consent adds to what you granted before. When nobody is there to answer the page (a cron job, CI, an SSH session without a terminal), the command still answers: people show as `users/<id>`, and a line says to run `majordomo login`, which grants every permission at once.
 
 ```bash
 majordomo login
