@@ -88,6 +88,20 @@ def test_to_me_and_by_me_filters():
     assert len(r.tasks(by_user="users/8")) == 0
 
 
+def test_lifecycle_replays_status_and_holder_on_the_direct_read():
+    msgs = {"spaces/OK": MSGS["spaces/OK"] + [
+        {"name": "spaces/OK/messages/T.3", "createTime": "2026-06-01T08:10:00Z", "sender": {"name": "users/9"},
+         "text": "Assigned a task to @Carol (via Tasks)",
+         "annotations": [{"type": "USER_MENTION", "userMention": {"user": {"name": "users/3"}}}]},
+        {"name": "spaces/OK/messages/T.4", "createTime": "2026-06-01T08:20:00Z", "sender": {"name": "users/3"},
+         "text": "Completed a task (via Tasks)"},
+    ]}
+    r = api.NocacheReader(service=_fake_chat(SPACES, msgs), blocked=["spaces/BLOCK"])
+    (row,) = r.tasks()
+    assert (row["status"], row["assignee_user_name"], row["assignee"]) == ("done", "users/3", "Carol")
+    assert r.tasks(to_user="users/1") == [] and len(r.tasks(to_user="users/3")) == 1   # filters see the holder after handover
+
+
 def test_people_broadened_counts_senders_and_assignees():
     by = {r["user_id"]: r for r in _reader(["spaces/BLOCK"]).people()}
     assert by["users/9"]["msgs"] == 2 and by["users/9"]["tasks"] == 0   # sender of both OK msgs
