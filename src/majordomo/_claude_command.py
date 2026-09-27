@@ -44,11 +44,11 @@ A read uses the server-side cache by default and falls back to reading the Chat 
 
 ## Naming a person or a space
 
-Wherever a command takes a person (`--person`, `--assignee`, `--to`), the value is one of: `users/<id>`; an email address; or a name. A name is matched, case-insensitively, against every spelling majordomo has seen for anyone in task assignments and @-mentions, whole name first and then as a substring, and it must match exactly one person: a name matching several fails and lists them with their ids, and a name never seen fails and says so. Give the id or the email then. An email resolves through the Chat API and needs `majordomo login`. Old spellings stay after a rename, so a person renamed in Chat still resolves by either name once a mention with the new spelling has been read.
+Wherever a command takes a person (`--person`, `--assignee`, `--to`), the value is one of: `users/<id>`; an email address; or a name. A name is matched, case-insensitively, against people's current names (from the Google People API) and, on the cache path, the spellings seen in task assignments and @-mentions, whole name first and then as a substring, and it must match exactly one person: a name matching several fails and lists them with their ids, and a name never seen fails and says so. Give the id or the email then. An email resolves through the People API's answers or the Chat API, and needs `majordomo login`.
 
 Wherever a command takes a space (`--space`), the value is `spaces/<id>` or the space's display name, matched the same way.
 
-majordomo records what it learns about people and spaces on every read (ids, spellings and when each was seen, emails, DM spaces, space names) in `known.tsv` under `$XDG_STATE_HOME/majordomo/` (`~/.local/state/majordomo/` when unset); no command enters a person by hand.
+Every report that shows a person (task assignees, message and file senders, space owners, `people`) names them through the People API, keeping what it fetched in `people.json` and `spaces.json` under `$XDG_CACHE_HOME/majordomo/` (`~/.cache/majordomo/` when unset); a person the API cannot name shows as `users/<id>`. When the saved login lacks a permission a command needs (as after an upgrade), majordomo opens Google's consent page itself and carries on once it is granted; where nobody can answer it (no display and no terminal), the command still answers, showing ids, and says to run `majordomo login`. Pass such a line on to the user rather than retrying.
 
 ## Tasks
 
@@ -70,7 +70,7 @@ majordomo people --window year
 majordomo people --person Alice
 ```
 
-`spaces` lists each space with its message and task counts; it hides spaces under one message by default (Google auto-creates an empty group per meeting), and `--minimal-messages=0` shows all. It also reports whether each space belongs to a Google Workspace domain or a consumer/personal account (from the space's `customer` field), read straight over the Chat API: this and `--owner` (below) render blank on a plain cache read, since the cache mirror holds neither. `--owner` additionally resolves who owns each space (the Membership with `role = ROLE_MANAGER`, which the Chat UI itself labels "Owner"), one extra API call per space; it needs the memberships scope, and a token minted before it existed is refused with a pointer to re-run `majordomo login`. `people` lists everyone seen: their `users/<id>`, the newest spelling they have been called and the older ones, their email and the DM space you share with them where known, with message and task counts. The identity columns are not windowed; the window bounds the counts only. `--person WHO` narrows to one person and is the check to make before using a name elsewhere; it is also how you find your own `users/<id>` for the config.
+`spaces` lists each space with its message and task counts; it hides spaces under one message by default (Google auto-creates an empty group per meeting), and `--minimal-messages=0` shows all. It also reports whether each space belongs to a Google Workspace domain or a consumer/personal account (from the space's `customer` field), read straight over the Chat API: this and `--owner` (below) render blank on a plain cache read, since the cache mirror holds neither. `--owner` additionally resolves who owns each space (the Membership with `role = ROLE_MANAGER`, which the Chat UI itself labels "Owner"), one extra API call per space, and names the owner. `people` lists everyone seen: their `users/<id>`, their name and the other spellings they have been called, their email and the DM space you share with them where known, with message and task counts. The identity columns are not windowed; the window bounds the counts only. `--person WHO` narrows to one person and is the check to make before using a name elsewhere; it is also how you find your own `users/<id>` for the config.
 
 ## Messages
 
@@ -105,7 +105,7 @@ majordomo send --space "Back Office" "Here it is." --attach ./report.pdf --attac
 majordomo send --space spaces/AAAA --attach ./report.pdf
 ```
 
-One target: `--space` posts to the space, `--thread` replies in a thread (any message resource name in it works), `--to` reaches a person's existing 1:1 DM (a person you have never DM'd is refused; majordomo does not open new DMs). `--attach <path>` uploads a local file as an attachment and repeats for several; the message text then becomes optional, so a file can go on its own. Sends as the logged-in account; a token from before send existed lacks the scope, and the error says to re-run `majordomo login` (attachments need no scope beyond that). A blocked space answers "not found". While `WORLD_AS_OF` is set, a send is refused: a bounded run is a replay.
+One target: `--space` posts to the space, `--thread` replies in a thread (any message resource name in it works), `--to` reaches a person's existing 1:1 DM (a person you have never DM'd is refused; majordomo does not open new DMs). `--attach <path>` uploads a local file as an attachment and repeats for several; the message text then becomes optional, so a file can go on its own. Sends as the logged-in account (attachments need no permission beyond sending). A blocked space answers "not found". While `WORLD_AS_OF` is set, a send is refused: a bounded run is a replay.
 
 ## Windows, output, source
 
