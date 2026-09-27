@@ -1,6 +1,6 @@
 # Data model: how Google Chat access is structured
 
-A decision record for **majordomo**, the command-line tool that reads Google Chat and reports task activity (see `DESIGN.md` and `PLAN.md` for what it is). It settles which kind of tool majordomo is, where it sits relative to the user's neighbouring accessors, and how it relates to the server-side cache that already mirrors Chat. This file is the fuller record of the decision; `DESIGN.md`'s "Relationship to other tools" section carries the bottom line and points here.
+A decision record for **majordomo**, the command-line tool that reads Google Chat and reports task activity (see `DESIGN.md` for what it is). It settles which kind of tool majordomo is, where it sits relative to the user's neighbouring accessors, and how it relates to the server-side cache that already mirrors Chat. This file is the fuller record of the decision; `DESIGN.md`'s "Relationship to other tools" section carries the bottom line and points here.
 
 ## The question
 

@@ -1,7 +1,5 @@
 # majordomo: design
 
-A shorter forward plan, with the decided-and-open scope as a checklist, lives alongside in `PLAN.md`.
-
 ## What majordomo is
 
 majordomo is a command-line tool that reads Google Chat, reports on it, and sends messages into it. The command line is the primary interface; an MCP server is a secondary interface for AI agents. Both are thin front doors over one shared core, and the core is written so the same design can later reach sources other than Google.
@@ -12,9 +10,15 @@ Its name is the household steward who runs a principal's affairs and decides wha
 
 ### Task reconstruction
 
-When a Google Chat user creates a task through "Create a task for @Person (via Tasks)", that task cannot be retrieved through the Google Tasks API; the API returns nothing for tasks created this way. The only durable signal is the chat message "Created a task for @Person (via Tasks)". `GOOGLE_CHAT_TASKS_LIMITATIONS.md` documents the investigation behind that finding.
+1. The Google Tasks API returns a task assigned in a Chat space only to its assignee, and only when `tasks.list` is called with `showAssigned=true`; without the flag it returns none of them.
+2. No Tasks API call returns a task assigned to someone else or names who assigned a task: `assignmentInfo` carries only `linkToTask`, `surfaceType`, `spaceInfo` and `driveResourceInfo`.
+3. Who holds which task across people, and who assigned it, is therefore recoverable only from the Chat messages, which is why majordomo reconstructs tasks from messages.
+4. For the signed-in person's own tasks, the Tasks API carries what messages lack: notes, due date, and the title of a task created fresh rather than from a message.
+5. A task made from a Chat message links to that message's thread (`linkToTask` carries space and thread), which joins majordomo's row exactly; a task created fresh in a space links only to the space.
 
-Task activity therefore has to be reconstructed from chat messages by parsing those task-creation patterns, then reported by who holds which tasks across spaces over a date range. The BI platform already does this reconstruction server-side (a `coord_tasks` table over a `googlechat` mirror); majordomo reports over it when that backend is present and runs its own message decoder when it is not. Which source serves which path is in `DATA-MODEL.md`.
+(Verified 2026-09-28 by `tasks.list` with and without `showAssigned`, against one account and Google's `tasks` reference.)
+
+The BI platform already does this reconstruction server-side (a `coord_tasks` table over a `googlechat` mirror); majordomo reports over it when that backend is present and runs its own message decoder when it is not. Which source serves which path is in `DATA-MODEL.md`.
 
 ### Privacy gating
 
@@ -190,4 +194,3 @@ Open:
 
 - Whether to fork and vendor gchat-cli as the accessor base, pending the pagination check.
 - The concrete shape of the automatic processing (which message classes get which actions, where the agent loop lives).
-- The packaging skeleton (Python project layout, the `pyproject.toml` shape, the Debian `debian/` files).

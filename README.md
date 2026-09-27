@@ -8,7 +8,7 @@ A command-line tool that reads Google Chat, reports task activity, and sends mes
 
 ## What it does
 
-When someone creates a task through Google Chat's "Create a task for @Person (via Tasks)", that task cannot be retrieved through the Google Tasks API; the only durable signal is the chat message itself (see [GOOGLE_CHAT_TASKS_LIMITATIONS.md](GOOGLE_CHAT_TASKS_LIMITATIONS.md)). majordomo reconstructs task activity from those messages and reports who holds which tasks across spaces over a date range.
+majordomo reconstructs the tasks made through Google Chat's "Create a task for @Person (via Tasks)" from the chat messages, and reports who holds which tasks, and who assigned them, across spaces over a date range ([why messages](DESIGN.md#task-reconstruction)).
 
 - **Tasks** by assignee, space, and date; "assigned to me" and "assigned by me".
 - **Spaces**, **people** (participants with message and task counts), and raw **messages** by space or thread.
