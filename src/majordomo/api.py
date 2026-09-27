@@ -167,7 +167,7 @@ def _consent_reason(exc: Exception) -> str:
     """A safe, one-line reason a consent attempt failed: the exception's class
     name, plus a plain sentence for the cases majordomo can tell apart by type
     or errno alone. Never the exception's own message, args, or anything from
-    its traceback — a failed OAuth exchange can carry the client secret and
+    its traceback: a failed OAuth exchange can carry the client secret and
     the authorization code in them, and this must be safe to print (stderr)
     and to carry in the MCP envelope's ``notes`` alike."""
     name = type(exc).__name__
@@ -225,11 +225,12 @@ def ensure_scopes(cfg: dict, creds, needed: list[str], purpose: str):
     Within one command, though, a scope this already tried and failed to get
     is not tried again: ``cfg`` (loaded once per command, by both front doors)
     carries the set of scopes already asked for, so a later lazy check for the
-    same scope — reached after ``ensure_command_scopes`` already tried and was
-    declined, timed out, or found nobody to answer — falls back quietly rather
-    than opening the consent page a second time. A scope consent did grant
-    needs no such memory: the next check's ``creds`` (re-read from the token
-    file) already carries it, so ``_missing`` is empty and nothing is asked.
+    same scope, reached after ``ensure_command_scopes`` already tried it and
+    was declined, timed out, or found nobody to answer, falls back quietly
+    rather than opening the consent page a second time. A scope consent did
+    grant needs no such memory: the next check's ``creds`` (re-read from the
+    token file) already carries it, so ``_missing`` is empty and nothing is
+    asked.
     """
     missing = _missing(creds, needed)
     if not missing:
@@ -277,22 +278,22 @@ def scopes_for(*, api_read: bool = False, owner: bool = False, send: bool = Fals
 def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = False,
                           send: bool = False, people: bool = False) -> None:
     """Ask, once, for everything this command's shape needs, before any Chat
-    or People call — the core function both front doors call at the very
-    start of a command (INVARIANTS.md: the sieve and the credentials live in
-    the core). Without this, a command that both reads slowly and eventually
-    needs a new scope (``spaces --owner``, backing off through a minute of
-    membership reads before its first name lookup ever ran) could spend all
-    of that before finding out consent was needed, or declined.
+    or People call. This is the core function both front doors call at the
+    very start of a command (INVARIANTS.md: the sieve and the credentials
+    live in the core). Without this, a command that both reads slowly and
+    eventually needs a new scope (``spaces --owner``, backing off through a
+    minute of membership reads before its first name lookup ever ran) could
+    spend all of that before finding out consent was needed, or declined.
 
     A no-op when the shape needs nothing, and when there is no saved token at
     all: consent adds scopes to an existing token (``include_granted_scopes``)
     rather than minting one from nothing, so an install that never ran
     `majordomo login` gets the same "run `majordomo login`" fallback here as
     from the lazy checks, not a surprise consent page. Otherwise this is
-    ``ensure_scopes`` under the hood, so every one of its rules — no consent
-    under WORLD_AS_OF, none when nobody can answer, a decline not remembered
-    past this command — applies here too; see its docstring for how a later
-    lazy check in the same command avoids asking twice.
+    ``ensure_scopes`` under the hood, so every one of its rules apply here
+    too: no consent under WORLD_AS_OF, none when nobody can answer, a decline
+    not remembered past this command. See its docstring for how a later lazy
+    check in the same command avoids asking twice.
     """
     wanted = [(scopes, purpose) for key, scopes, purpose in _SCOPE_GROUPS
               if {"api_read": api_read, "owner": owner, "send": send, "people": people}[key]]
