@@ -32,13 +32,13 @@ COMMAND_NAME = "majordomo"
 # not the description.
 COMMAND = """---
 name: majordomo
-description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Covers Chat-created tasks the Tasks API cannot return. Reads the messages and files (video, photo, document) in a space, a thread, or a person's DM, naming people by name, email or id and spaces by name. Reports whether a space is a Google Workspace domain space or a consumer/personal one, and who owns it. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM.
+description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Reads the messages and files (video, photo, document) in a space, a thread, or a person's DM, naming people by name, email or id and spaces by name. Reports whether a space is a Google Workspace domain space or a consumer/personal one, and who owns it. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM.
 allowed-tools: Bash
 ---
 
 # majordomo
 
-majordomo reports Google Chat task activity, and sends messages, over the `majordomo <command>` CLI. A task created through Chat's "Create a task for @Person (via Tasks)" is not retrievable through the Google Tasks API; majordomo reconstructs it from the chat message instead, and reports who holds which tasks across spaces over a date range. Configuration lives in `~/.config/majordomo/` (`config.toml` for the subject and the privacy sieve, `.env` for the cache database). Add `--json` to any command for a `{"source", "count", "rows": [...]}` envelope; the `source` field tags each answer as `cache` or `live`.
+majordomo reports Google Chat task activity, and sends messages, over the `majordomo <command>` CLI. It reconstructs each task made through Chat's "Create a task for @Person (via Tasks)" from the chat messages, and reports who holds which tasks across spaces over a date range. Configuration lives in `~/.config/majordomo/` (`config.toml` for the subject and the privacy sieve, `.env` for the cache database). Add `--json` to any command for a `{"source", "count", "rows": [...]}` envelope; the `source` field tags each answer as `cache` or `live`.
 
 A read uses the server-side cache by default and falls back to reading the Chat API directly when the cache is unreachable. `--cache` or `--nocache` before the command forces one source; `--nocache` needs a prior `majordomo login`, and `--cache` needs the cache driver (`majordomo[bi]`).
 
