@@ -263,12 +263,14 @@ def test_attachment_to_dm_uploads_into_the_resolved_space(tmp_path, monkeypatch)
     assert _create_kwargs(chat)["parent"] == "spaces/DM1"
 
 
-def test_to_accepts_a_known_name(tmp_path, monkeypatch):
-    from majordomo import known
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    kn = known.Known(tmp_path / "majordomo" / "known.tsv")
-    kn.remember("users/123", known.NAME, "Alice Smith", None, "mention")
-    kn.save()
+def test_to_accepts_a_cached_name(tmp_path, monkeypatch):
+    from majordomo import roster
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    ros = roster.Roster()
+    ros.people["people/123"] = {"fetched_at": "2026-01-01T00:00:00Z", "person": {
+        "resourceName": "people/123", "names": [{"displayName": "Alice Smith"}]}}
+    ros._dirty.add(roster.PEOPLE_FILE)
+    ros.save()
     chat = _chat_with_dm({"users/123": "spaces/DM2"})
     api.send({}, [], to="alice", text="hi", service=chat)
     assert _create_kwargs(chat)["parent"] == "spaces/DM2"
@@ -280,7 +282,7 @@ def test_to_unknown_name_is_refused():
 
 
 def test_space_by_display_name_sends_there(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     chat = _chat({"name": "spaces/OK/messages/NEW"})
     chat.spaces().list.return_value.execute.return_value = {"spaces": [{"name": "spaces/OK", "displayName": "Ops Room"}]}
     api.send({}, [], space="ops room", text="hi", service=chat)

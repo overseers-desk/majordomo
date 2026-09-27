@@ -1,14 +1,14 @@
-"""Load majordomo's two config files from ``~/.config/majordomo/``, and name
-the state directory.
+"""Load majordomo's two config files from ``~/.config/majordomo/``, name the
+cache directory, and carry the once-per-run notes.
 
 - ``config.toml`` — human-edited: ``[me]`` (the configured subject) and
   ``[sieve]`` (blocked spaces).
 - ``.env`` — the MariaDB connection (``MYSQL_*``), copied from the BI project;
   a read-only DB user swaps in later without any code change.
-- ``$XDG_STATE_HOME/majordomo/`` (``~/.local/state/majordomo/`` when unset, on
-  Linux and macOS alike), program-written: what majordomo has learnt about
-  people and spaces between runs (known.py). Not a cache: the facts there are
-  not all re-derivable, so the directory is state.
+- ``$XDG_CACHE_HOME/majordomo/`` (``~/.cache/majordomo/`` when unset, on Linux
+  and macOS alike), program-written: the People API person and Chat space
+  objects majordomo has fetched (roster.py). Everything there is refetchable,
+  so it is a cache.
 """
 
 from __future__ import annotations
@@ -23,11 +23,34 @@ CONFIG_TOML = CONFIG_DIR / "config.toml"
 ENV_FILE = CONFIG_DIR / ".env"
 
 
-def state_dir() -> Path:
-    """The XDG state directory for majordomo, resolved per call so a test or a
+def cache_dir() -> Path:
+    """The XDG cache directory for majordomo, resolved per call so a test or a
     launcher can point it elsewhere through the environment."""
-    base = os.environ.get("XDG_STATE_HOME") or (Path.home() / ".local" / "state")
+    base = os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")
     return Path(base).expanduser() / "majordomo"
+
+
+# Notes the core raises about a run: each printed to stderr once, and held
+# until a front door whose caller reads no stderr (the MCP envelope) drains
+# them into its answer, after which the next call may raise them afresh. The
+# core owns the wording; a front door only carries it.
+_pending: list[str] = []
+
+
+def note_once(message: str) -> None:
+    import sys
+
+    if message in _pending:
+        return
+    _pending.append(message)
+    print(message, file=sys.stderr)
+
+
+def drain_notes() -> list[str]:
+    """The notes raised since the last drain, oldest first."""
+    out = list(_pending)
+    _pending.clear()
+    return out
 
 # The office-wide replay bound (WORLD_AS_OF.design.md): when set, nothing dated
 # after this instant may leave majordomo. Read from the environment on every
@@ -121,15 +144,15 @@ def me_google_id(config: dict) -> str | None:
 def require_user_id(config: dict) -> str:
     """The configured subject's ``users/<id>``, or raise ValueError with guidance.
 
-    v1 has no People API, so the email (``google_id``) cannot be resolved to
-    an id; ``user_id`` must be set explicitly. Both front doors call this, so the
+    The email (``google_id``) is not resolved to an id here; ``user_id`` must
+    be set explicitly. Both front doors call this, so the
     rule lives in one place.
     """
     uid = me_user_id(config)
     if uid:
         return uid
     email = me_google_id(config)
-    hint = f" (config has [me].google_id={email!r}, an email, which v1 cannot resolve)" if email else ""
+    hint = f" (config has [me].google_id={email!r}, an email, which is not resolved here)" if email else ""
     raise ValueError(
         f"--to-me/--by-me need [me].user_id in config{hint}. "
         "Run `majordomo people` to find your users/<id>, then add it as [me].user_id."

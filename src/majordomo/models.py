@@ -49,8 +49,8 @@ SPACE_COLUMNS: list[Column] = [
     ("ID", "space_name"),
 ]
 
-# "Person" is the newest spelling seen; "Also" the older ones, so a rename
-# reads as one person, not two.
+# "Person" is the People API name, else the newest prose spelling seen; "Also"
+# the prose spellings besides it, so a rename reads as one person, not two.
 PEOPLE_COLUMNS: list[Column] = [
     ("Person", lambda r: r.get("display") or "(no name)"),
     ("Also", lambda r: " | ".join((r.get("names") or [])[1:])),
@@ -61,9 +61,13 @@ PEOPLE_COLUMNS: list[Column] = [
     ("User ID", "user_id"),
 ]
 
+def _sender_label(row: dict) -> object:
+    return row.get("sender_display") or row.get("sender_name")
+
+
 MESSAGE_COLUMNS: list[Column] = [
     ("Time", "create_time"),
-    ("Sender", "sender_name"),
+    ("Sender", _sender_label),
     ("Type", "sender_type"),
     ("Text", lambda r: (r.get("text") or "").replace("\n", " ")[:100]),
 ]
@@ -72,7 +76,7 @@ MESSAGE_COLUMNS: list[Column] = [
 # listing, so listing and downloading report in one shape.
 ATTACHMENT_COLUMNS: list[Column] = [
     ("Time", "create_time"),
-    ("Sender", "sender_name"),
+    ("Sender", _sender_label),
     ("File", lambda r: r.get("content_name") or ""),
     ("Type", "content_type"),
     ("Saved", "path"),

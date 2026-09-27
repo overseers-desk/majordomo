@@ -263,13 +263,8 @@ def _with_dm(chat, user_to_space):
     return chat
 
 
-def _known(tmp_path):
-    from majordomo import known
-    return known.Known(tmp_path / "known.tsv")
-
-
 def test_person_alone_lists_the_dm_files(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     listed = [_msg(_att("a.png", content_type="image/png"), name="spaces/DM1/messages/M.1"),
               dict(_msg(_att("b.png", content_type="image/png"), name="spaces/DM1/messages/M.2"),
                    sender={"name": "users/me", "type": "HUMAN"})]
@@ -280,7 +275,7 @@ def test_person_alone_lists_the_dm_files(tmp_path, monkeypatch):
 
 
 def test_person_with_space_keeps_their_files_only(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     listed = [_msg(_att("a.png")), dict(_msg(_att("b.png"), name="spaces/OK/messages/T.2"),
                                         sender={"name": "users/other", "type": "HUMAN"})]
     rows = api.attachments({}, [], space="spaces/OK", person="users/sam", service=_chat(listed=listed))
@@ -288,7 +283,7 @@ def test_person_with_space_keeps_their_files_only(tmp_path, monkeypatch):
 
 
 def test_space_by_display_name(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     rows = api.attachments({}, [], space="marketing", service=_chat(listed=[_msg(_att())]))
     assert rows and rows[0]["space_name"] == SPACE
 
