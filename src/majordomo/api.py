@@ -46,9 +46,9 @@ SEND_SCOPE = "https://www.googleapis.com/auth/chat.messages.create"
 # (spaces.get's own fields answer "domain or consumer" for free, no scope
 # beyond chat.spaces.readonly).
 MEMBERSHIPS_SCOPE = "https://www.googleapis.com/auth/chat.memberships.readonly"
-# Scopes for a freshly-minted token: both Chat reads, send, memberships, and
-# the People API reads that name people, minted together so one login serves
-# every path.
+# Scopes for a freshly-minted token: the Chat read scopes, send, memberships,
+# and the People API reads that name people, minted together so one login
+# serves every path.
 LOGIN_SCOPES = [
     *CHAT_READ_SCOPES,
     SEND_SCOPE,
@@ -229,7 +229,7 @@ def ensure_scopes(cfg: dict, creds, needed: list[str], purpose: str):
     was declined, timed out, or found nobody to answer, falls back quietly
     rather than opening the consent page a second time. A scope consent did
     grant needs no such memory: the next check's ``creds`` (re-read from the
-    token file) already carries it, so ``_missing`` is empty and nothing is
+    token file) already carries it, so nothing is missing and nothing is
     asked.
     """
     missing = _missing(creds, needed)
@@ -810,7 +810,7 @@ def owned_spaces(cfg: dict, blocked: list[str], *, minimal_messages: int = 1, ow
     creds = get_credentials(cfg)
     if owner:
         # A token short of the memberships scope gets the consent flow once;
-        # declined or unanswerable, the first member read refuses as before.
+        # declined or unanswerable, the first member read refuses.
         creds = ensure_scopes(cfg, creds, [MEMBERSHIPS_SCOPE], "listing space members, for --owner") or creds
     return NocacheReader.from_config(cfg, blocked, creds=creds).spaces(
         minimal_messages=minimal_messages, owner=owner)

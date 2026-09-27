@@ -75,8 +75,8 @@ def _open(ctx: typer.Context, *, people: bool = False):
 
     cfg = config.load_config()
     # Up front, before the reader touches the cache or the API: everything
-    # this command's shape needs (api.ensure_command_scopes), so a decline or
-    # a timeout costs nothing already spent reading.
+    # this command's shape needs, so a decline or a timeout costs nothing
+    # already spent reading.
     api.ensure_command_scopes(cfg, api_read=ctx.obj["source"] in ("live", "nocache"), people=people)
     return cfg, readers.make_reader(cfg, ctx.obj["source"])
 
