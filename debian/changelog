@@ -1,3 +1,14 @@
+majordomo (0.3.0) unstable; urgency=medium
+
+  * send can post as a Chat app (a bot): name its service-account key as
+    [identity.NAME] in config.toml, then run majordomo --as NAME send, or
+    pass identity to the MCP send tool. The app sends text only, into
+    spaces it is a member of, and --to reaches the app's own DM. Every
+    other command reads as the logged-in account and refuses --as.
+  * The MCP server runs on mcp 2; the mcp extra needs mcp 2.0.0 or later.
+
+ -- Weiwu Zhang <a@colourful.land>  Mon, 12 Oct 2026 22:09:30 +1000
+
 majordomo (0.2.2) unstable; urgency=medium
 
   * Reading the Chat API directly (--live, --nocache) replays each task's
