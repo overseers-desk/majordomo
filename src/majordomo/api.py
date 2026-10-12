@@ -992,4 +992,6 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
                 row["path"] = _fetch(service, row, download_to)
             except SystemExit as exc:
                 row["error"] = str(exc)
+            except Exception as exc:  # a failed fetch or write, e.g. HTTP 5xx, disk full
+                row["error"] = f"majordomo: {row['content_name']}: {exc}"
     return rows
