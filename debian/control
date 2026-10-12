@@ -20,10 +20,11 @@ Depends:
  python3 (>= 3.11),
  python3-typer,
  python3-rich,
- python3-pymysql,
  python3-googleapi,
  python3-google-auth,
  python3-google-auth-oauthlib,
+Recommends:
+ python3-pymysql,
 Description: read and report Google Chat task activity
  majordomo reads Google Chat and reports task activity reconstructed from the
  "Created a task for @Person (via Tasks)" messages that the Google Tasks API

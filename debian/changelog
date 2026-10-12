@@ -9,6 +9,9 @@ majordomo (0.2.2) unstable; urgency=medium
     the download saved beside it. A name without an extension takes one from
     the file type. A file that cannot be saved is reported on its row while
     the rest download, and the command exits 1.
+  * python3-pymysql is recommended rather than required: it is needed only
+    to read the server-side cache, and without it majordomo reads Google
+    Chat directly.
 
  -- Weiwu Zhang <a@colourful.land>  Mon, 12 Oct 2026 16:25:55 +1000
 
