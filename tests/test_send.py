@@ -1,7 +1,9 @@
 """api.send behaviour with an injected fake Chat service (no creds/network):
 the create-call shape, thread derivation from a message name, and the
 refusals: blocked space (worded as not-found), a 404 (same wording), a set
-WORLD_AS_OF, a token without the send scope, and a missing target.
+WORLD_AS_OF, a token without the send scope, and a missing target. Run as
+an [identity.NAME], the send uses that Chat app's service-account key and
+never the personal login, and refuses attachments.
 """
 
 import _shim  # noqa: F401
@@ -287,3 +289,65 @@ def test_space_by_display_name_sends_there(tmp_path, monkeypatch):
     chat.spaces().list.return_value.execute.return_value = {"spaces": [{"name": "spaces/OK", "displayName": "Ops Room"}]}
     api.send({}, [], space="ops room", text="hi", service=chat)
     assert _create_kwargs(chat)["parent"] == "spaces/OK"
+
+
+def _bot_cfg(tmp_path):
+    key = tmp_path / "bot-key.json"
+    key.write_text("{}")
+    return {"_identity": "bot", "identity": {"bot": {"service_account_file": str(key)}}}, str(key)
+
+
+def _personal_login_untouched(monkeypatch):
+    def touched(*a, **k):
+        raise AssertionError("the personal login was touched")
+
+    for name in ("get_credentials", "ensure_scopes", "people_lookup"):
+        monkeypatch.setattr(api, name, touched)
+
+
+def test_identity_sends_as_the_app_with_its_key(tmp_path, monkeypatch):
+    from google.oauth2 import service_account
+
+    cfg, key = _bot_cfg(tmp_path)
+    seen = {}
+
+    def from_file(path, scopes):
+        seen.update(path=path, scopes=scopes)
+        return "app-creds"
+
+    monkeypatch.setattr(service_account.Credentials, "from_service_account_file", from_file)
+    chat = _chat({"name": "spaces/OK/messages/NEW"})
+    built = {}
+
+    def build(name, version, credentials=None, cache_discovery=None):
+        built["credentials"] = credentials
+        return chat
+
+    monkeypatch.setattr(api, "_require_google", lambda: (None, None, build))
+    _personal_login_untouched(monkeypatch)
+    out = api.send(cfg, [], space="spaces/OK", text="hi")
+    assert out["name"] == "spaces/OK/messages/NEW"
+    assert seen == {"path": key, "scopes": [api.BOT_SCOPE]}
+    assert built["credentials"] == "app-creds"
+    assert _create_kwargs(chat)["body"] == {"text": "hi"}
+
+
+def test_identity_refuses_attachments_before_any_upload(tmp_path, monkeypatch):
+    _fake_media(monkeypatch)
+    cfg, _ = _bot_cfg(tmp_path)
+    f = tmp_path / "doc.pdf"
+    f.write_bytes(b"%PDF-1.4 test")
+    chat = _chat()
+    with pytest.raises(SystemExit) as ei:
+        api.send(cfg, [], space="spaces/OK", text="hi", attachments=[str(f)], service=chat)
+    assert "bot is a Chat app" in str(ei.value)
+    chat.media().upload.assert_not_called()
+    chat.spaces().messages().create.assert_not_called()
+
+
+def test_identity_with_a_missing_key_file_names_it(tmp_path, monkeypatch):
+    _personal_login_untouched(monkeypatch)
+    cfg = {"_identity": "bot", "identity": {"bot": {"service_account_file": str(tmp_path / "gone.json")}}}
+    with pytest.raises(SystemExit) as ei:
+        api.send(cfg, [], space="spaces/OK", text="hi")
+    assert "gone.json" in str(ei.value) and "[identity.bot]" in str(ei.value)

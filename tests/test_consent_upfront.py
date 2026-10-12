@@ -213,5 +213,63 @@ def test_mcp_send_asks_only_the_send_scope_before_sending(order, monkeypatch):
     assert order == [("consent", {"send": True}), ("read", "send")]
 
 
+
+# --- --as / identity --------------------------------------------------------
+
+
+@pytest.fixture
+def bot_config(tmp_path):
+    (tmp_path / "config.toml").write_text(
+        "[me]\nuser_id = 'users/1'\n[identity.bot]\nservice_account_file = 'bot-key.json'\n")
+
+
+def test_cli_as_refuses_a_report_before_reading(bot_config, monkeypatch):
+    reads: list[tuple] = []
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(reads))
+    result = runner.invoke(app, ["--as", "bot", "tasks"])
+    assert result.exit_code != 0
+    assert "does not read as it" in result.output
+    assert reads == []
+
+
+def test_cli_as_sends_as_the_identity(bot_config, monkeypatch):
+    seen = {}
+
+    def send(cfg, blocked, **kw):
+        seen["identity"] = config.identity(cfg)
+        return {"name": "spaces/A/messages/1"}
+
+    monkeypatch.setattr(api, "send", send)
+    result = runner.invoke(app, ["--as", "bot", "send", "--space", "spaces/A", "hi"])
+    assert result.exit_code == 0, result.output
+    assert seen["identity"]["name"] == "bot"
+
+
+def test_cli_as_an_unknown_name_stops_before_sending(bot_config, monkeypatch):
+    monkeypatch.setattr(api, "send", lambda *a, **k: pytest.fail("sent"))
+    result = runner.invoke(app, ["--as", "nosuch", "send", "--space", "spaces/A", "hi"])
+    assert result.exit_code != 0
+    assert "[identity.nosuch]" in result.output
+
+
+def test_cli_as_does_not_apply_to_mcp():
+    result = runner.invoke(app, ["--as", "bot", "mcp"])
+    assert result.exit_code == 2
+    assert "identity on each call" in result.output
+
+
+def test_mcp_send_sends_as_the_named_identity(bot_config, monkeypatch):
+    seen = {}
+
+    def send(cfg, blocked, **kw):
+        seen["identity"] = config.identity(cfg)
+        return {"name": "spaces/A/messages/1"}
+
+    monkeypatch.setattr(api, "send", send)
+    out = _tool("send")(space="spaces/A", text="hi", identity="bot")
+    assert out["name"] == "spaces/A/messages/1"
+    assert seen["identity"]["name"] == "bot"
+
+
 if __name__ == "__main__":
     _shim.run(dict(globals()))

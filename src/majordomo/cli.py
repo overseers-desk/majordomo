@@ -59,6 +59,9 @@ def _root(
     live: bool = typer.Option(False, "--live", help="Also fetch messages newer than the cache holds (slower)."),
     nocache: bool = typer.Option(False, "--nocache", help="Bypass the cache; read the Chat API directly."),
     cache: bool = typer.Option(False, "--cache", help="Force the cache; fail if it is unreachable."),
+    as_: Optional[str] = typer.Option(
+        None, "--as", metavar="NAME",
+        help="Act as \\[identity.NAME] from config.toml, a Chat app's service-account key; only send runs as one."),
     _version: bool = typer.Option(
         False, "--version", callback=_version_callback, is_eager=True, help="Show version and exit."
     ),
@@ -66,14 +69,18 @@ def _root(
     if sum((live, nocache, cache)) > 1:
         typer.echo("majordomo: use only one of --live / --nocache / --cache.", err=True)
         raise typer.Exit(2)
-    ctx.obj = {"source": "live" if live else "nocache" if nocache else "cache" if cache else None}
+    if as_ and ctx.invoked_subcommand == "mcp":
+        typer.echo("majordomo: --as does not apply to mcp; its send tool takes identity on each call.", err=True)
+        raise typer.Exit(2)
+    ctx.obj = {"source": "live" if live else "nocache" if nocache else "cache" if cache else None,
+               "identity": as_}
     _claude_command.refresh()
 
 
 def _open(ctx: typer.Context, *, people: bool = False):
     from . import api
 
-    cfg = config.load_config()
+    cfg = config.load_config(ctx.obj["identity"])
     # Up front, before the reader touches the cache or the API: everything
     # this command's shape needs, so a decline or a timeout costs nothing
     # already spent reading.
@@ -99,7 +106,7 @@ def _me(cfg: dict) -> str:
 
 
 @app.command()
-def login() -> None:
+def login(ctx: typer.Context) -> None:
     """Sign in to Google in your browser, granting every permission majordomo uses.
 
     Do this once before sending, before reading with --live or --nocache, and
@@ -108,7 +115,7 @@ def login() -> None:
     consent page, when someone is there to answer.
     """
     from . import api
-    path = api.login(config.load_config())
+    path = api.login(config.load_config(ctx.obj["identity"]))
     typer.echo(f"majordomo: token written to {path}")
 
 
@@ -136,7 +143,7 @@ def spaces(
     """
     if owner:
         from . import api
-        cfg = config.load_config()
+        cfg = config.load_config(ctx.obj["identity"])
         # Up front: the membership scope and the People scope owner_display
         # needs, before the first (slow, quota-backed-off) membership read.
         api.ensure_command_scopes(cfg, api_read=True, owner=True, people=True)
@@ -234,6 +241,7 @@ def messages(
 
 @app.command(epilog=_WHO_EPILOG)
 def attachments(
+    ctx: typer.Context,
     space: Optional[str] = typer.Option(None, "--space", help=_SPACE),
     thread: Optional[str] = typer.Option(None, "--thread", help="A thread (or any message name in it)."),
     message: Optional[str] = typer.Option(None, "--message", help="One message, by resource name: just its files."),
@@ -262,7 +270,7 @@ def attachments(
     message text, not files.
     """
     from . import api
-    cfg = config.load_config()
+    cfg = config.load_config(ctx.obj["identity"])
     # Always the direct API and always naming senders, regardless of flags.
     api.ensure_command_scopes(cfg, api_read=True, people=True)
     start, end = dates.resolve(window, since, until)
@@ -280,6 +288,7 @@ def attachments(
 
 @app.command(epilog=_WHO_EPILOG)
 def send(
+    ctx: typer.Context,
     text: Optional[str] = typer.Argument(None, help="Message text. Optional when --attach is given."),
     space: Optional[str] = typer.Option(None, "--space", help=_SPACE),
     thread: Optional[str] = typer.Option(None, "--thread", help="Reply in this thread (or any message name in it)."),
@@ -294,10 +303,12 @@ def send(
     person, not an email channel: the message arrives in your 1:1 Chat DM with
     them.
 
-    Sending needs `majordomo login` first. Refused while WORLD_AS_OF is set.
+    Sending needs `majordomo login` first. With --as NAME it sends as that
+    Chat app instead: text only, into spaces the app is a member of, and --to
+    reaches the app's own DM. Refused while WORLD_AS_OF is set.
     """
     from . import api
-    cfg = config.load_config()
+    cfg = config.load_config(ctx.obj["identity"])
     api.ensure_command_scopes(cfg, send=True)
     created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
                        to=to, text=text, attachments=attach)
