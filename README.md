@@ -14,7 +14,7 @@ majordomo reconstructs the tasks made through Google Chat's "Create a task for @
 - **Spaces**, **people** (participants with message and task counts), and raw **messages** by space or thread.
 - **Domain or consumer, and who owns it.** `spaces` reports whether each space belongs to a Google Workspace domain or a consumer/personal account, straight from the Chat API; `--owner` also resolves the space's Owner.
 - **Three modes, one shape.** The fast path reads an existing server-side cache of Chat (the [data model](DATA-MODEL.md)). `--live` is up-to-dateness: it serves the cache and tops it up from the Chat API with anything newer. `--nocache` reads the Chat API directly and decodes tasks itself, so the tool also works without the cache. Every result is tagged with its source; an unforced read uses the cache and falls back to the direct API automatically when the cache is unreachable.
-- **Send** a message to a space, or a reply into a thread, as the logged-in account, with optional file attachments (`majordomo send`).
+- **Send** a message to a space, or a reply into a thread, as the logged-in account, with optional file attachments, or as a Chat app (`majordomo send`, `--as`).
 - **A privacy sieve** in the core drops blocked spaces (and assignees) before any caller (CLI or MCP) can see them; it refuses sends into blocked spaces the same way.
 - **Output** as a rich console table, `--json`, or `--csv`.
 
@@ -83,6 +83,9 @@ block_assignees = ["users/9999"]   # drop these assignees from every report
 [api]                              # optional; defaults shown (OAuth for the API path)
 token_file = "~/.config/majordomo/token.json"
 client_file = "~/.config/majordomo/client_secret.json"
+
+[identity.bot]                     # optional; a Chat app to send as, with --as bot
+service_account_file = "~/.config/majordomo/bot-key.json"
 ```
 
 `.env` (the cache database connection, when using the cache path):
@@ -95,14 +98,14 @@ MYSQL_PASSWORD=…
 MYSQL_DATABASE=…
 ```
 
-## Authenticating (per-account OAuth)
+## Authenticating
 
-majordomo signs in as **you**, through Google's own browser consent screen. `majordomo login` opens that flow, the account you pick grants access to its own Chat, and the resulting refresh token is stored for that account. There is no service account and no domain-wide delegation. Two things follow:
+majordomo signs in as **you**, through Google's own browser consent screen. `majordomo login` opens that flow, the account you pick grants access to its own Chat, and the resulting refresh token is stored for that account. Two things follow:
 
 - **Any account works**, consumer `@gmail.com` or Google Workspace, as long as it can grant OAuth consent. No Workspace administrator has to enable anything first.
 - **You see only what that account sees.** The tool reads the signed-in user's own spaces and nothing beyond them.
 
-The two alternatives were considered and set aside. A **service account** is a robot identity, not a person, so by itself it cannot read a given user's Chat. **Domain-wide delegation**, where a service account impersonates users, can read it, but only a Google Workspace administrator may authorize it and only for accounts inside that Workspace domain; that excludes consumer Gmail and any account you do not administer. Per-account OAuth costs one login per user and, in exchange, works for everyone.
+**Domain-wide delegation**, where a service account impersonates users, was set aside: only a Google Workspace administrator may authorize it, and only for accounts inside that Workspace domain, which excludes consumer Gmail and any account you do not administer. Per-account OAuth costs one login per user and, in exchange, works for everyone.
 
 `majordomo login` writes the token file used by `--live` (for the top-up), `--nocache`, `send`, `attachments`, `spaces --owner`, and naming people. It needs a Desktop OAuth client with the Google Chat API and the People API enabled, saved as `client_secret.json` in the config directory. The permissions it asks for:
 
@@ -118,6 +121,8 @@ The two alternatives were considered and set aside. A **service account** is a r
 ```bash
 majordomo login
 ```
+
+**Sending as a Chat app.** A Chat app's service-account key, named as `[identity.NAME]` in `config.toml`, lets `send` post as that app (`--as NAME`, or `identity` on the MCP `send` tool) with no login; every read stays yours, and `majordomo send --help` lists what an app cannot send.
 
 ## Commands
 
@@ -138,6 +143,7 @@ majordomo send --space spaces/AAAA "On my way."
 majordomo send --thread spaces/AAAA/messages/BBBB "Done, see the doc."
 majordomo send --to alice@example.com "Lunch?"       # a person's existing 1:1 DM
 majordomo send --space spaces/AAAA "Here it is." --attach ./report.pdf  # repeat --attach for several; text optional
+majordomo --as bot send --space spaces/AAAA "Build finished."           # as the Chat app in [identity.bot]
 majordomo mcp                       # run the MCP server (stdio)
 ```
 
