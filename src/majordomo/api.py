@@ -856,9 +856,9 @@ def _safe_basename(content_name: str | None, attachment_name: str | None,
 
     Whoever posted the file chose its name, so it is untrusted input: a
     contentName of "../../x" would otherwise write outside the destination.
-    A name that is empty or all path once stripped fails loud rather than
-    inventing one, because a silently renamed download is a file nobody can
-    match back to the message. A name with no extension (Chat posts pasted
+    A name that is empty or all path once stripped is refused rather than
+    invented, since a name with nothing of the posted one in it could not be
+    matched back to the message. A name with no extension (Chat posts pasted
     images as "untitled") takes one from the content type, so the file opens.
     """
     import mimetypes
