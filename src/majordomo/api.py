@@ -14,7 +14,9 @@ declined or failed it does not ask again either, within the same command.
 People are named through roster.py, which reads the People API over this
 token. A command run as an ``[identity.NAME]`` (``--as NAME``) holds a Chat
 app's service-account key instead of this token, and only sends: the app has
-no consent flow, no People API, and no file upload. A no-cache read is windowed and slow under Google's read quota, which
+no consent flow, no People API, and no file upload.
+
+A no-cache read is windowed and slow under Google's read quota, which
 is why the default path is the BI cache.
 
 `spaces()` also reports whether each space belongs to a Google Workspace
