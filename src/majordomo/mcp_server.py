@@ -239,7 +239,7 @@ def create_server() -> MCPServer:
         blocked spaces; a set WORLD_AS_OF refuses the send outright, a bounded
         run being a replay. identity names an [identity.NAME] in config.toml,
         a Chat app's service-account key, to send as that app: text only, into
-        spaces the app is a member of, to reaching the app's own DM.
+        spaces the app is a member of, and `to` reaches the app's own DM.
         """
         cfg = _config(identity)
         api.ensure_command_scopes(cfg, send=True)
