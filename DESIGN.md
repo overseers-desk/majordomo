@@ -77,9 +77,9 @@ A third file kind sits apart from both: the people and spaces majordomo has fetc
 
 ### Multi-account by identity
 
-Credentials are keyed by identity, so several Google accounts can be addressed by name from any front door rather than by swapping files. The shape is a `[identity.NAME]` table mapping a name to its credentials, chosen per command with `--as NAME` on the CLI or `identity` on the MCP `send` tool, which scales to as many accounts as a person uses.
+Credentials are keyed by identity, so several Google accounts can be addressed by name from any front door rather than by swapping files. The shape is a `[identity.NAME]` table mapping a name to its credentials, which scales to as many accounts as a person uses; a command chooses one with `--as NAME` on the CLI or `identity` on the MCP `send` tool.
 
-An identity holds a Chat app's service-account key (`service_account_file`), from which the core builds the app's credentials with the `chat.bot` scope, so `send` posts as the app. Such an identity only sends. `ensure_command_scopes`, the first core call of every command in both front doors, refuses it for any other shape, and `login` refuses it, the app having no consent flow. Google accepts file uploads only from a person's login, so `send` refuses attachments under it; the app reaches only spaces it is a member of, and `--to` only the app's own DM.
+An identity holds a Chat app's service-account key (`service_account_file`), from which the core builds the app's credentials with the `chat.bot` scope, so `send` posts as the app. Such an identity only sends. `ensure_command_scopes`, the first core call of every command in both front doors, refuses it for every command but `send`, and `login` refuses it, the app having no consent flow. Google accepts file uploads only from a person's login ([`media.upload`](https://developers.google.com/workspace/chat/api/reference/rest/v1/media/upload)), so `send` refuses attachments under it; the app reaches only spaces it is a member of, and `--to` only the app's own DM with that person.
 
 ## Naming people and spaces
 
