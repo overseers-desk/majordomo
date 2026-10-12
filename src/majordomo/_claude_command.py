@@ -107,6 +107,16 @@ majordomo send --space spaces/AAAA --attach ./report.pdf
 
 One target: `--space` posts to the space, `--thread` replies in a thread (any message resource name in it works), `--to` reaches a person's existing 1:1 DM (a person you have never DM'd is refused; majordomo does not open new DMs). `--attach <path>` uploads a local file as an attachment and repeats for several; the message text then becomes optional, so a file can go on its own. Sends as the logged-in account (attachments need no permission beyond sending). A blocked space answers "not found". While `WORLD_AS_OF` is set, a send is refused: a bounded run is a replay.
 
+A message that someone may turn into a Chat task (right-click, convert to task) gives the task its title from its first paragraph. Chat cuts that paragraph at about 140 characters, back to the last whole word, so keep it under 135. Write it as the whole job in one sentence. Everything else goes after a blank line, outside the title:
+
+```bash
+majordomo send --space spaces/AAAA "<the task, under 135 characters>
+
+@<assignee> these details help with the task: ..."
+```
+
+Post such messages, meant for the user to convert into a task, with `--space`, not `--thread`, so they appear in the main chat.
+
 ## Windows, output, source
 
 `--window` takes `7d | 30d | month | year | all`, or set `--since` / `--until` with ISO dates instead. Output is a console table by default, `--json`, or `--csv`. Rows are capped (a stderr note says when); narrow `--window`/`--space` or raise `--limit`. `majordomo <command> --help` carries the remaining flags.

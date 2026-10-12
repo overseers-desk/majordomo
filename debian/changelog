@@ -12,8 +12,11 @@ majordomo (0.2.2) unstable; urgency=medium
   * python3-pymysql is recommended rather than required: it is needed only
     to read the server-side cache, and without it majordomo reads Google
     Chat directly.
+  * The /majordomo command says how to write a message that someone will
+    convert into a Chat task: the task in the first paragraph, under 135
+    characters, the @-mention and details after a blank line.
 
- -- Weiwu Zhang <a@colourful.land>  Mon, 12 Oct 2026 16:25:55 +1000
+ -- Weiwu Zhang <a@colourful.land>  Mon, 12 Oct 2026 17:13:51 +1000
 
 majordomo (0.2.1) unstable; urgency=medium
 
