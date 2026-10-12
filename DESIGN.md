@@ -18,7 +18,7 @@ Its name is the household steward who runs a principal's affairs and decides wha
 
 (Verified 2026-09-28 by `tasks.list` with and without `showAssigned`, against one account and Google's `tasks` reference.)
 
-`tasks --to-me` fills its rows from that list with the notes, the due date, and a title where the messages yielded none: a task made from a message joins its row by thread; a task created fresh in a space joins by space and a creation time within five seconds of the task's `updated`, when exactly one task is that close (a fresh task edited later no longer matches, the API recording no creation time). The list is read under its own scope, `tasks.readonly`, asked for up front like the others.
+`tasks --to-me` fills its rows from that list with the notes, the due date, and a title where the messages yielded none: a task made from a message joins its row by thread; a task created fresh in a space joins by space and a creation time within a few seconds (`readers.OWN_MATCH_SECONDS`) of the task's `updated`, when exactly one task is that close (a fresh task edited later no longer matches, the API recording no creation time). The list is read under its own scope, `tasks.readonly`, asked for up front like the others.
 
 The BI platform already does this reconstruction server-side (a `coord_tasks` table over a `googlechat` mirror); majordomo reports over it when that backend is present and runs its own message decoder when it is not. Which source serves which path is in `DATA-MODEL.md`.
 
