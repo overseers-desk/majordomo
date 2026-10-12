@@ -1,7 +1,8 @@
 """api.attachments with an injected fake Chat service (no creds/network): the
-listing shape off a message and off a space, the download (bytes written, path
-reported), and the refusals. Those are a blocked space worded as not-found, a
-Drive-backed file, an existing target, a filename that would escape the
+listing shape off a message and off a space, the download (bytes written,
+path reported, a clashing name written beside the first, a file that cannot be
+saved reported on its row while the rest download), and the refusals: a
+blocked space worded as not-found, a filename that would escape the
 directory, a missing destination, and a wrong target count. Plus the
 WORLD_AS_OF bound on a read.
 """
@@ -126,23 +127,34 @@ def test_listing_without_download_writes_nothing(tmp_path):
     chat.media().download_media.assert_not_called()
 
 
-def test_download_refuses_to_overwrite(tmp_path, monkeypatch):
+def test_download_keeps_an_existing_file_and_writes_beside_it(tmp_path, monkeypatch):
     _fake_download(monkeypatch)
     (tmp_path / "clip.mp4").write_bytes(b"MINE")
     chat = _chat(_msg(_att("clip.mp4")))
-    with pytest.raises(SystemExit) as ei:
-        api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
-    assert "already exists" in str(ei.value)
+    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
     assert (tmp_path / "clip.mp4").read_bytes() == b"MINE"
+    assert rows[0]["path"] == str(tmp_path / "clip-2.mp4")
+    assert (tmp_path / "clip-2.mp4").read_bytes() == b"BYTES"
 
 
-def test_download_refuses_a_drive_backed_file(tmp_path, monkeypatch):
+def test_attachments_sharing_a_name_are_all_written(tmp_path, monkeypatch):
     _fake_download(monkeypatch)
-    chat = _chat(_msg(_att("doc.pdf", source="DRIVE_FILE", resource=None)))
-    with pytest.raises(SystemExit) as ei:
-        api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
-    assert "Drive" in str(ei.value)
-    assert "doc.pdf" in str(ei.value)
+    chat = _chat(_msg(*(_att("untitled", content_type="image/webp", resource=f"r{i}") for i in range(3)),
+                      _att("shot.png", content_type="image/png", resource="r3")))
+    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    assert [r["path"] for r in rows] == [str(tmp_path / n) for n in
+                                         ("untitled.webp", "untitled-2.webp", "untitled-3.webp", "shot.png")]
+    assert all((tmp_path / n).exists() for n in
+               ("untitled.webp", "untitled-2.webp", "untitled-3.webp", "shot.png"))
+
+
+def test_a_drive_backed_file_is_reported_and_the_rest_still_download(tmp_path, monkeypatch):
+    _fake_download(monkeypatch)
+    chat = _chat(_msg(_att("doc.pdf", source="DRIVE_FILE", resource=None), _att("clip.mp4")))
+    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    assert "Drive" in rows[0]["error"] and "doc.pdf" in rows[0]["error"]
+    assert "path" not in rows[0]
+    assert rows[1]["path"] == str(tmp_path / "clip.mp4")
 
 
 def test_drive_backed_file_still_lists():
@@ -161,12 +173,12 @@ def test_a_traversing_filename_cannot_escape_the_directory(tmp_path, monkeypatch
     assert not (tmp_path.parent / "escaped.mp4").exists()
 
 
-def test_an_all_path_filename_fails_loud(tmp_path, monkeypatch):
+def test_an_all_path_filename_is_reported_not_invented(tmp_path, monkeypatch):
     _fake_download(monkeypatch)
     chat = _chat(_msg(_att("../")))
-    with pytest.raises(SystemExit) as ei:
-        api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
-    assert "no usable filename" in str(ei.value)
+    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    assert "no usable filename" in rows[0]["error"]
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_missing_destination_directory_fails_before_any_call(tmp_path):

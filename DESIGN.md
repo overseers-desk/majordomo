@@ -127,8 +127,9 @@ That is also why the capability sits beside `send` in the core rather than insid
 - Naming one message fetches that message alone, rather than paging its whole space. Naming a space or a thread reads the files out of the ordinary paged message read: Chat's message list carries each message's attachment field, so the listing costs no fetch per message.
 - The read scope already covers the download (`chat.messages.readonly` governs both the message list and the media fetch), so an existing token needs no re-consent.
 - `WORLD_AS_OF` bounds this like any read rather than refusing it as it refuses `send`: a file posted after the bound is not reported, and one posted before it is part of the replay.
-- The filename comes from whoever posted the file, so it is untrusted: it is stripped to a bare basename before it joins the destination directory, and a name with nothing left after stripping fails loud rather than being invented, an unmatchable download being worse than a stop.
-- An existing file at the target path is left as it is and named. That also catches the case of two attachments on one message sharing a filename.
+- The filename comes from whoever posted the file, so it is untrusted: it is stripped to a bare basename before it joins the destination directory, and a name with nothing left after stripping is refused rather than invented, an unmatchable download being worse than a stop.
+- A download never overwrites. An existing file at the target path, or an earlier attachment in the same run with the same posted name (Chat posts pasted images all as "untitled"), is left as it is, and the new file is written beside it as name-2, name-3; the row's `path` says which file is which. A name without an extension takes one from the content type.
+- A file that cannot be saved (Drive-backed, no usable name) gets the reason on its row under `error` and the rest are still fetched; the CLI exits 1 when any row carries one.
 - A Drive-backed attachment carries a Drive reference in place of Chat file data; majordomo holds no Drive scope, so it lists but does not download, and says which file and why.
 
 ## Domain or consumer, and who owns a space

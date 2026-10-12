@@ -850,31 +850,37 @@ def _attachment_rows(msg: dict, space: str, space_display: str | None) -> list[d
     return rows
 
 
-def _safe_basename(content_name: str | None, attachment_name: str | None) -> str:
+def _safe_basename(content_name: str | None, attachment_name: str | None,
+                   content_type: str | None = None) -> str:
     """The filename to write, stripped to a bare basename.
 
     Whoever posted the file chose its name, so it is untrusted input: a
     contentName of "../../x" would otherwise write outside the destination.
     A name that is empty or all path once stripped fails loud rather than
     inventing one, because a silently renamed download is a file nobody can
-    match back to the message.
+    match back to the message. A name with no extension (Chat posts pasted
+    images as "untitled") takes one from the content type, so the file opens.
     """
+    import mimetypes
+
     base = os.path.basename((content_name or "").strip())
     if not base or base in (".", ".."):
         raise SystemExit(
             f"majordomo: attachment {attachment_name} has no usable filename "
             f"({content_name!r}); download it by another means."
         )
+    if not os.path.splitext(base)[1] and content_type:
+        base += mimetypes.guess_extension(content_type) or ""
     return base
 
 
 def _fetch(service, row: dict, dest_dir: str) -> str:
     """Download one attachment's bytes into dest_dir; return the path written.
 
-    Refuses to overwrite: a file already at the target path is left as it is
-    and named, because clobbering a download the caller may have edited is
-    worse than stopping. This also catches two attachments on one message that
-    share a filename, the second hitting the first one's write.
+    Never overwrites: a file already at the target path, whether the caller's
+    or an earlier attachment in the same run with the same posted name, is
+    left as it is, and this one is written beside it as name-2, name-3 and so
+    on. The row's ``path`` names which file is which.
     """
     import io
 
@@ -883,18 +889,24 @@ def _fetch(service, row: dict, dest_dir: str) -> str:
             f"majordomo: {row['content_name']} is a {row['source']} attachment, "
             "held in Drive rather than Chat; majordomo reads Chat only."
         )
-    path = os.path.join(dest_dir, _safe_basename(row["content_name"], row["attachment_name"]))
-    if os.path.exists(path):
-        raise SystemExit(f"majordomo: {path} already exists; not overwriting.")
+    base = _safe_basename(row["content_name"], row["attachment_name"], row["content_type"])
     request = service.media().download_media(resourceName=row["resource_name"])
     buf = io.BytesIO()
     downloader = _media_download()(buf, request)
     done = False
     while not done:
         _status, done = downloader.next_chunk()
-    with open(path, "wb") as fh:
-        fh.write(buf.getvalue())
-    return path
+    stem, ext = os.path.splitext(base)
+    n = 1
+    while True:
+        path = os.path.join(dest_dir, base if n == 1 else f"{stem}-{n}{ext}")
+        try:
+            # "x" claims the name atomically, so no check-then-write race.
+            with open(path, "xb") as fh:
+                fh.write(buf.getvalue())
+            return path
+        except FileExistsError:
+            n += 1
 
 
 def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
@@ -909,7 +921,9 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
     means the direct-message space with them, and a person with a space keeps
     only the files that person posted there. Reports one row
     per file; with ``download_to`` set, also writes each file into that
-    directory and adds the path written under ``path``. The API is the only
+    directory and adds the path written under ``path``, or, for a file that
+    could not be saved, the reason under ``error``; the other files are still
+    fetched. The API is the only
     path, the mirror holding no attachment rows, so this needs `majordomo
     login`. WORLD_AS_OF bounds it like any read: a file posted after the bound
     is not reported.
@@ -974,5 +988,8 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
     rows = readers.name_senders(reader.roster, sieve.filter_rows(blocked, rows)[-limit:])
     if download_to is not None:
         for row in rows:
-            row["path"] = _fetch(service, row, download_to)
+            try:
+                row["path"] = _fetch(service, row, download_to)
+            except SystemExit as exc:
+                row["error"] = str(exc)
     return rows

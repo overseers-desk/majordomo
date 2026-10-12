@@ -255,7 +255,8 @@ def attachments(
     Without --download this only reports what is there; with it, each file is
     written into that directory under the name it was posted with, and the
     path appears in the output. An existing file of that name is left alone
-    and named.
+    and the download saved beside it as name-2, name-3. A file that cannot be
+    saved is reported and the rest are still fetched; the exit status is then 1.
 
     Reads over the Chat API, which needs `majordomo login`: the cache mirrors
     message text, not files.
@@ -270,6 +271,11 @@ def attachments(
                            download_to=download)
     emit(rows, models.ATTACHMENT_COLUMNS, "nocache", json_out, csv_out)
     _warn_if_capped(rows, limit)
+    failed = [r["error"] for r in rows if r.get("error")]
+    for err in failed:
+        typer.echo(err, err=True)
+    if failed:
+        raise typer.Exit(1)
 
 
 @app.command(epilog=_WHO_EPILOG)
