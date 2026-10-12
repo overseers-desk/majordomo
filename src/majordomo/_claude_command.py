@@ -32,7 +32,7 @@ COMMAND_NAME = "majordomo"
 # not the description.
 COMMAND = """---
 name: majordomo
-description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Reads the messages and files (video, photo, document) in a space, a thread, or a person's DM, naming people by name, email or id and spaces by name. Reports whether a space is a Google Workspace domain space or a consumer/personal one, and who owns it. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM.
+description: Who holds which Google Chat tasks: tasks assigned by or to a person, plus message and task counts per space or person, over any date range. Reads the messages and files (video, photo, document) in a space, a thread, or a person's DM, naming people by name, email or id and spaces by name. Reports whether a space is a Google Workspace domain space or a consumer/personal one, and who owns it. Also sends a Google Chat message, with optional file attachments, to a space, a thread, or a person's DM, as the user or as a configured Chat app (bot).
 allowed-tools: Bash
 ---
 
@@ -103,9 +103,12 @@ majordomo send --to alice@example.com "Lunch?"
 majordomo send --to Alice "Lunch?"
 majordomo send --space "Back Office" "Here it is." --attach ./report.pdf --attach ./chart.png
 majordomo send --space spaces/AAAA --attach ./report.pdf
+majordomo --as bot send --space "Back Office" "Queue is clear."
 ```
 
 One target: `--space` posts to the space, `--thread` replies in a thread (any message resource name in it works), `--to` reaches a person's existing 1:1 DM (a person you have never DM'd is refused; majordomo does not open new DMs). `--attach <path>` uploads a local file as an attachment and repeats for several; the message text then becomes optional, so a file can go on its own. Sends as the logged-in account (attachments need no permission beyond sending). A blocked space answers "not found". While `WORLD_AS_OF` is set, a send is refused: a bounded run is a replay.
+
+`--as NAME`, before the command, sends as the Chat app (bot) whose service-account key is `[identity.NAME]` in `config.toml`; Chat shows it from the app, labelled App. A name not configured fails listing the configured ones. The app sends text only, into spaces it is a member of, and `--to` reaches the app's own DM with that person. Only `send` takes `--as`.
 
 A message that someone may turn into a Chat task (right-click, convert to task) gives the task its title from its first paragraph. Chat cuts that paragraph at about 140 characters, back to the last whole word, so keep it under 135. Write it as the whole job in one sentence. Everything else goes after a blank line, outside the title:
 
