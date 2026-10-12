@@ -58,5 +58,17 @@ def test_a_same_named_skill_supersedes_the_command():
         assert not (Path(tmp) / "commands" / "majordomo.md").exists()
 
 
+def test_an_unwritable_tree_is_skipped_not_raised():
+    with tempfile.TemporaryDirectory() as tmp, _config_dir(tmp):
+        commands = Path(tmp) / "commands"
+        commands.mkdir()
+        commands.chmod(0o500)
+        try:
+            _claude_command.refresh()
+        finally:
+            commands.chmod(0o700)
+        assert not (commands / "majordomo.md").exists()
+
+
 if __name__ == "__main__":
     _shim.run(dict(globals()))
