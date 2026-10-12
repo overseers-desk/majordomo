@@ -61,7 +61,7 @@ def _root(
     cache: bool = typer.Option(False, "--cache", help="Force the cache; fail if it is unreachable."),
     as_: Optional[str] = typer.Option(
         None, "--as", metavar="NAME",
-        help="Act as \\[identity.NAME] from config.toml, a Chat app's service-account key; only send runs as one."),
+        help="Act as identity NAME from config.toml (a Chat app's service-account key); only send runs as one."),
     _version: bool = typer.Option(
         False, "--version", callback=_version_callback, is_eager=True, help="Show version and exit."
     ),
