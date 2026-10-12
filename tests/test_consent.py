@@ -329,5 +329,31 @@ def test_a_failed_consent_prints_only_to_stderr(world, monkeypatch, capsys):
     assert "login failed" in out.err
 
 
+
+BOT = {"_identity": "bot", "identity": {"bot": {"service_account_file": "bot-key.json"}}}
+
+
+def test_identity_send_asks_nothing_of_the_personal_login(monkeypatch):
+    def touched(cfg):
+        raise AssertionError("the personal login was touched")
+
+    monkeypatch.setattr(api, "get_credentials", touched)
+    api.ensure_command_scopes(BOT, send=True)
+
+
+def test_identity_refuses_every_shape_that_reads():
+    for flags in ({}, {"api_read": True}, {"people": True},
+                  {"api_read": True, "owner": True, "people": True}, {"send": True, "people": True}):
+        with pytest.raises(SystemExit) as ei:
+            api.ensure_command_scopes(BOT, **flags)
+        assert "does not read as it" in str(ei.value), flags
+
+
+def test_identity_has_no_login():
+    with pytest.raises(SystemExit) as ei:
+        api.login(BOT)
+    assert "there is no login" in str(ei.value)
+
+
 if __name__ == "__main__":
     _shim.run(dict(globals()))

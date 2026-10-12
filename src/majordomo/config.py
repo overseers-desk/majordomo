@@ -1,8 +1,9 @@
 """Load majordomo's two config files from ``~/.config/majordomo/``, name the
 cache directory, and carry the once-per-run notes.
 
-- ``config.toml`` — human-edited: ``[me]`` (the configured subject) and
-  ``[sieve]`` (blocked spaces).
+- ``config.toml`` — human-edited: ``[me]`` (the configured subject),
+  ``[sieve]`` (blocked spaces), and ``[identity.NAME]`` (a Chat app's
+  service-account key, to send as with ``--as NAME``).
 - ``.env`` — the MariaDB connection (``MYSQL_*``), copied from the BI project;
   a read-only DB user swaps in later without any code change.
 - ``$XDG_CACHE_HOME/majordomo/`` (``~/.cache/majordomo/`` when unset, on Linux
@@ -106,7 +107,10 @@ def world_clamp(end: datetime | None) -> datetime | None:
     return min(end, bound)
 
 
-def load_config() -> dict:
+def load_config(identity: str | None = None) -> dict:
+    """The parsed config.toml. ``identity`` names the ``[identity.NAME]`` the
+    command acts as (``--as NAME``), checked here so a misspelt name stops the
+    command before anything else runs."""
     # Parse the bound before anything else: a bad WORLD_AS_OF stops every
     # command, including ones that fetch no dates (design §5, hard failure
     # everywhere).
@@ -114,7 +118,23 @@ def load_config() -> dict:
     if not CONFIG_TOML.exists():
         raise SystemExit(f"majordomo: no config at {CONFIG_TOML}")
     with open(CONFIG_TOML, "rb") as fh:
-        return tomllib.load(fh)
+        cfg = tomllib.load(fh)
+    if identity is not None:
+        if not ((cfg.get("identity") or {}).get(identity) or {}).get("service_account_file"):
+            raise SystemExit(
+                f"majordomo: no [identity.{identity}] with a service_account_file in {CONFIG_TOML}."
+            )
+        cfg["_identity"] = identity
+    return cfg
+
+
+def identity(config: dict) -> dict | None:
+    """The ``[identity.NAME]`` table this command acts as, plus its ``name``;
+    None when it acts as the personal login."""
+    name = config.get("_identity")
+    if name is None:
+        return None
+    return {"name": name, **config["identity"][name]}
 
 
 def load_env() -> dict:

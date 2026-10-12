@@ -30,12 +30,12 @@ def _jsonable(rows: list[dict]) -> list[dict]:
     return out
 
 
-def _config() -> dict:
+def _config(identity: Optional[str] = None) -> dict:
     # Every tool call starts here: a note left from an earlier call that
     # returned no envelope (send) belongs to that call, not this one.
     config.drain_notes()
     try:
-        return config.load_config()
+        return config.load_config(identity)
     except SystemExit as exc:
         # A config-time hard failure (a bad WORLD_AS_OF, a missing config) must
         # fail this tool call with its message, not kill the long-running server.
@@ -229,7 +229,7 @@ def create_server() -> MCPServer:
     @server.tool()
     def send(text: Optional[str] = None, space: Optional[str] = None,
              thread: Optional[str] = None, to: Optional[str] = None,
-             attachments: Optional[List[str]] = None) -> dict:
+             attachments: Optional[List[str]] = None, identity: Optional[str] = None) -> dict:
         """Send a message to a space, a thread, or a person's existing 1:1 DM.
         Exactly one of space/thread/to: thread takes a thread or any message
         name in it; to takes a person (users/<id>, an email, or a name); space
@@ -237,9 +237,11 @@ def create_server() -> MCPServer:
         local file paths on this host, uploaded as file attachments; text is
         optional when at least one attachment is given. The sieve refuses
         blocked spaces; a set WORLD_AS_OF refuses the send outright, a bounded
-        run being a replay.
+        run being a replay. identity names an [identity.NAME] in config.toml,
+        a Chat app's service-account key, to send as that app: text only, into
+        spaces the app is a member of, to reaching the app's own DM.
         """
-        cfg = _config()
+        cfg = _config(identity)
         api.ensure_command_scopes(cfg, send=True)
         try:
             return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,

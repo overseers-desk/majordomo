@@ -12,7 +12,9 @@ fallback a feature reaches for itself (``people_service``, ``send``,
 what it could, so it asks nothing new, and if the up-front consent was
 declined or failed it does not ask again either, within the same command.
 People are named through roster.py, which reads the People API over this
-token. A no-cache read is windowed and slow under Google's read quota, which
+token. A command run as an ``[identity.NAME]`` (``--as NAME``) holds a Chat
+app's service-account key instead of this token, and only sends: the app has
+no consent flow, no People API, and no file upload. A no-cache read is windowed and slow under Google's read quota, which
 is why the default path is the BI cache.
 
 `spaces()` also reports whether each space belongs to a Google Workspace
@@ -42,6 +44,8 @@ CHAT_READ_SCOPES = [
 ]
 # The one write scope: creating messages. Nothing else is writable.
 SEND_SCOPE = "https://www.googleapis.com/auth/chat.messages.create"
+# A Chat app's own scope, held by a service-account key: it sends as the app.
+BOT_SCOPE = "https://www.googleapis.com/auth/chat.bot"
 # Needed only to list a space's members, which is how an Owner is found
 # (spaces.get's own fields answer "domain or consumer" for free, no scope
 # beyond chat.spaces.readonly).
@@ -182,6 +186,11 @@ def _consent_reason(exc: Exception) -> str:
 
 def login(cfg: dict) -> str:
     """Mint a token via the browser OAuth flow, write it, return its path."""
+    ident = config.identity(cfg)
+    if ident:
+        raise SystemExit(
+            f"majordomo: {ident['name']} signs in with its service-account key; there is no login."
+        )
     return _consent(cfg)
 
 
@@ -295,6 +304,13 @@ def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = Fa
     not remembered past this command. See its docstring for how a later lazy
     check in the same command avoids asking twice.
     """
+    ident = config.identity(cfg)
+    if ident:
+        # A Chat app's key carries its one scope; there is nothing to ask for,
+        # and nothing but a send it can serve.
+        if send and not (api_read or owner or people):
+            return
+        raise SystemExit(f"majordomo: majordomo sends as {ident['name']} but does not read as it.")
     wanted = [(scopes, purpose) for key, scopes, purpose in _SCOPE_GROUPS
               if {"api_read": api_read, "owner": owner, "send": send, "people": people}[key]]
     if not wanted:
@@ -386,6 +402,18 @@ def get_credentials(cfg: dict):
     return creds
 
 
+def _service_account_credentials(ident: dict):
+    """The Chat app's credentials from its service-account key file. The key
+    is never rewritten; the access token it signs for lives in memory."""
+    _require_google()
+    from google.oauth2 import service_account
+
+    path = os.path.expanduser(ident["service_account_file"])
+    if not os.path.exists(path):
+        raise SystemExit(f"majordomo: no service-account key at {path} for [identity.{ident['name']}].")
+    return service_account.Credentials.from_service_account_file(path, scopes=[BOT_SCOPE])
+
+
 def _thread_target(thread: str) -> tuple[str, str]:
     """Resolve a reply target to (space, thread resource name).
 
@@ -450,7 +478,9 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
     file attachments, or both (at least one is required). The sieve refuses a
     blocked space with the same wording as a space that does not exist, so
     send cannot probe the block list. Refuses under WORLD_AS_OF: a bounded
-    run is a replay, and a send would act in the real present.
+    run is a replay, and a send would act in the real present. Run as an
+    ``[identity.NAME]``, it sends as that Chat app: into spaces the app is a
+    member of, ``to`` reaching the app's own DM, and with no attachments.
     """
     if config.world_as_of() is not None:
         raise SystemExit(
@@ -461,6 +491,12 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
         raise SystemExit("majordomo: send needs exactly one of space / thread / to.")
     if not text and not attachments:
         raise SystemExit("majordomo: send needs message text, an attachment, or both.")
+    ident = config.identity(cfg)
+    if ident and attachments:
+        raise SystemExit(
+            f"majordomo: {ident['name']} is a Chat app; Google accepts file uploads "
+            "only from a person's login."
+        )
     body: dict = {}
     kwargs: dict = {}
     if text:
@@ -472,16 +508,19 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
     if space and not sieve.allows(blocked, space):
         raise SystemExit(f"majordomo: {space}: not found.")
     if service is None:
-        creds = ensure_scopes(cfg, get_credentials(cfg), [SEND_SCOPE], "sending messages")
-        if creds is None:
-            raise SystemExit(
-                "majordomo: this version of majordomo needs more Google permissions "
-                "than your saved login grants (sending messages); run `majordomo login` "
-                "to grant them."
-            )
+        if ident:
+            creds = _service_account_credentials(ident)
+        else:
+            creds = ensure_scopes(cfg, get_credentials(cfg), [SEND_SCOPE], "sending messages")
+            if creds is None:
+                raise SystemExit(
+                    "majordomo: this version of majordomo needs more Google permissions "
+                    "than your saved login grants (sending messages); run `majordomo login` "
+                    "to grant them."
+                )
+            people = people_lookup(cfg)
         _, _, build = _require_google()
         service = build("chat", "v1", credentials=creds, cache_discovery=False)
-        people = people_lookup(cfg)
     reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg), people=people)
     if to:
         space = reader.dm_space_for(to)
