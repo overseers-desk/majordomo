@@ -146,7 +146,7 @@ majordomo mcp                       # run the MCP server (stdio)
 - A person (`--person`, `--assignee`, `--to`) is `users/<id>`, an email, or a name. A name matches People API names, and on the cache path also the spellings seen in task assignments and @-mentions. It must match one person; an ambiguous name lists the candidates with their ids. A space (`--space`) is `spaces/<id>` or its display name.
 - Window: `7d | 30d | month | year | all`, or `--since` / `--until` (ISO dates).
 - Output: default console, `--json`, or `--csv`.
-- `attachments` lists what was posted; add `--download DIR` to save each file into an existing directory under the name it was posted with, and the path written appears in the output. A file already at that name is left alone and named, so a download never clobbers.
+- `attachments` lists what was posted; add `--download DIR` to save each file into an existing directory under the name it was posted with, and the path written appears in the output. A file already at that name is left alone and the download saved beside it as name-2, name-3, so a download never clobbers.
 - `spaces` also reports each space's domain (a Google Workspace domain space, or a consumer/personal one) straight from the Chat API; `--owner` resolves who owns it too, one extra call per space that is not a direct message.
 
 ## Replay bounds: `WORLD_AS_OF`

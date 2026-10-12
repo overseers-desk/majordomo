@@ -209,7 +209,9 @@ def create_server() -> FastMCP:
         and a capped answer keeps the newest. Set
         download_to to an existing directory on this host to also save each
         file there under the name it was posted with; the path written comes
-        back on the row. An existing file of that name is left alone and named.
+        back on the row. An existing file of that name is left alone and the
+        download saved beside it as name-2, name-3; a file that cannot be
+        saved carries the reason under error instead, the rest still fetched.
         Reads over the Chat API in every case, the cache mirroring message
         text and not files. The sieve refuses blocked spaces.
         """
