@@ -107,7 +107,7 @@ majordomo signs in as **you**, through Google's own browser consent screen. `maj
 
 **Domain-wide delegation**, where a service account impersonates users, is not used: only a Google Workspace administrator may authorize it, and only for accounts inside that Workspace domain, which excludes consumer Gmail and any account you do not administer. Per-account OAuth costs one login per user and, in exchange, works for everyone.
 
-`majordomo login` writes the token file used by `--live` (for the top-up), `--nocache`, `send`, `attachments`, `spaces --owner`, and naming people. It needs a Desktop OAuth client with the Google Chat API and the People API enabled, saved as `client_secret.json` in the config directory. The permissions it asks for:
+`majordomo login` writes the token file used by `--live` (for the top-up), `--nocache`, `send`, `attachments`, `spaces --owner`, and naming people. It needs a Desktop OAuth client with the Google Chat API, the People API and the Google Tasks API enabled, saved as `client_secret.json` in the config directory. The permissions it asks for:
 
 | Permission | For |
 |---|---|
@@ -115,6 +115,7 @@ majordomo signs in as **you**, through Google's own browser consent screen. `maj
 | `chat.messages.create` | `send`, with its attachments |
 | `chat.memberships.readonly` | `spaces --owner`: finding each space's Owner |
 | `contacts.readonly`, `contacts.other.readonly`, `directory.readonly`, `userinfo.profile` | Naming people through the People API, from your saved contacts, your "other contacts", your Workspace directory, and your own profile |
+| `tasks.readonly` | `tasks --to-me`: notes, due dates and titles from your own Google Tasks list, for the tasks assigned to you |
 
 **Upgrading can add permissions.** A new version may need a permission your saved login does not grant; naming people through the People API is one. Before it does anything else, the command works out every permission its own shape needs (reading the API directly, `--owner`, sending, showing people) and opens Google's consent page once for whatever is missing. That happens up front, so a decline or an unanswered page costs nothing already spent reading. The consent adds to what you granted before. When nobody is there to answer the page (a cron job, CI, an SSH session without a terminal), the command still answers: people show as `users/<id>`, and a line says to run `majordomo login`, which grants every permission at once.
 

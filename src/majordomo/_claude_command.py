@@ -59,7 +59,7 @@ majordomo tasks --assignee Alice --since 2026-01-01 --json > "$RESULTS"
 majordomo tasks --space "Back Office" --until 2026-06-30
 ```
 
-`--to-me` and `--by-me` resolve through `[me].user_id` in the config; `--assignee` names someone else. `--space` limits to one space. `status` is open, done or deleted, and the assignee the current holder, both replayed from Chat's own task messages (Completed, Re-opened, Deleted, Restored, Assigned, Changed assignee, Unassigned); a thread holding several tasks keeps them as created, since those messages name no task.
+`--to-me` and `--by-me` resolve through `[me].user_id` in the config; `--assignee` names someone else. `--space` limits to one space. `status` is open, done or deleted, and the assignee the current holder, both replayed from Chat's own task messages (Completed, Re-opened, Deleted, Restored, Assigned, Changed assignee, Unassigned); a thread holding several tasks keeps them as created, since those messages name no task. `--to-me` rows also carry `notes` and `due` from your own Google Tasks list (the `tasks.readonly` permission, asked for up front), and a title where the messages yielded none.
 
 ## Spaces and people
 

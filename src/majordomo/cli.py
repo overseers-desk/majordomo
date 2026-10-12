@@ -77,14 +77,14 @@ def _root(
     _claude_command.refresh()
 
 
-def _open(ctx: typer.Context, *, people: bool = False):
+def _open(ctx: typer.Context, *, people: bool = False, **shape):
     from . import api
 
     cfg = config.load_config(ctx.obj["identity"])
     # Up front, before the reader touches the cache or the API: everything
     # this command's shape needs, so a decline or a timeout costs nothing
     # already spent reading.
-    api.ensure_command_scopes(cfg, api_read=ctx.obj["source"] in ("live", "nocache"), people=people)
+    api.ensure_command_scopes(cfg, api_read=ctx.obj["source"] in ("live", "nocache"), people=people, **shape)
     return cfg, readers.make_reader(cfg, ctx.obj["source"])
 
 
@@ -198,7 +198,7 @@ def tasks(
     csv_out: bool = typer.Option(False, "--csv", help="CSV to stdout."),
 ) -> None:
     """Report tasks, filtered by assignee, space, and date."""
-    cfg, reader = _open(ctx, people=True)
+    cfg, reader = _open(ctx, people=True, own=to_me)
     start, end = dates.resolve(window, since, until)
     rows = reader.tasks(
         to_user=_me(cfg) if to_me else None,

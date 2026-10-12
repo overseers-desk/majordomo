@@ -133,7 +133,8 @@ def create_server() -> MCPServer:
         limit: int = readers.reports.TASK_LIMIT,
         source: Optional[str] = None,
     ) -> dict:
-        """Report tasks by assignee/space/date. to_me/by_me need [me].user_id.
+        """Report tasks by assignee/space/date. to_me/by_me need [me].user_id; to_me
+        rows also carry notes and due from the signed-in person's own Google Tasks list.
 
         assignee is a person: users/<id>, an email, or a name (a name matches
         People API names and, on the cache path, the spellings seen in tasks
@@ -142,7 +143,7 @@ def create_server() -> MCPServer:
         source: cache | live | nocache.
         """
         cfg = _config()
-        api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"), people=True)
+        api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"), people=True, own=to_me)
         cfg, reader = _reader(source, cfg=cfg)
         me = config.require_user_id(cfg) if (to_me or by_me) else None
         start, end = dates.resolve(window, since, until)
