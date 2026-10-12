@@ -24,6 +24,7 @@ TASK_COLUMNS: list[Column] = [
     ("Assignee", lambda r: r.get("assignee") or "(unassigned)"),
     ("Space", _space_label),
     ("Status", "status"),
+    ("Due", lambda r: (r.get("due") or "")[:10]),
     ("Title", lambda r: r.get("title") or ""),
 ]
 

@@ -30,6 +30,7 @@ filtered to `ROLE_MANAGER`, Chat's "Owner" role in the UI; see
 from __future__ import annotations
 
 import errno
+import functools
 import os
 import sys
 from datetime import datetime
@@ -52,13 +53,19 @@ BOT_SCOPE = "https://www.googleapis.com/auth/chat.bot"
 # (spaces.get's own fields answer "domain or consumer" for free, no scope
 # beyond chat.spaces.readonly).
 MEMBERSHIPS_SCOPE = "https://www.googleapis.com/auth/chat.memberships.readonly"
+# The signed-in person's own Google Tasks lists, which hold their copy of every
+# task assigned to them in a Chat space (DESIGN.md, "Task reconstruction");
+# read for `tasks --to-me`'s fill of notes, due dates and titles.
+TASKS_SCOPE = "https://www.googleapis.com/auth/tasks.readonly"
+OWN_PURPOSE = "your own Google Tasks list, for the tasks assigned to you"
 # Scopes for a freshly-minted token: the Chat read scopes, send, memberships,
-# and the People API reads that name people, minted together so one login
-# serves every path.
+# the Tasks list, and the People API reads that name people, minted together
+# so one login serves every path.
 LOGIN_SCOPES = [
     *CHAT_READ_SCOPES,
     SEND_SCOPE,
     MEMBERSHIPS_SCOPE,
+    TASKS_SCOPE,
     *roster.PEOPLE_SCOPES,
 ]
 # The loopback port the consent flow listens on for Google's redirect.
@@ -69,14 +76,16 @@ CONSENT_TIMEOUT = 180
 
 # What a command's shape needs, keyed by the flag ``ensure_command_scopes``
 # takes: reading the Chat API directly, --owner's membership lookup, sending,
-# and showing a resolved person (a People-scope need that holds even on a
-# cache-only read). One table, so the up-front check and the plain "what does
-# this shape need" answer (``scopes_for``) can never drift apart.
+# showing a resolved person (a People-scope need that holds even on a
+# cache-only read), and --to-me's fill from the person's own task list. One
+# table, so the up-front check and the plain "what does this shape need"
+# answer (``scopes_for``) can never drift apart.
 _SCOPE_GROUPS: list[tuple[str, list[str], str]] = [
     ("api_read", CHAT_READ_SCOPES, "reading Chat directly"),
     ("owner", [MEMBERSHIPS_SCOPE], "listing space members, for --owner"),
     ("send", [SEND_SCOPE], "sending messages"),
     ("people", roster.PEOPLE_SCOPES, "the People API, which names people"),
+    ("own", [TASKS_SCOPE], OWN_PURPOSE),
 ]
 
 
@@ -271,14 +280,15 @@ def ensure_scopes(cfg: dict, creds, needed: list[str], purpose: str):
 
 
 def scopes_for(*, api_read: bool = False, owner: bool = False, send: bool = False,
-               people: bool = False) -> list[str]:
+               people: bool = False, own: bool = False) -> list[str]:
     """The Google scopes a command needs, from what it is about to do:
     ``api_read`` for ``--live``/``--nocache`` and anything (``send``,
     ``attachments``, ``spaces --owner``) that always reads the Chat API
     directly regardless of the source flags; ``owner`` for ``--owner``'s
     membership lookup; ``send`` for sending; ``people`` for any report that
-    shows a resolved person's name, a cache-only read included."""
-    flags = {"api_read": api_read, "owner": owner, "send": send, "people": people}
+    shows a resolved person's name, a cache-only read included; ``own`` for
+    ``tasks --to-me``'s fill from the person's own task list."""
+    flags = {"api_read": api_read, "owner": owner, "send": send, "people": people, "own": own}
     out: list[str] = []
     for key, scopes, _purpose in _SCOPE_GROUPS:
         if flags[key]:
@@ -287,7 +297,7 @@ def scopes_for(*, api_read: bool = False, owner: bool = False, send: bool = Fals
 
 
 def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = False,
-                          send: bool = False, people: bool = False) -> None:
+                          send: bool = False, people: bool = False, own: bool = False) -> None:
     """Ask, once, for everything this command's shape needs, before any Chat
     or People call. This is the core function both front doors call at the
     very start of a command (INVARIANTS.md: the sieve and the credentials
@@ -314,7 +324,7 @@ def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = Fa
             return
         raise SystemExit(f"majordomo: majordomo sends as {ident['name']} but does not read as it.")
     wanted = [(scopes, purpose) for key, scopes, purpose in _SCOPE_GROUPS
-              if {"api_read": api_read, "owner": owner, "send": send, "people": people}[key]]
+              if {"api_read": api_read, "owner": owner, "send": send, "people": people, "own": own}[key]]
     if not wanted:
         return
     try:
@@ -352,6 +362,66 @@ def people_service(cfg: dict):
 def people_lookup(cfg: dict | None):
     """The roster's lazy People lookup for a config, or None without one."""
     return (lambda: people_service(cfg)) if cfg is not None else None
+
+
+OWN_NOTE = (
+    "majordomo: your saved login cannot read your Google Tasks list, so the tasks "
+    "assigned to you show without notes or due dates; run `majordomo login`."
+)
+
+
+def _pages(call, key: str, **kw):
+    """Every item of a paginated list call."""
+    token = None
+    while True:
+        resp = call(pageToken=token, **kw).execute()
+        yield from resp.get(key, [])
+        token = resp.get("nextPageToken")
+        if not token:
+            return
+
+
+def own_tasks(cfg: dict, service=None) -> dict | None:
+    """The signed-in person's tasks assigned from Chat spaces, from every one
+    of their Google Tasks lists, indexed for readers.fill_own: ``by_thread``
+    maps (space, thread) to the task made from that thread's message,
+    ``by_space`` maps a space to (updated time, task) pairs for the tasks
+    created fresh there. None, with a one-line note, when the token cannot
+    read the lists and could not be made to; None too under WORLD_AS_OF, the
+    lists being current-state (and a bounded run asks no consent). ``service``
+    is injected by tests."""
+    if config.world_as_of() is not None:
+        return None
+    if service is None:
+        try:
+            creds = ensure_scopes(cfg, get_credentials(cfg), [TASKS_SCOPE], OWN_PURPOSE)
+        except SystemExit:
+            creds = None
+        if creds is None:
+            config.note_once(OWN_NOTE)
+            return None
+        _, _, build = _require_google()
+        service = build("tasks", "v1", credentials=creds, cache_discovery=False)
+    index: dict = {"by_thread": {}, "by_space": {}}
+    for tl in _pages(service.tasklists().list, "items", maxResults=100):
+        for t in _pages(service.tasks().list, "items", tasklist=tl["id"], maxResults=100,
+                        showAssigned=True, showCompleted=True, showHidden=True):
+            info = t.get("assignmentInfo") or {}
+            if info.get("surfaceType") != "SPACE":
+                continue
+            space = (info.get("spaceInfo") or {}).get("space")
+            path = (info.get("linkToTask") or "").split("/space/")[-1].split("/")
+            if len(path) >= 3:
+                index["by_thread"][(space, path[1])] = t
+            else:
+                index["by_space"].setdefault(space, []).append((datetime.fromisoformat(t["updated"]).timestamp(), t))
+    return index
+
+
+def own_tasks_lookup(cfg: dict | None):
+    """A memoised own_tasks for a config, so one command lists the API once
+    whatever readers it builds; None without a config."""
+    return functools.cache(lambda: own_tasks(cfg)) if cfg is not None else None
 
 
 def get_credentials(cfg: dict):
@@ -574,9 +644,10 @@ class NocacheReader:
     source = "nocache"
 
     def __init__(self, creds=None, blocked=None, blocked_assignees=None, service=None,
-                 ros: roster.Roster | None = None, me: str | None = None, people=None):
+                 ros: roster.Roster | None = None, me: str | None = None, people=None, own=None):
         self.blocked = blocked or []
         self.blocked_assignees = blocked_assignees or []
+        self.own = own  # the person's own task list, for --to-me's fill (readers.fill_own)
         if service is not None:
             self.chat = service  # injected (tests)
         else:
@@ -591,9 +662,9 @@ class NocacheReader:
 
     @classmethod
     def from_config(cls, cfg: dict, blocked: list[str], blocked_assignees: list[str] | None = None,
-                    ros: roster.Roster | None = None, creds=None) -> "NocacheReader":
+                    ros: roster.Roster | None = None, creds=None, own=None) -> "NocacheReader":
         return cls(creds or get_credentials(cfg), blocked, blocked_assignees, ros=ros,
-                   me=config.me_user_id(cfg), people=people_lookup(cfg))
+                   me=config.me_user_id(cfg), people=people_lookup(cfg), own=own or own_tasks_lookup(cfg))
 
     # --- people and spaces by name ---------------------------------------
 
@@ -769,7 +840,8 @@ class NocacheReader:
         out.sort(key=lambda r: r["created_at"] or datetime.min, reverse=True)
         out = sieve.filter_rows(self.blocked, out)
         out = sieve.filter_assignees(self.blocked_assignees, out)
-        return readers.name_assignees(self.roster, self.blocked_assignees, out[:limit])
+        rows = readers.name_assignees(self.roster, self.blocked_assignees, out[:limit])
+        return readers.fill_own(rows, self.own if to_user else None)
 
     def people(self, *, person=None, start=None, end=None) -> list[dict]:
         by_id: dict[str, dict] = {}

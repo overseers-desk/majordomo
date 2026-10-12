@@ -109,7 +109,13 @@ def test_cli_people_asks_for_people_scope_before_reading(stub_reader):
 def test_cli_tasks_asks_for_people_scope_before_reading(stub_reader):
     result = runner.invoke(app, ["tasks"])
     assert result.exit_code == 0, result.output
-    assert stub_reader == [("consent", {"api_read": False, "people": True}), ("read", "tasks")]
+    assert stub_reader == [("consent", {"api_read": False, "people": True, "own": False}), ("read", "tasks")]
+
+
+def test_cli_tasks_to_me_asks_for_the_own_task_list_too(stub_reader):
+    result = runner.invoke(app, ["tasks", "--to-me"])
+    assert result.exit_code == 0, result.output
+    assert stub_reader[0] == ("consent", {"api_read": False, "people": True, "own": True})
 
 
 def test_cli_messages_needs_a_target_but_still_asks_first(stub_reader):
@@ -181,7 +187,13 @@ def test_mcp_tasks_asks_for_people_scope_before_reading(order, monkeypatch):
     monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
     out = _tool("tasks")()
     assert out["rows"] == []
-    assert order == [("consent", {"api_read": False, "people": True}), ("read", "tasks")]
+    assert order == [("consent", {"api_read": False, "people": True, "own": False}), ("read", "tasks")]
+
+
+def test_mcp_tasks_to_me_asks_for_the_own_task_list_too(order, monkeypatch):
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
+    _tool("tasks")(to_me=True)
+    assert order[0] == ("consent", {"api_read": False, "people": True, "own": True})
 
 
 def test_mcp_messages_asks_for_people_scope_before_reading(order, monkeypatch):

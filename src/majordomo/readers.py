@@ -15,7 +15,7 @@ Every person a report shows is named through the same roster.
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 from . import config, db, reports, roster, sieve
 
@@ -78,16 +78,56 @@ def name_assignees(ros: roster.Roster, blocked_assignees: list[str], rows: list[
     return sieve.filter_assignees(blocked_assignees, rows)
 
 
+def own_tasks_lookup(cfg: dict | None):
+    """The signed-in person's own Google Tasks list, indexed for fill_own
+    (api.py holds the credentials), imported late as people_lookup is."""
+    from .api import own_tasks_lookup as lookup
+
+    return lookup(cfg)
+
+
+OWN_MATCH_SECONDS = 5
+
+
+def fill_own(rows: list[dict], own) -> list[dict]:
+    """Give each task row the notes, due date and, where the row has none, the
+    title of the signed-in person's own copy of the task (api.own_tasks), what
+    the messages lack. A task made from a message joins its row by thread; one
+    created fresh in a space joins by space and a creation time within
+    OWN_MATCH_SECONDS of the task's ``updated`` (the API records no creation
+    time), and only when exactly one task is that close. Every row leaves with
+    ``notes`` and ``due``; one that joins nothing, or a run without the list
+    (``own`` None, or a token that cannot read it), keeps them None."""
+    index = own() if own else None
+    for r in rows:
+        r.setdefault("notes", None)
+        r.setdefault("due", None)
+        if not index:
+            continue
+        thread = r["source_message_name"].split(".")[0].rsplit("/", 1)[-1]
+        task = index["by_thread"].get((r["space_name"], thread))
+        if task is None and r.get("created_at"):
+            created = r["created_at"]
+            at = (created if created.tzinfo else created.replace(tzinfo=timezone.utc)).timestamp()
+            near = [t for ts, t in index["by_space"].get(r["space_name"], []) if abs(ts - at) <= OWN_MATCH_SECONDS]
+            task = near[0] if len(near) == 1 else None
+        if task:
+            r["title"] = r["title"] or task.get("title")
+            r["notes"], r["due"] = task.get("notes"), task.get("due")
+    return rows
+
+
 class CacheReader:
     source = "cache"
 
     def __init__(self, conn, blocked: list[str], blocked_assignees: list[str] | None = None,
-                 cfg: dict | None = None, ros: roster.Roster | None = None):
+                 cfg: dict | None = None, ros: roster.Roster | None = None, own=None):
         self.conn = conn
         self.blocked = blocked
         self.blocked_assignees = blocked_assignees or []
         self._cfg = cfg or {}
         self.roster = ros or roster.Roster(lookup=people_lookup(cfg))
+        self.own = own or own_tasks_lookup(cfg)
 
     # --- what the mirror teaches the roster, for this run ------------------
 
@@ -150,14 +190,15 @@ class CacheReader:
         rows = decorate_people(self.roster, rows, who, self._dm_spaces())
         return sieve.filter_assignees(self.blocked_assignees, rows, id_key="user_id", name_key="display")
 
-    def tasks(self, *, assignee=None, space=None, **filters) -> list[dict]:
+    def tasks(self, *, assignee=None, space=None, to_user=None, **filters) -> list[dict]:
         if assignee:
             assignee = self.resolve_person(assignee)
         if space:
             space = self.resolve_space(space)
-        rows = reports.tasks(self.conn, self.blocked, assignee=assignee, space=space, **filters)
+        rows = reports.tasks(self.conn, self.blocked, assignee=assignee, space=space, to_user=to_user, **filters)
         rows = sieve.filter_assignees(self.blocked_assignees, rows)
-        return name_assignees(self.roster, self.blocked_assignees, rows)
+        rows = name_assignees(self.roster, self.blocked_assignees, rows)
+        return fill_own(rows, self.own if to_user else None)
 
     def messages(self, space: str | None = None, *, person: str | None = None, **kw) -> list[dict]:
         sender = None
@@ -195,7 +236,8 @@ class FreshReader:
     def _nocache(self):
         if self._nc is None:
             from .api import NocacheReader
-            self._nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees, ros=self.cache.roster)
+            self._nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees,
+                                                 ros=self.cache.roster, own=self.cache.own)
         return self._nc
 
     # Stable dimensions never need a freshness fetch.
