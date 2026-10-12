@@ -38,7 +38,6 @@ _FIELDS = ("source_message_name", "space_name", "assignee_user_name", "assignee_
 
 
 def _node_decode(fixtures: list) -> list:
-    """Each fixture through the JS decodeTask, lifecycleOf and assigneeChangeOf."""
     src = (
         "import {decodeTask, lifecycleOf, assigneeChangeOf} from %s;\n"
         "let c='';process.stdin.on('data',d=>c+=d);"

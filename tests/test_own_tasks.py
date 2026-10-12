@@ -40,7 +40,7 @@ def test_own_tasks_indexes_every_list_by_thread_or_space():
     assert index["by_thread"] == {("spaces/OK", "T"): MADE_FROM_MESSAGE}
     assert [t["id"] for _, t in index["by_space"]["spaces/OK"]] == ["b", "c"]     # the Docs task is left out
     _, kwargs = svc.tasks().list.call_args_list[0]
-    assert kwargs["showAssigned"] is True                                        # the flag the 2025 test omitted
+    assert kwargs["showAssigned"] is True
 
 
 def _row(name, created, title=None, space="spaces/OK"):

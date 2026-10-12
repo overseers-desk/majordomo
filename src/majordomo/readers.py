@@ -86,6 +86,9 @@ def own_tasks_lookup(cfg: dict | None):
     return lookup(cfg)
 
 
+# A task created fresh in a space carries no creation time, only `updated`,
+# which its creation sets: observed within a second of the creation message
+# for most such tasks, so this window joins them without reaching a neighbour.
 OWN_MATCH_SECONDS = 5
 
 

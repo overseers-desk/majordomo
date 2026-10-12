@@ -3,14 +3,15 @@
 Pure: Chat messages in, task records out, nothing fetched.
 
 Google's Tasks integration posts a message for each step of a task's life
-(creation, the status verbs, the holder verbs: the tables below), none naming
+(creation, the status verbs, the holder verbs: the verb lists below), none naming
 a task id, so the thread is the only join: in a thread holding exactly one
 task the events replay onto it, and a thread holding several is left alone, an
 open default being better than a guess. Every verb anchors at the start of the
 text with the "via Tasks" marker present, and an event is believed on its text
 alone, as the cache believes it (Chat attributes these posts to the acting
 human, so a hand-typed one is indistinguishable). The nocache path and the
-cache (`coord_tasks`) thereby agree; tests/test_decoder_parity.py runs the JS.
+cache (`coord_tasks`) thereby read each message the same way;
+tests/test_decoder_parity.py runs the JS classifiers to check that.
 """
 
 from __future__ import annotations
@@ -155,7 +156,7 @@ def replay_lifecycle(kinds) -> str | None:
 
 def apply_lifecycle(tasks: list[dict], messages: list[dict]) -> None:
     """Replay each thread's status and holder events onto its task, in place
-    (the reconstruction pass of jobs.js). Every task leaves with a ``status``:
+    (port of jobs.js's reconstruction pass). Every task leaves with a ``status``:
     the replayed one, else "open"; in a single-task thread the last holder
     event also replaces the creation-time assignee."""
     by_thread: dict[str, list[dict]] = {}
