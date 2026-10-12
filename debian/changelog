@@ -1,3 +1,17 @@
+majordomo (0.2.2) unstable; urgency=medium
+
+  * Reading the Chat API directly (--live, --nocache) replays each task's
+    completion, re-opening, deletion and change of assignee from Chat's own
+    messages, as the cache does.
+  * attachments --download saves every file: several posted under one name
+    (Chat posts pasted images all as "untitled") are written as untitled,
+    untitled-2, untitled-3, and a file already in the directory is kept with
+    the download saved beside it. A name without an extension takes one from
+    the file type. A file that cannot be saved is reported on its row while
+    the rest download, and the command exits 1.
+
+ -- Weiwu Zhang <a@colourful.land>  Mon, 12 Oct 2026 16:25:55 +1000
+
 majordomo (0.2.1) unstable; urgency=medium
 
   * spaces reports whether each space belongs to a Google Workspace domain
