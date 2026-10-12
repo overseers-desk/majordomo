@@ -148,6 +148,22 @@ def test_attachments_sharing_a_name_are_all_written(tmp_path, monkeypatch):
                ("untitled.webp", "untitled-2.webp", "untitled-3.webp", "shot.png"))
 
 
+def test_a_failed_write_is_reported_and_the_rest_still_download(tmp_path, monkeypatch):
+    _fake_download(monkeypatch)
+    real_open = open
+
+    def failing_open(path, mode="r", *a, **kw):
+        if str(path).endswith("bad.mp4"):
+            raise OSError("No space left on device")
+        return real_open(path, mode, *a, **kw)
+
+    monkeypatch.setattr("builtins.open", failing_open)
+    chat = _chat(_msg(_att("bad.mp4", resource="r0"), _att("clip.mp4", resource="r1")))
+    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    assert "No space left" in rows[0]["error"]
+    assert rows[1]["path"] == str(tmp_path / "clip.mp4")
+
+
 def test_a_drive_backed_file_is_reported_and_the_rest_still_download(tmp_path, monkeypatch):
     _fake_download(monkeypatch)
     chat = _chat(_msg(_att("doc.pdf", source="DRIVE_FILE", resource=None), _att("clip.mp4")))
