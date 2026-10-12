@@ -120,9 +120,12 @@ def load_config(identity: str | None = None) -> dict:
     with open(CONFIG_TOML, "rb") as fh:
         cfg = tomllib.load(fh)
     if identity is not None:
-        if not ((cfg.get("identity") or {}).get(identity) or {}).get("service_account_file"):
+        tables = cfg.get("identity") or {}
+        if not (tables.get(identity) or {}).get("service_account_file"):
+            known = ", ".join(sorted(n for n, t in tables.items() if (t or {}).get("service_account_file")))
             raise SystemExit(
-                f"majordomo: no [identity.{identity}] with a service_account_file in {CONFIG_TOML}."
+                f"majordomo: no [identity.{identity}] with a service_account_file in {CONFIG_TOML}"
+                f" (configured: {known or 'none'})."
             )
         cfg["_identity"] = identity
     return cfg
