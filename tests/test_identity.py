@@ -1,5 +1,6 @@
-"""Identity and sieve config accessors. Email cannot drive filters in v1, so the
-CLI keys off ``[me].user_id``; these check the extraction the CLI relies on.
+"""Config accessors: ``[me]`` (email cannot drive filters in v1, so the CLI
+keys off ``[me].user_id``), the sieve, and ``[identity.NAME]``, the Chat app a
+command sends as with ``--as NAME``.
 """
 
 import _shim  # noqa: F401
@@ -50,6 +51,7 @@ def test_an_unknown_identity_stops_the_command(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as ei:
         config.load_config("nosuch")
     assert "[identity.nosuch]" in str(ei.value)
+    assert "(configured: bot)" in str(ei.value)
 
 
 def test_an_identity_without_a_key_file_stops_the_command(tmp_path, monkeypatch):
