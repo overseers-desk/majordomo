@@ -18,7 +18,7 @@ import os
 from datetime import date, datetime
 from typing import List, Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from . import api, config, dates, readers
 
@@ -73,8 +73,8 @@ def _envelope(source: str, rows: list[dict]) -> dict:
     return out
 
 
-def create_server() -> FastMCP:
-    server = FastMCP("majordomo")
+def create_server() -> MCPServer:
+    server = MCPServer("majordomo")
 
     @server.tool()
     def spaces(minimal_messages: int = 1, owner: bool = False, source: Optional[str] = None) -> dict:

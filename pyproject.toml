@@ -18,7 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = [
-    "mcp>=1.0.0",
+    "mcp>=2.0.0",
 ]
 bi = [
     "pymysql>=1.0",
