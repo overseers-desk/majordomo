@@ -225,7 +225,7 @@ class FreshReader:
     top-up polls one space when scoped, else only the recently-active spaces
     (reports.active_spaces) — the lever that keeps an unscoped read within quota.
     A third sibling of the CacheReader/NocacheReader duck-type, holding both.
-    Names resolve once, through the cache reader, and both halves get ids.
+    Names resolve once, through the cache reader or, on its miss, the API; both halves get ids.
     """
 
     source = "live"
@@ -243,6 +243,18 @@ class FreshReader:
             self._nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees,
                                                  ros=self.cache.roster, own=self.cache.own)
         return self._nc
+
+    def resolve_space(self, who: str) -> str:
+        try:
+            return self.cache.resolve_space(who)
+        except SystemExit:
+            return self._nocache().resolve_space(who)
+
+    def dm_space_for(self, who: str) -> str:
+        try:
+            return self.cache.dm_space_for(who)
+        except SystemExit:
+            return self._nocache().dm_space_for(who)
 
     # Stable dimensions never need a freshness fetch.
     def people(self, **kw) -> list[dict]:
@@ -298,7 +310,7 @@ class FreshReader:
         if assignee:
             assignee = self.cache.resolve_person(assignee)
         if space:
-            space = self.cache.resolve_space(space)
+            space = self.resolve_space(space)
         base = self.cache.tasks(to_user=to_user, by_user=by_user, assignee=assignee,
                                 space=space, start=start, end=end, limit=limit)
         targets = self._bounded_targets(self._targets(space))
@@ -314,12 +326,12 @@ class FreshReader:
     def messages(self, space: str | None = None, *, person=None, thread=None, start=None, end=None,
                  limit=reports.MESSAGE_LIMIT) -> list[dict]:
         if space:
-            space = self.cache.resolve_space(space)
+            space = self.resolve_space(space)
         if person:
             if space or thread:
                 person = self.cache.resolve_person(person)
             else:
-                space, person = self.cache.dm_space_for(person), None
+                space, person = self.dm_space_for(person), None
         base = self.cache.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
         if space:
             targets = [(space, reports.space_watermark(self.cache.conn, space))]
