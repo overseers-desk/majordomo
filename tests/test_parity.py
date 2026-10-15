@@ -37,6 +37,21 @@ def test_csv_output():
     assert lines[2] == "2,x"
 
 
+def test_times_print_marked_utc():
+    from datetime import datetime
+    rows, cols = [{"t": datetime(2026, 10, 14, 12, 38)}], [("T", "t")]
+    buf, old = io.StringIO(), sys.stdout
+    sys.stdout = buf
+    try:
+        output.emit(rows, cols, "cache", output_json=True)
+        output.emit(rows, cols, "cache", output_csv=True)
+    finally:
+        sys.stdout = old
+    out = buf.getvalue()
+    assert '"t": "2026-10-14T12:38:00+00:00"' in out
+    assert out.splitlines()[-1] == "2026-10-14 12:38:00+00:00"
+
+
 def test_messages_thread_filter_sql():
     captured = {}
 
