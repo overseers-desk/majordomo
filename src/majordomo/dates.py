@@ -27,6 +27,11 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def as_utc(value):
+    """A naive datetime, UTC like every time here, marked as UTC for output."""
+    return value.replace(tzinfo=timezone.utc) if isinstance(value, datetime) and value.tzinfo is None else value
+
+
 def _parse(value: str | None) -> datetime | None:
     if not value:
         return None

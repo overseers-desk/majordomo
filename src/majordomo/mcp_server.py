@@ -26,7 +26,7 @@ from . import api, config, dates, readers
 def _jsonable(rows: list[dict]) -> list[dict]:
     out = []
     for row in rows:
-        out.append({k: (v.isoformat() if isinstance(v, (datetime, date)) else v) for k, v in row.items()})
+        out.append({k: (dates.as_utc(v).isoformat() if isinstance(v, (datetime, date)) else v) for k, v in row.items()})
     return out
 
 

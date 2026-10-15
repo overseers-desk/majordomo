@@ -14,7 +14,7 @@ import json
 import os
 import sys
 
-from . import config
+from . import config, dates
 from .models import Column
 
 from rich.console import Console
@@ -24,7 +24,7 @@ console = Console()
 
 
 def _cell(row: dict, key) -> str:
-    value = key(row) if callable(key) else row.get(key)
+    value = dates.as_utc(key(row) if callable(key) else row.get(key))
     return "" if value is None else str(value)
 
 
@@ -36,7 +36,7 @@ def emit(rows: list[dict], columns: list[Column], source: str,
         if bounded:
             envelope["world_as_of"] = bounded
             envelope["current_state_note"] = config.WORLD_CURRENT_STATE_NOTE
-        print(json.dumps(envelope, indent=2, default=str))
+        print(json.dumps(envelope, indent=2, default=lambda v: dates.as_utc(v).isoformat() if hasattr(v, "isoformat") else str(v)))
         return
     if bounded:
         print(
