@@ -122,7 +122,7 @@ def fill_own(rows: list[dict], own) -> list[dict]:
 
 class CacheReader:
     source = "cache"
-    miss = " in the cache (--live or --nocache asks the Chat API)"
+    where = " in the cache (--live or --nocache asks the Chat API)"
 
     def __init__(self, conn, blocked: list[str], blocked_assignees: list[str] | None = None,
                  cfg: dict | None = None, ros: roster.Roster | None = None, own=None):
@@ -167,7 +167,7 @@ class CacheReader:
         return self.roster.resolve_person(who, by_email=self._by_email, seed=self._seed_names)
 
     def resolve_space(self, who: str) -> str:
-        return self.roster.resolve_space(who, seed=self._seed_spaces, blocked=self.blocked, where=self.miss)
+        return self.roster.resolve_space(who, seed=self._seed_spaces, blocked=self.blocked, where=self.where)
 
     def dm_space_for(self, who: str) -> str:
         """The direct-message space with a person, from the mirror (the DM
@@ -175,7 +175,7 @@ class CacheReader:
         user = self.resolve_person(who)
         found = next(iter(reports.dm_spaces(self.conn, self.blocked, user=user)), {}).get("space_name")
         if found is None or not sieve.allows(self.blocked, found):
-            raise SystemExit(f"majordomo: no direct message space with {user}{self.miss}.")
+            raise SystemExit(f"majordomo: no direct message space with {user}{self.where}.")
         return found
 
     # --- the reports -----------------------------------------------------
@@ -225,7 +225,7 @@ class FreshReader:
     top-up polls one space when scoped, else only the recently-active spaces
     (reports.active_spaces) — the lever that keeps an unscoped read within quota.
     A third sibling of the CacheReader/NocacheReader duck-type, holding both.
-    Names resolve once, through the cache reader or, on its miss, the API; both halves get ids.
+    Names resolve once, through the cache reader, a space or DM it lacks over the API; both halves get ids.
     """
 
     source = "live"
