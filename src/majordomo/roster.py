@@ -402,10 +402,11 @@ class Roster:
         listed = ", ".join(f"{s} ({', '.join(v)})" for s, v in sorted(matches.items()))
         raise SystemExit(f"majordomo: '{who}' matches {len(matches)} people: {listed}")
 
-    def resolve_space(self, who: str, *, seed=None, blocked=None) -> str:
+    def resolve_space(self, who: str, *, seed=None, blocked=None, where: str = "") -> str:
         """``who`` (a ``spaces/<id>`` or a display name) to a ``spaces/<id>``.
         ``seed()`` pours the backend's space listing in when the name is not
-        yet known. A blocked space never matches by name."""
+        yet known; a miss names ``where`` it looked. A blocked space never
+        matches by name."""
         who = who.strip()
         if who.startswith("spaces/"):
             return who
@@ -416,6 +417,6 @@ class Roster:
         if len(matches) == 1:
             return next(iter(matches))
         if not matches:
-            raise SystemExit(f"majordomo: no space named '{who}'; give spaces/<id>.")
+            raise SystemExit(f"majordomo: no space named '{who}'{where}; give spaces/<id>.")
         listed = ", ".join(f"{s} ({', '.join(v)})" for s, v in sorted(matches.items()))
         raise SystemExit(f"majordomo: '{who}' matches {len(matches)} spaces: {listed}")

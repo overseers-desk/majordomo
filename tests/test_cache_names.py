@@ -66,6 +66,15 @@ def test_a_name_only_the_mirror_holds_still_resolves(cache):
     assert cache.resolve_person("rex tanaka") == "users/2"
 
 
+def test_a_miss_says_it_looked_only_in_the_cache(cache, monkeypatch):
+    monkeypatch.setattr(reports, "dm_spaces", lambda conn, blocked, user=None: [])
+    monkeypatch.setattr(reports, "spaces", lambda conn, blocked, **kw: [])
+    with pytest.raises(SystemExit, match="users/9 in the cache .*--nocache"):
+        cache.dm_space_for("users/9")
+    with pytest.raises(SystemExit, match="no space named 'Kitchen' in the cache .*--nocache"):
+        cache.resolve_space("Kitchen")
+
+
 def test_block_assignees_by_either_name(cache):
     cache.blocked_assignees = ["Ada Quill"]
     assert [r["assignee_user_name"] for r in cache.tasks()] == ["users/2"]
