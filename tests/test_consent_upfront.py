@@ -1,9 +1,7 @@
 """The up-front consent check (api.ensure_command_scopes): both front doors
 call it, once, at the very start of a command, before any Chat or People
-call, so a decline or a timeout costs nothing already spent reading. The
-motivating case: `spaces --owner` used to open the consent page only after
-the better part of a minute of membership reads backed off under Google's
-per-minute quota, wasting all of it on a decline. These tests check the wiring:
+call, so a decline or a timeout costs nothing already spent reading. These
+tests check the wiring:
 each CLI command calls the check with the shape flags its own behaviour
 implies, strictly before the read that would otherwise reach Google first;
 test_mcp_server.py checks each MCP tool the same way. The mechanism itself

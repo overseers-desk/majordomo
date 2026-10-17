@@ -33,9 +33,6 @@ _WORLD_EPILOG = (
 
 
 class _OneLineRefusals(TyperGroup):
-    """A refusal the core raises ends the command as its one line on stderr
-    and exit status 1, never a traceback."""
-
     def invoke(self, ctx):
         try:
             return super().invoke(ctx)
