@@ -1,12 +1,15 @@
-"""What the front doors (the CLI and the MCP server) do around the core that
-the core must not: read the user's own files, and run Google's consent flow.
-``load`` reads config.toml and the ``.env`` beside it into the config a
-command runs with. ``login`` runs the consent flow for every scope majordomo
-uses; ``up_front`` runs it once at the start of a command whose shape needs a
-scope the saved login lacks, when someone can answer. A core call must never
-drop a library caller into an interactive flow nobody can answer (a cron job
-has no terminal), so the core only raises ScopeError and the front door
-decides; the core never imports this module.
+"""What the front doors (the CLI and the MCP server) do around the core: read
+the environment and the ``.env`` beside config.toml, which the core never
+reads, and run Google's consent flow. A core call reads only what it is
+handed; ``config.load_config(None)`` is handed the user's config.toml.
+``load`` builds the config a command runs with from config.toml, the ``.env``
+merged into ``[db]``, and the environment's WORLD_AS_OF bound. ``login`` runs
+the consent flow for every scope majordomo uses; ``up_front`` runs it once at
+the start of a command whose shape needs a scope the saved login lacks, when
+someone can answer. A core call must never drop a library caller into an
+interactive flow nobody can answer (a cron job has no terminal), so the core
+only raises ScopeError and the front door decides; the core never imports
+this module.
 """
 
 from __future__ import annotations
@@ -27,9 +30,10 @@ CONSENT_TIMEOUT = 180
 
 def load(identity: str | None = None) -> dict:
     """The user's config.toml, with the cache database's settings from the
-    ``.env`` beside it merged into ``[db]``; a key config.toml's own ``[db]``
-    sets wins over the ``.env``."""
-    cfg = config.load_config(None, identity=identity)
+    ``.env`` beside it merged into ``[db]`` (a key config.toml's own ``[db]``
+    sets wins over the ``.env``) and bounded by the environment's
+    WORLD_AS_OF."""
+    cfg = config.load_config(None, identity=identity, world_as_of=os.environ.get(config.WORLD_AS_OF_ENV))
     env = config.env_file()
     if env.exists():
         cfg["db"] = {**config.parse_env_file(env), **cfg.get("db", {})}

@@ -35,7 +35,10 @@ def _jsonable(rows: list[dict]) -> list[dict]:
 
 def _config(identity: Optional[str] = None) -> dict:
     # Every tool call starts here: a note left from an earlier call that
-    # returned no envelope (send) belongs to that call, not this one.
+    # returned no envelope (send) belongs to that call, not this one. The
+    # WORLD_AS_OF bound is read and parsed here too, per call, so the server
+    # honors the environment its launcher set, and a bad bound fails the call
+    # with its line rather than killing the server at handshake.
     config.drain_notes()
     return frontdoor.load(identity)
 
@@ -46,13 +49,13 @@ def _reader(source: Optional[str], cfg: Optional[dict] = None):
     return cfg, readers.make_reader(cfg, source)
 
 
-def _envelope(source: str, rows: list[dict]) -> dict:
+def _envelope(source: str, rows: list[dict], cfg: dict) -> dict:
     out = {"source": source, "count": len(rows), "rows": _jsonable(rows)}
     notes = config.drain_notes()
     if notes:
         # What the CLI prints on stderr, carried to a caller that reads none.
         out["notes"] = notes
-    bounded = os.environ.get(config.WORLD_AS_OF_ENV)
+    bounded = cfg.get("_world_as_of")
     if bounded:
         # Auditability: a bounded answer says so, so a benchmark log proves it.
         out["world_as_of"] = bounded
@@ -97,11 +100,11 @@ def create_server() -> MCPServer:
             cfg = _config()
             frontdoor.up_front(cfg, api_read=True, owner=True, people=True)
             rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
-            return _envelope("nocache", rows)
+            return _envelope("nocache", rows, cfg)
         cfg = _config()
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"))
         _cfg, reader = _reader(source, cfg=cfg)
-        return _envelope(reader.source, reader.spaces(minimal_messages=minimal_messages))
+        return _envelope(reader.source, reader.spaces(minimal_messages=minimal_messages), cfg)
 
     @tool
     def people(person: Optional[str] = None, window: str = "year", since: Optional[str] = None,
@@ -115,9 +118,9 @@ def create_server() -> MCPServer:
         cfg = _config()
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True)
         _cfg, reader = _reader(source, cfg=cfg)
-        start, end = dates.resolve(window, since, until)
+        start, end = dates.resolve(window, since, until, cfg=cfg)
         rows = reader.people(person=person, start=start, end=end)
-        return _envelope(reader.source, rows)
+        return _envelope(reader.source, rows, cfg)
 
     @tool
     def tasks(
@@ -144,7 +147,7 @@ def create_server() -> MCPServer:
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True, own=to_me)
         cfg, reader = _reader(source, cfg=cfg)
         me = config.require_user_id(cfg) if (to_me or by_me) else None
-        start, end = dates.resolve(window, since, until)
+        start, end = dates.resolve(window, since, until, cfg=cfg)
         rows = reader.tasks(
             to_user=me if to_me else None,
             by_user=me if by_me else None,
@@ -154,7 +157,7 @@ def create_server() -> MCPServer:
             end=end,
             limit=limit,
         )
-        return _envelope(reader.source, rows)
+        return _envelope(reader.source, rows, cfg)
 
     @tool
     def messages(
@@ -176,9 +179,9 @@ def create_server() -> MCPServer:
         cfg = _config()
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True)
         _cfg, reader = _reader(source, cfg=cfg)
-        start, end = dates.resolve(window, since, until)
+        start, end = dates.resolve(window, since, until, cfg=cfg)
         rows = reader.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
-        return _envelope(reader.source, rows)
+        return _envelope(reader.source, rows, cfg)
 
     @tool
     def attachments(
@@ -210,11 +213,11 @@ def create_server() -> MCPServer:
         """
         cfg = _config()
         frontdoor.up_front(cfg, api_read=True, people=True)
-        start, end = dates.resolve(window, since, until)
+        start, end = dates.resolve(window, since, until, cfg=cfg)
         rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
                                message=message, person=person, start=start, end=end, limit=limit,
                                download_to=download_to and os.path.expanduser(download_to))
-        return _envelope("nocache", rows)
+        return _envelope("nocache", rows, cfg)
 
     @tool
     def send(text: Optional[str] = None, space: Optional[str] = None,

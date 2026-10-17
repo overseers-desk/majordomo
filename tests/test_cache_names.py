@@ -41,8 +41,8 @@ def cache(monkeypatch, tmp_path):
     monkeypatch.setattr(reports, "space_known", lambda conn, space: space == "spaces/A")
     monkeypatch.setattr(reports, "people", lambda conn, blocked, **kw: [
         {"user_id": "users/1", "display": "Ada Q", "msgs": 3, "tasks": 1}])
-    monkeypatch.setattr(reports, "mention_rows", lambda conn, blocked: [])
-    monkeypatch.setattr(reports, "task_names", lambda conn, blocked: [
+    monkeypatch.setattr(reports, "mention_rows", lambda conn, blocked, **kw: [])
+    monkeypatch.setattr(reports, "task_names", lambda conn, blocked, **kw: [
         {"user_id": "users/2", "display": "Rex Tanaka", "last_seen": datetime(2026, 5, 2)}])
     monkeypatch.setattr(reports, "dm_spaces", lambda conn, blocked, user=None: [
         {"space_name": "spaces/DM1", "sender_name": "users/1", "sender_type": "HUMAN", "msgs": 2}])

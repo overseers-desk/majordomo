@@ -130,15 +130,16 @@ class CacheReader:
         self.blocked = blocked
         self.blocked_assignees = blocked_assignees or []
         self._cfg = cfg or {}
-        self.roster = ros or roster.Roster(lookup=people_lookup(cfg))
+        self.bound = config.world_as_of(self._cfg)
+        self.roster = ros or roster.Roster(lookup=people_lookup(cfg), frozen=self.bound is not None)
         self.own = own or own_tasks_lookup(cfg)
 
     # --- what the mirror teaches the roster, for this run ------------------
 
     def _seed_names(self) -> None:
-        for r in reports.mention_rows(self.conn, self.blocked):
+        for r in reports.mention_rows(self.conn, self.blocked, bound=self.bound):
             self.roster.learn_mentions(r["text"], r["annotations_json"], r["create_time"])
-        for r in reports.task_names(self.conn, self.blocked):
+        for r in reports.task_names(self.conn, self.blocked, bound=self.bound):
             self.roster.learn(r["user_id"], r["display"], r["last_seen"])
 
     def _dm_spaces(self, user: str | None = None) -> dict[str, str]:
@@ -182,13 +183,13 @@ class CacheReader:
     # --- the reports -----------------------------------------------------
 
     def spaces(self, minimal_messages: int = 1) -> list[dict]:
-        rows = reports.spaces(self.conn, self.blocked, minimal_messages=minimal_messages)
+        rows = reports.spaces(self.conn, self.blocked, minimal_messages=minimal_messages, bound=self.bound)
         for r in rows:
             self.roster.learn_space_name(r["space_name"], r.get("space_display"))
         return rows
 
     def people(self, *, person: str | None = None, **kw) -> list[dict]:
-        rows = reports.people(self.conn, self.blocked, **kw)
+        rows = reports.people(self.conn, self.blocked, bound=self.bound, **kw)
         self._seed_names()
         who = self.resolve_person(person) if person else None
         rows = sieve.filter_assignees(self.blocked_assignees, rows, id_key="user_id", name_key="display")
@@ -200,7 +201,8 @@ class CacheReader:
             assignee = self.resolve_person(assignee)
         if space:
             space = self.resolve_space(space)
-        rows = reports.tasks(self.conn, self.blocked, assignee=assignee, space=space, to_user=to_user, **filters)
+        rows = reports.tasks(self.conn, self.blocked, assignee=assignee, space=space, to_user=to_user,
+                             bound=self.bound, **filters)
         rows = sieve.filter_assignees(self.blocked_assignees, rows)
         rows = name_assignees(self.roster, self.blocked_assignees, rows)
         return fill_own(rows, self.own if to_user else None)
@@ -219,7 +221,8 @@ class CacheReader:
                 sender = self.resolve_person(person)
             else:
                 space = self.dm_space_for(person)
-        rows = reports.messages(self.conn, self.blocked, space=space, thread=thread, sender=sender, **kw)
+        rows = reports.messages(self.conn, self.blocked, space=space, thread=thread, sender=sender,
+                                bound=self.bound, **kw)
         return name_senders(self.roster, rows)
 
 
@@ -298,8 +301,7 @@ class FreshReader:
             return [(space, reports.space_watermark(self.cache.conn, space))]
         return reports.active_spaces(self.cache.conn, self.blocked)
 
-    @staticmethod
-    def _bounded_targets(targets):
+    def _bounded_targets(self, targets):
         """Under WORLD_AS_OF, drop top-up targets whose cache watermark is at or
         past the bound: the top-up fetches only records newer than the watermark,
         which the bound would exclude anyway, so the call is definitionally
@@ -308,7 +310,7 @@ class FreshReader:
         top-up, the one case where `--live` still adds anything; the fetch
         itself is end-clamped inside NocacheReader.
         """
-        bound = config.world_as_of()
+        bound = config.world_as_of(self._cfg)
         if bound is None:
             return list(targets)
         live = [(sp, wm) for sp, wm in targets if wm is None or wm < bound]
@@ -398,7 +400,7 @@ def make_reader(cfg: dict, source: str | None = None):
             # --cache promises to fail here rather than fall back; the failure
             # is a one-line answer, not the driver's traceback.
             raise MajordomoError(
-                f"majordomo: cache unreachable with --cache ({exc}); "
+                f"majordomo: cache unreachable with --cache ({str(exc).removeprefix('majordomo: ')}); "
                 "drop the flag to fall back to the direct API."
             ) from None
         from .api import NocacheReader

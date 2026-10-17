@@ -2,16 +2,16 @@
 
 JSON wraps the rows in an envelope carrying the provenance ``source`` and a
 ``count``, so a machine reader can tell a cache answer from a direct (nocache) one.
-Under WORLD_AS_OF the envelope also carries ``world_as_of`` (the bound as set,
-so a benchmark log proves the answer was bounded) and the current-state note;
-the console and CSV paths say the same once on stderr. Absent when unset.
+Handed the WORLD_AS_OF bound as set (``world_as_of``), the envelope also
+carries it and the current-state note, so a benchmark log proves the answer
+was bounded; the console and CSV paths say the same once on stderr. Absent for
+an unbounded run.
 """
 
 from __future__ import annotations
 
 import csv as _csv
 import json
-import os
 import sys
 
 from . import config, dates
@@ -29,18 +29,17 @@ def _cell(row: dict, key) -> str:
 
 
 def emit(rows: list[dict], columns: list[Column], source: str,
-         output_json: bool = False, output_csv: bool = False) -> None:
-    bounded = os.environ.get(config.WORLD_AS_OF_ENV)
+         output_json: bool = False, output_csv: bool = False, world_as_of: str | None = None) -> None:
     if output_json:
         envelope: dict = {"source": source, "count": len(rows), "rows": rows}
-        if bounded:
-            envelope["world_as_of"] = bounded
+        if world_as_of:
+            envelope["world_as_of"] = world_as_of
             envelope["current_state_note"] = config.WORLD_CURRENT_STATE_NOTE
         print(json.dumps(envelope, indent=2, default=lambda v: dates.as_utc(v).isoformat() if hasattr(v, "isoformat") else str(v)))
         return
-    if bounded:
+    if world_as_of:
         print(
-            f"majordomo: bounded to WORLD_AS_OF={bounded}; "
+            f"majordomo: bounded to WORLD_AS_OF={world_as_of}; "
             f"{config.WORLD_CURRENT_STATE_NOTE}.",
             file=sys.stderr,
         )

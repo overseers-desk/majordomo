@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from majordomo import api
+from majordomo import api, config
 from majordomo.errors import MajordomoError, NotFound
 
 SPACE = "spaces/OK"
@@ -252,26 +252,28 @@ def test_needs_exactly_one_scope():
 
 # --- the replay bound ----------------------------------------------------
 
-def test_world_as_of_hides_a_file_posted_after_the_bound(monkeypatch):
-    monkeypatch.setenv(api.config.WORLD_AS_OF_ENV, "2026-06-01T00:00:00+00:00")
+def _bounded(raw):
+    return config.load_config({}, world_as_of=raw)
+
+
+def test_world_as_of_hides_a_file_posted_after_the_bound():
     chat = _chat(_msg(_att("later.mp4")))  # posted 2026-06-24, past the bound
-    assert api.attachments({}, [], message=MSG, service=chat) == []
+    assert api.attachments(_bounded("2026-06-01T00:00:00+00:00"), [], message=MSG, service=chat) == []
 
 
-def test_world_as_of_keeps_a_file_posted_before_the_bound(monkeypatch):
-    monkeypatch.setenv(api.config.WORLD_AS_OF_ENV, "2026-07-01T00:00:00+00:00")
+def test_world_as_of_keeps_a_file_posted_before_the_bound():
     chat = _chat(_msg(_att("earlier.mp4")))
-    rows = api.attachments({}, [], message=MSG, service=chat)
+    rows = api.attachments(_bounded("2026-07-01T00:00:00+00:00"), [], message=MSG, service=chat)
     assert [r["content_name"] for r in rows] == ["earlier.mp4"]
 
 
 def test_download_is_not_refused_under_a_bound(tmp_path, monkeypatch):
     """A read is bounded, not refused (unlike send): a file that existed before
     the bound is legitimately part of the replay."""
-    monkeypatch.setenv(api.config.WORLD_AS_OF_ENV, "2026-07-01T00:00:00+00:00")
     _fake_download(monkeypatch, b"OLD")
     chat = _chat(_msg(_att("clip.mp4")))
-    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    rows = api.attachments(_bounded("2026-07-01T00:00:00+00:00"), [], message=MSG,
+                           download_to=str(tmp_path), service=chat)
     assert (tmp_path / "clip.mp4").read_bytes() == b"OLD"
     assert rows[0]["path"] == str(tmp_path / "clip.mp4")
 

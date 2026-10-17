@@ -3,12 +3,9 @@ pick a reader, render.
 
 The front doors call the core (readers / reports / decoder) and add no
 business logic, so this one and the MCP server read through the same readers.
-Google's consent flow, which needs a browser or a person at a terminal, lives
-in frontdoor.py with the reading of the user's own config files; both front
-doors call it and the core never imports it, while the core still chooses
-and uses every credential. Source is cache by default (direct-API fallback if
-the cache is down); `--cache` / `--live` (cache + freshness top-up) /
-`--nocache` (direct API) select it. Output is console, `--json`, or `--csv`.
+Source is cache by default (direct-API fallback if the cache is down);
+`--cache` / `--live` (cache + freshness top-up) / `--nocache` (direct API)
+select it. Output is console, `--json`, or `--csv`.
 """
 
 from __future__ import annotations
@@ -179,10 +176,10 @@ def spaces(
         rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
         source = "nocache"
     else:
-        _cfg, reader = _open(ctx)
+        cfg, reader = _open(ctx)
         rows = reader.spaces(minimal_messages=minimal_messages)
         source = reader.source
-    emit(rows, models.SPACE_COLUMNS, source, json_out, csv_out)
+    emit(rows, models.SPACE_COLUMNS, source, json_out, csv_out, world_as_of=cfg.get("_world_as_of"))
     if source == "cache" and minimal_messages > 0 and not (json_out or csv_out):
         typer.echo(
             f"majordomo: hiding spaces with < {minimal_messages} message(s) "
@@ -207,9 +204,10 @@ def people(
     counts only. --person narrows to one person and is the check to make
     before using a name elsewhere.
     """
-    _cfg, reader = _open(ctx, people=True)
-    start, end = dates.resolve(window, since, until)
-    emit(reader.people(person=person, start=start, end=end), models.PEOPLE_COLUMNS, reader.source, json_out, csv_out)
+    cfg, reader = _open(ctx, people=True)
+    start, end = dates.resolve(window, since, until, cfg=cfg)
+    rows = reader.people(person=person, start=start, end=end)
+    emit(rows, models.PEOPLE_COLUMNS, reader.source, json_out, csv_out, world_as_of=cfg.get("_world_as_of"))
 
 
 @app.command(epilog=_WHO_EPILOG)
@@ -228,7 +226,7 @@ def tasks(
 ) -> None:
     """Report tasks, filtered by assignee, space, and date."""
     cfg, reader = _open(ctx, people=True, own=to_me)
-    start, end = dates.resolve(window, since, until)
+    start, end = dates.resolve(window, since, until, cfg=cfg)
     rows = reader.tasks(
         to_user=_me(cfg) if to_me else None,
         by_user=_me(cfg) if by_me else None,
@@ -238,7 +236,7 @@ def tasks(
         end=end,
         limit=limit,
     )
-    emit(rows, models.TASK_COLUMNS, reader.source, json_out, csv_out)
+    emit(rows, models.TASK_COLUMNS, reader.source, json_out, csv_out, world_as_of=cfg.get("_world_as_of"))
     _warn_if_capped(rows, limit)
 
 
@@ -261,10 +259,10 @@ def messages(
 
     Rows are oldest-first; a capped answer keeps the newest.
     """
-    _cfg, reader = _open(ctx, people=True)
-    start, end = dates.resolve(window, since, until)
+    cfg, reader = _open(ctx, people=True)
+    start, end = dates.resolve(window, since, until, cfg=cfg)
     rows = reader.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
-    emit(rows, models.MESSAGE_COLUMNS, reader.source, json_out, csv_out)
+    emit(rows, models.MESSAGE_COLUMNS, reader.source, json_out, csv_out, world_as_of=cfg.get("_world_as_of"))
     _warn_if_capped(rows, limit)
 
 
@@ -302,11 +300,11 @@ def attachments(
     cfg = frontdoor.load(ctx.obj["identity"])
     # Always the direct API and always naming senders, regardless of flags.
     _up_front(cfg, api_read=True, people=True)
-    start, end = dates.resolve(window, since, until)
+    start, end = dates.resolve(window, since, until, cfg=cfg)
     rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
                            message=message, person=person, start=start, end=end, limit=limit,
                            download_to=download and os.path.expanduser(download))
-    emit(rows, models.ATTACHMENT_COLUMNS, "nocache", json_out, csv_out)
+    emit(rows, models.ATTACHMENT_COLUMNS, "nocache", json_out, csv_out, world_as_of=cfg.get("_world_as_of"))
     _warn_if_capped(rows, limit)
     failed = [r["error"] for r in rows if r.get("error")]
     for err in failed:

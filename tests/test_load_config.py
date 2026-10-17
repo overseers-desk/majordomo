@@ -1,4 +1,4 @@
-"""load_config's three sources: a dict, taken as it stands and never changed;
+"""load_config's sources: a dict, taken as it stands and never changed;
 a TOML file, whose [api] files default to beside it and whose paths expand
 ``~``; and nothing, the user's own config.toml. Every source is checked for
 the shape majordomo reads."""
@@ -14,11 +14,6 @@ import pytest
 
 from majordomo import api, config, readers
 from majordomo.errors import MajordomoError
-
-
-@pytest.fixture(autouse=True)
-def _no_bound(monkeypatch):
-    monkeypatch.delenv("WORLD_AS_OF", raising=False)
 
 
 def test_a_dict_is_never_changed_and_is_taken_literally():

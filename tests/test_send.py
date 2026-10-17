@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from majordomo import api
+from majordomo import api, config
 from majordomo.errors import MajordomoError, NotFound, ScopeError
 
 
@@ -107,11 +107,11 @@ def test_non_404_api_errors_stay_loud():
         api.send({}, [], space="spaces/OK", text="hi", service=chat)
 
 
-def test_world_as_of_refuses_send(monkeypatch):
-    monkeypatch.setenv(api.config.WORLD_AS_OF_ENV, "2026-07-12T17:07:00+10:00")
+def test_world_as_of_refuses_send():
     chat = _chat()
+    bounded = config.load_config({}, world_as_of="2026-07-12T17:07:00+10:00")
     with pytest.raises(MajordomoError) as ei:
-        api.send({}, [], space="spaces/OK", text="hi", service=chat)
+        api.send(bounded, [], space="spaces/OK", text="hi", service=chat)
     assert "WORLD_AS_OF" in str(ei.value)
     chat.spaces().messages().create.assert_not_called()
 

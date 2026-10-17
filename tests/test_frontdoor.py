@@ -43,7 +43,6 @@ def world(monkeypatch):
     monkeypatch.setattr(api, "_require_google", lambda: (None, None, lambda *a, **k: "PEOPLE"))
     monkeypatch.setattr(frontdoor, "grant", grant)
     monkeypatch.setattr(frontdoor, "consent_mode", lambda: "browser")
-    monkeypatch.delenv(config.WORLD_AS_OF_ENV, raising=False)
     config.drain_notes()
     return state
 
@@ -83,9 +82,8 @@ def test_nobody_to_answer_means_no_grant_and_no_refusal(world, monkeypatch):
     assert config.drain_notes() == []
 
 
-def test_world_as_of_never_grants(world, monkeypatch):
-    monkeypatch.setenv(config.WORLD_AS_OF_ENV, "2026-01-01T00:00:00+00:00")
-    frontdoor.up_front({}, people=True)
+def test_world_as_of_never_grants(world):
+    frontdoor.up_front(config.load_config({}, world_as_of="2026-01-01T00:00:00+00:00"), people=True)
     assert world["grants"] == []
 
 
@@ -171,7 +169,6 @@ def test_a_decline_leaves_a_safe_reason_and_no_refusal(monkeypatch, tmp_path, ca
     _flow(monkeypatch, run)
     monkeypatch.setattr(api, "get_credentials", lambda cfg: _creds(CHAT_ONLY))
     monkeypatch.setattr(frontdoor, "consent_mode", lambda: "browser")
-    monkeypatch.delenv(config.WORLD_AS_OF_ENV, raising=False)
     config.drain_notes()
     frontdoor.up_front(_client_cfg(tmp_path), people=True)
     notes = config.drain_notes()
