@@ -1,4 +1,4 @@
-"""majordomo — command-line front door. Thin: load the config, parse flags,
+"""majordomo, the command-line front door. Thin: load the config, parse flags,
 pick a reader, render.
 
 The front doors call the core (readers / reports / decoder) and add no
