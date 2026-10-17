@@ -6,7 +6,7 @@ WORLD_AS_OF is an office-wide environment variable holding an ISO-8601 timestamp
 
 ## 1. The data-fetch surfaces
 
-majordomo exposes five report surfaces, each reachable through two front doors (the CLI commands in `cli.py` and the same-named MCP tools in `mcp_server.py`). For all but `attachments` both front doors call the same reader seam (`readers.make_reader`), and a reader is one of three backends: `CacheReader` (MySQL mirror), `NocacheReader` (direct Chat API), or `FreshReader` (`--live`, cache plus API top-up). This seam is why the change is tractable: one enforcement layer covers both front doors and all three backends.
+majordomo exposes the report surfaces in the table below, each reachable through two front doors (the CLI commands in `cli.py` and the same-named MCP tools in `mcp_server.py`). For all but `attachments` both front doors call the same reader seam (`readers.make_reader`), and a reader is one of three backends: `CacheReader` (MySQL mirror), `NocacheReader` (direct Chat API), or `FreshReader` (`--live`, cache plus API top-up). This seam is why the change is tractable: one enforcement layer covers both front doors and all three backends.
 
 | Surface | Backing store | Append-only or mutable |
 |---|---|---|

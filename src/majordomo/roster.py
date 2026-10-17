@@ -188,7 +188,7 @@ def _write(path: Path, data: dict) -> None:
 
 
 class Roster:
-    """The two cache files, the People lookup, and this run's spellings.
+    """The cache files, the People lookup, and this run's spellings.
 
     ``lookup`` is a callable returning a People API service, or None when the
     token cannot reach it (it raises its own note); it is called at most once,
@@ -214,8 +214,7 @@ class Roster:
     # --- the files --------------------------------------------------------
 
     def save(self) -> None:
-        """Rewrite each changed file whole. A no-op without a directory or
-        without write_back."""
+        """Rewrite each changed file whole."""
         if not self._dirty or self.dir is None or not self.write_back:
             return
         if PEOPLE_FILE in self._dirty:

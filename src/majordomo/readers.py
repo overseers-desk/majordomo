@@ -1,7 +1,7 @@
 """The reader seam: one `Reader` interface, two interchangeable backends.
 
-A second real backend (the direct Chat API) now exists, so the readers are
-polymorphic — every command and front door calls a `Reader` without branching on
+The direct Chat API is a second real backend, so the readers are
+polymorphic: every command and front door calls a `Reader` without branching on
 source. The sieve is enforced inside each backend. `make_reader` selects the
 backend and implements the provenance-tagged cache->nocache fallback: the output
 always carries `source`, so a switch is surfaced, not silent.

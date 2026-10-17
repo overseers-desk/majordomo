@@ -168,7 +168,7 @@ majordomo mcp                       # run the MCP server (stdio)
 
 ## Library use
 
-Imported as a library, majordomo reads only what it is handed: a config, credentials, a directory for its name cache, and a replay bound. It reads no file under the home directory, no `.env` and no environment variable; the command and the MCP server read those and pass them in. The import itself reads nothing.
+Imported as a library, majordomo reads only what it is handed: a config, credentials, a directory for its name cache, and a replay bound. It reads no `.env`, no environment variable, and no file under the home directory but the `config.toml` that `load_config()` reads when handed nothing; the command and the MCP server read those and pass them in. The import itself reads nothing.
 
 ```python
 from datetime import datetime, timezone
