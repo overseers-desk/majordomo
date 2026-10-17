@@ -1,7 +1,8 @@
 """A token short of a scope a command needs, as the core sees it: the core
 never asks Google for anything. ``ensure_command_scopes`` raises ScopeError
 for the union of what a command's shape lacks, and stays quiet when there is
-nothing to ask (an empty shape, no saved token, a WORLD_AS_OF replay); a
+nothing to ask (an empty shape, no saved token, a WORLD_AS_OF replay, a Chat
+app identity); a
 feature short of its own scope falls back softly (a name shown as an id) or
 refuses (send). Asking Google, when someone can answer, is the front door's
 (test_frontdoor.py)."""
@@ -125,21 +126,14 @@ def test_ensure_command_scopes_is_quiet_under_world_as_of(world):
 BOT = {"_identity": "bot", "identity": {"bot": {"service_account_file": "bot-key.json"}}}
 
 
-def test_identity_send_asks_nothing_of_the_personal_login(monkeypatch):
+def test_identity_asks_nothing_for_every_shape(monkeypatch):
     def touched(cfg):
         raise AssertionError("the personal login was touched")
 
     monkeypatch.setattr(api, "get_credentials", touched)
-    api.ensure_command_scopes(BOT, send=True)
-
-
-def test_identity_refuses_every_shape_that_reads():
-    for flags in ({}, {"api_read": True}, {"people": True},
+    for flags in ({}, {"send": True}, {"api_read": True}, {"people": True}, {"own": True},
                   {"api_read": True, "owner": True, "people": True}, {"send": True, "people": True}):
-        with pytest.raises(MajordomoError) as ei:
-            api.ensure_command_scopes(BOT, **flags)
-        assert "does not read as it" in str(ei.value), flags
-        assert not isinstance(ei.value, ScopeError), flags
+        assert api.ensure_command_scopes(BOT, **flags) is None, flags
 
 
 if __name__ == "__main__":

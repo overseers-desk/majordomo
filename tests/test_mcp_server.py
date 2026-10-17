@@ -140,6 +140,21 @@ def test_mcp_send_sends_as_the_named_identity(tmp_path, monkeypatch):
     assert seen["identity"]["name"] == "bot"
 
 
+def test_mcp_reads_take_the_named_identity(tmp_path, monkeypatch):
+    (tmp_path / "config.toml").write_text(
+        "[me]\nuser_id = 'users/1'\n[identity.bot]\nservice_account_file = 'bot-key.json'\n")
+    seen = []
+
+    def make_reader(cfg, source):
+        seen.append(config.identity(cfg)["name"])
+        return _stub_reader([])
+
+    monkeypatch.setattr(readers, "make_reader", make_reader)
+    for name in ("spaces", "tasks", "messages"):
+        _tool(name)(identity="bot")
+    assert seen == ["bot", "bot", "bot"]
+
+
 def test_the_bound_is_read_per_call_and_a_bad_one_fails_only_that_call(order, monkeypatch):
     monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
     spaces = _tool("spaces")

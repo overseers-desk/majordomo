@@ -33,6 +33,15 @@ def people_lookup(cfg: dict | None):
     return lookup(cfg)
 
 
+def person_only(identity: dict | None, what: str) -> None:
+    """Refuse ``what``, which serves a person's login only, when the command
+    runs as a Chat app (``identity`` as config.identity gives it)."""
+    if identity:
+        raise MajordomoError(
+            f"majordomo: {what} runs only on a person's login, not as the Chat app {identity['name']}."
+        )
+
+
 def decorate_people(ros: roster.Roster, rows: list[dict], person: str | None,
                     dm_of: dict[str, str]) -> list[dict]:
     """Give each people row its name, the prose spellings seen this run, its
@@ -189,6 +198,7 @@ class CacheReader:
         return rows
 
     def people(self, *, person: str | None = None, **kw) -> list[dict]:
+        person_only(config.identity(self._cfg), "the people report")
         rows = reports.people(self.conn, self.blocked, bound=self.bound, **kw)
         self._seed_names()
         who = self.resolve_person(person) if person else None
@@ -385,8 +395,7 @@ def make_reader(cfg: dict, source: str | None = None):
     cache/live/auto all need the DB, which the cfg's `[db]` names; if `[db]` is
     incomplete or the DB unreachable, "cache" raises while "live"/auto degrade
     to the direct API (the only fresh source left). The fault that fallback
-    catches, an absent backend, is real and expected, so this is not a
-    phantom-problem fallback.
+    catches, an absent backend, is real and expected.
     """
     blocked = config.block_spaces(cfg)
     blocked_assignees = config.block_assignees(cfg)

@@ -173,13 +173,19 @@ def bot_config(tmp_path):
         "[me]\nuser_id = 'users/1'\n[identity.bot]\nservice_account_file = 'bot-key.json'\n")
 
 
-def test_cli_as_refuses_a_report_before_reading(bot_config, monkeypatch):
+def test_cli_as_reads_a_report_as_the_identity(bot_config, monkeypatch):
     reads: list[tuple] = []
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(reads))
+    seen = {}
+
+    def make_reader(cfg, source):
+        seen["identity"] = config.identity(cfg)
+        return _stub_reader(reads)
+
+    monkeypatch.setattr(readers, "make_reader", make_reader)
     result = runner.invoke(app, ["--as", "bot", "tasks"])
-    assert result.exit_code != 0
-    assert "does not read as it" in result.output
-    assert reads == []
+    assert result.exit_code == 0, result.output
+    assert seen["identity"]["name"] == "bot"
+    assert reads == [("read", "tasks")]
 
 
 def test_cli_as_sends_as_the_identity(bot_config, monkeypatch):

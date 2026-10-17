@@ -85,7 +85,8 @@ def _root(
     cache: bool = typer.Option(False, "--cache", help="Force the cache; fail if it is unreachable."),
     as_: Optional[str] = typer.Option(
         None, "--as", metavar="NAME",
-        help="Act as identity NAME from config.toml (a Chat app's service-account key); only send runs as one."),
+        help="Act as identity NAME from config.toml (a Chat app's service-account key): send as the app, "
+             "and read spaces, tasks and messages over the Chat API as it."),
     _version: bool = typer.Option(
         False, "--version", callback=_version_callback, is_eager=True, help="Show version and exit."
     ),
@@ -94,7 +95,8 @@ def _root(
         typer.echo("majordomo: use only one of --live / --nocache / --cache.", err=True)
         raise typer.Exit(2)
     if as_ and ctx.invoked_subcommand == "mcp":
-        typer.echo("majordomo: --as does not apply to mcp; its send tool takes identity on each call.", err=True)
+        typer.echo("majordomo: --as does not apply to mcp; its send, spaces, tasks and messages tools "
+                   "take identity on each call.", err=True)
         raise typer.Exit(2)
     ctx.obj = {"source": "live" if live else "nocache" if nocache else "cache" if cache else None,
                "identity": as_}
