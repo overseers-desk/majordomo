@@ -22,7 +22,7 @@ from majordomo.mcp_server import create_server  # noqa: E402
 def _config_file(tmp_path, monkeypatch):
     toml = tmp_path / "config.toml"
     toml.write_text("[me]\nuser_id = 'users/1'\n")
-    monkeypatch.setattr(config, "CONFIG_TOML", toml)
+    monkeypatch.setattr(config, "config_dir", lambda: tmp_path)
     monkeypatch.delenv("WORLD_AS_OF", raising=False)
 
 
@@ -143,12 +143,11 @@ def test_mcp_send_sends_as_the_named_identity(tmp_path, monkeypatch):
 def test_a_refusal_reaches_the_client_as_its_one_line(tmp_path, monkeypatch):
     # The SDK shows the client a ToolError's text; anything else it reports
     # only as "Error executing tool spaces", a crash.
-    absent = tmp_path / "absent.toml"
-    monkeypatch.setattr(config, "CONFIG_TOML", absent)
+    monkeypatch.setattr(config, "config_dir", lambda: tmp_path / "absent")
     with pytest.raises(ToolError) as ei:
         asyncio.run(create_server().call_tool("spaces", {}))
     assert not isinstance(ei.value, UnexpectedToolError)
-    assert str(ei.value) == f"Error executing tool spaces: majordomo: no config at {absent}"
+    assert str(ei.value) == f"Error executing tool spaces: majordomo: no config at {tmp_path / 'absent' / 'config.toml'}"
 
 
 if __name__ == "__main__":

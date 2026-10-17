@@ -80,7 +80,7 @@ def test_load_config_hard_fails_on_bad_bound(monkeypatch, tmp_path):
     # into load_config(), which every command and MCP tool call passes through.
     toml = tmp_path / "config.toml"
     toml.write_text("[me]\nuser_id = 'users/1'\n")
-    monkeypatch.setattr(config, "CONFIG_TOML", toml)
+    monkeypatch.setattr(config, "config_dir", lambda: tmp_path)
     monkeypatch.setenv("WORLD_AS_OF", "not-a-timestamp")
     with pytest.raises(MajordomoError):
         config.load_config()

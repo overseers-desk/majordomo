@@ -1,9 +1,10 @@
 """Read-only access to the BI platform's Google Chat cache (MariaDB).
 
-``connect`` opens one PyMySQL connection from ``~/.config/majordomo/.env`` (the
-``ssl=None`` plaintext idiom the BI project uses against this host); ``query``
-runs a parameterised read. The provenance of these rows is ``models.SOURCE_CACHE``.
-The direct-API reader (api.py) is a separate stage with its own access path.
+``connect`` opens one PyMySQL connection from the ``MYSQL_*`` settings it is
+handed, a config's ``[db]``, in the BI project's plaintext ``ssl=None`` idiom
+for its database; ``query`` runs a parameterised read. The provenance of these
+rows is ``models.SOURCE_CACHE``. The direct-API reader (api.py) is a separate
+stage with its own access path.
 
 The driver is imported inside ``connect`` because the cache is the optional
 half: majordomo reads Google directly without it, and a caller who never
@@ -12,7 +13,10 @@ touches the cache should not need the database driver installed to start.
 
 from __future__ import annotations
 
-from . import config
+from .errors import MajordomoError
+
+# The settings a connection cannot do without; MYSQL_PORT defaults to 3306.
+_REQUIRED = ("MYSQL_HOST", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE")
 
 
 def _driver():
@@ -30,15 +34,17 @@ def _driver():
     return pymysql, DictCursor
 
 
-def connect(env: dict | None = None):
+def connect(settings: dict):
     pymysql, DictCursor = _driver()
-    env = env or config.load_env()
+    missing = [key for key in _REQUIRED if key not in settings]
+    if missing:
+        raise MajordomoError(f"majordomo: no cache database: [db] lacks {', '.join(missing)}")
     return pymysql.connect(
-        host=env["MYSQL_HOST"],
-        port=int(env.get("MYSQL_PORT", "3306")),
-        user=env["MYSQL_USER"],
-        password=env["MYSQL_PASSWORD"],
-        database=env["MYSQL_DATABASE"],
+        host=settings["MYSQL_HOST"],
+        port=int(settings.get("MYSQL_PORT", "3306")),
+        user=settings["MYSQL_USER"],
+        password=settings["MYSQL_PASSWORD"],
+        database=settings["MYSQL_DATABASE"],
         cursorclass=DictCursor,
         ssl=None,
     )

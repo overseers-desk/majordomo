@@ -14,8 +14,8 @@ from majordomo.errors import MajordomoError
 def _config_toml(tmp_path, monkeypatch, text):
     toml = tmp_path / "config.toml"
     toml.write_text(text)
-    monkeypatch.setattr(config, "CONFIG_TOML", toml)
     monkeypatch.delenv("WORLD_AS_OF", raising=False)
+    return toml
 
 
 def test_user_id_present():
@@ -37,28 +37,28 @@ def test_block_spaces():
 
 
 def test_load_config_records_the_named_identity(tmp_path, monkeypatch):
-    _config_toml(tmp_path, monkeypatch, "[identity.bot]\nservice_account_file = '~/bot-key.json'\n")
-    cfg = config.load_config("bot")
-    assert config.identity(cfg) == {"name": "bot", "service_account_file": "~/bot-key.json"}
+    toml = _config_toml(tmp_path, monkeypatch, "[identity.bot]\nservice_account_file = '/keys/bot-key.json'\n")
+    cfg = config.load_config(toml, identity="bot")
+    assert config.identity(cfg) == {"name": "bot", "service_account_file": "/keys/bot-key.json"}
 
 
 def test_without_a_name_the_command_acts_as_the_personal_login(tmp_path, monkeypatch):
-    _config_toml(tmp_path, monkeypatch, "[identity.bot]\nservice_account_file = '~/bot-key.json'\n")
-    assert config.identity(config.load_config()) is None
+    toml = _config_toml(tmp_path, monkeypatch, "[identity.bot]\nservice_account_file = '/keys/bot-key.json'\n")
+    assert config.identity(config.load_config(toml)) is None
 
 
 def test_an_unknown_identity_stops_the_command(tmp_path, monkeypatch):
-    _config_toml(tmp_path, monkeypatch, "[identity.bot]\nservice_account_file = '~/bot-key.json'\n")
+    toml = _config_toml(tmp_path, monkeypatch, "[identity.bot]\nservice_account_file = '/keys/bot-key.json'\n")
     with pytest.raises(MajordomoError) as ei:
-        config.load_config("nosuch")
+        config.load_config(toml, identity="nosuch")
     assert "[identity.nosuch]" in str(ei.value)
     assert "(configured: bot)" in str(ei.value)
 
 
 def test_an_identity_without_a_key_file_stops_the_command(tmp_path, monkeypatch):
-    _config_toml(tmp_path, monkeypatch, "[identity.bot]\n")
+    toml = _config_toml(tmp_path, monkeypatch, "[identity.bot]\n")
     with pytest.raises(MajordomoError) as ei:
-        config.load_config("bot")
+        config.load_config(toml, identity="bot")
     assert "service_account_file" in str(ei.value)
 
 

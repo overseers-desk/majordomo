@@ -1,9 +1,12 @@
 """What the front doors (the CLI and the MCP server) do around the core that
-the core must not: Google's consent flow, which needs a browser or a person at
-a terminal. ``login`` runs it for every scope majordomo uses; ``up_front``
-runs it once at the start of a command whose shape needs a scope the saved
-login lacks, when someone can answer. The core only raises ScopeError and
-never imports this module.
+the core must not: read the user's own files, and run Google's consent flow.
+``load`` reads config.toml and the ``.env`` beside it into the config a
+command runs with. ``login`` runs the consent flow for every scope majordomo
+uses; ``up_front`` runs it once at the start of a command whose shape needs a
+scope the saved login lacks, when someone can answer. A core call must never
+drop a library caller into an interactive flow nobody can answer (a cron job
+has no terminal), so the core only raises ScopeError and the front door
+decides; the core never imports this module.
 """
 
 from __future__ import annotations
@@ -20,6 +23,17 @@ CONSENT_PORT = 7276
 # How long a consent a command opened by itself waits for the person before
 # the command carries on without the new scopes.
 CONSENT_TIMEOUT = 180
+
+
+def load(identity: str | None = None) -> dict:
+    """The user's config.toml, with the cache database's settings from the
+    ``.env`` beside it merged into ``[db]``; a key config.toml's own ``[db]``
+    sets wins over the ``.env``."""
+    cfg = config.load_config(None, identity=identity)
+    env = config.env_file()
+    if env.exists():
+        cfg["db"] = {**config.parse_env_file(env), **cfg.get("db", {})}
+    return cfg
 
 
 def consent_mode() -> str | None:
@@ -71,8 +85,8 @@ def grant(cfg: dict, *, open_browser: bool = True, timeout: int | None = None) -
             "majordomo: the Google sign-in library is missing, so this "
             "install is incomplete; reinstall majordomo."
         ) from exc
-    client_file = os.path.expanduser(config.api_client_file(cfg))
-    token_file = os.path.expanduser(config.api_token_file(cfg))
+    client_file = config.api_client_file(cfg)
+    token_file = config.api_token_file(cfg)
     if not os.path.exists(client_file):
         raise MajordomoError(
             f"majordomo: no OAuth client at {client_file}. Create a Desktop OAuth "

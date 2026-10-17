@@ -159,11 +159,10 @@ def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = Fa
     spent any of that.
 
     Quiet when the shape needs nothing, under WORLD_AS_OF (a bounded run asks
-    no consent), and when there is no saved token at all: consent adds scopes
-    to an existing token (``include_granted_scopes``) rather than minting one,
-    so an install that never ran `majordomo login` meets the same "run
-    `majordomo login`" fallback as the features that check for themselves,
-    not a consent page.
+    no consent), and when there is no saved token at all: by policy, an
+    install that never ran `majordomo login` meets the no-token message of
+    the features that check for themselves, which sends it to `majordomo
+    login`, rather than a consent page it did not ask for.
     """
     ident = config.identity(cfg)
     if ident:
@@ -272,7 +271,11 @@ def get_credentials(cfg: dict):
     import json
 
     Credentials, Request, _ = _require_google()
-    token_file = os.path.expanduser(config.api_token_file(cfg))
+    token_file = config.api_token_file(cfg)
+    if not token_file:
+        raise MajordomoError(
+            "majordomo: no OAuth token configured; set [api].token_file or pass credentials=."
+        )
     if not os.path.exists(token_file):
         raise MajordomoError(
             f"majordomo: no OAuth token at {token_file}. Run `majordomo login` first."
@@ -283,8 +286,8 @@ def get_credentials(cfg: dict):
 
     # Prefer client_id / client_secret from client_secret.json so that a
     # rotated secret is picked up without re-running login.
-    client_file = os.path.expanduser(config.api_client_file(cfg))
-    if os.path.exists(client_file):
+    client_file = config.api_client_file(cfg)
+    if client_file and os.path.exists(client_file):
         with open(client_file) as fh:
             raw = json.load(fh)
         block = raw.get("installed") or raw.get("web") or {}
@@ -324,7 +327,7 @@ def _service_account_credentials(ident: dict):
     _require_google()
     from google.oauth2 import service_account
 
-    path = os.path.expanduser(ident["service_account_file"])
+    path = ident["service_account_file"]
     if not os.path.exists(path):
         raise MajordomoError(f"majordomo: no service-account key at {path} for [identity.{ident['name']}].")
     return service_account.Credentials.from_service_account_file(path, scopes=[BOT_SCOPE])
@@ -370,7 +373,6 @@ def _upload_attachment(service, space: str, path: str) -> dict:
     """
     import mimetypes
 
-    path = os.path.expanduser(path)
     if not os.path.isfile(path):
         raise MajordomoError(f"majordomo: attachment not found: {path}")
     mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
@@ -879,10 +881,8 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
     if not (len(given) == 1 or given == ["person", "space"]):
         raise MajordomoError("majordomo: attachments needs one of space / thread / message / person "
                              "(a person may also be paired with a space).")
-    if download_to is not None:
-        download_to = os.path.expanduser(download_to)
-        if not os.path.isdir(download_to):
-            raise MajordomoError(f"majordomo: no such directory: {download_to}")
+    if download_to is not None and not os.path.isdir(download_to):
+        raise MajordomoError(f"majordomo: no such directory: {download_to}")
 
     if service is None:
         _, _, build = _require_google()
