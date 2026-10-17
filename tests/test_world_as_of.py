@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from majordomo import api, config, dates, db, output, readers, reports
+from majordomo.errors import MajordomoError
 
 # 2026-07-12T17:07:00+10:00 == 2026-07-12T07:07:00 UTC
 BOUND_RAW = "2026-07-12T17:07:00+10:00"
@@ -62,7 +63,7 @@ def test_clamp_takes_the_earlier_bound(monkeypatch):
 @pytest.mark.parametrize("bad", ["2026-07-12T17:07:00", "garbage", "", "1752303000"])
 def test_bad_values_hard_fail(monkeypatch, bad):
     monkeypatch.setenv("WORLD_AS_OF", bad)
-    with pytest.raises(SystemExit):
+    with pytest.raises(MajordomoError):
         config.world_as_of()
 
 
@@ -73,7 +74,7 @@ def test_load_config_hard_fails_on_bad_bound(monkeypatch, tmp_path):
     toml.write_text("[me]\nuser_id = 'users/1'\n")
     monkeypatch.setattr(config, "CONFIG_TOML", toml)
     monkeypatch.setenv("WORLD_AS_OF", "not-a-timestamp")
-    with pytest.raises(SystemExit):
+    with pytest.raises(MajordomoError):
         config.load_config()
     monkeypatch.delenv("WORLD_AS_OF")
     assert config.load_config()["me"]["user_id"] == "users/1"

@@ -49,6 +49,8 @@ All capabilities are reachable through both front doors:
 
 One importable Python package holds the entire business behaviour: a reader for the BI platform's cache (the fast path) and a Google Chat client wrapping the official API (the standalone path), the configuration loader, the sieve, the task decoder, reporting, multi-account credential management, and the person and space resolver with its cache files (roster.py). The cache reader is the primary source and the direct-API client its fallback; the backend accelerates, it does not gate. Three read modes follow: `cache` (the mirror), `nocache` (the direct API, no cache), and `live` (up-to-dateness). The `live` mode serves the cache and tops it up from the API for records newer than each space's cache watermark, polling only recently-active spaces so an unscoped freshness read stays within the read quota. "live" names the need (currency), not a mechanism; the cache bypass is `nocache`. The core has no command-line parsing and no MCP protocol code; it exposes functions and types that any caller can use.
 
+A refusal is raised as `MajordomoError` (`errors.py`, with `NotFound` and `ScopeError` beneath it), never as a process exit.
+
 ### Front doors
 
 Two front doors call the core and add no logic of their own:

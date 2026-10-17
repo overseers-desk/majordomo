@@ -4,9 +4,9 @@ call, so a decline or a timeout costs nothing already spent reading. The
 motivating case: `spaces --owner` used to open the consent page only after
 the better part of a minute of membership reads backed off under Google's
 per-minute quota, wasting all of it on a decline. These tests check the wiring:
-each CLI command and MCP tool
-calls the check with the shape flags its own behaviour implies, strictly
-before the read that would otherwise reach Google first. The mechanism itself
+each CLI command calls the check with the shape flags its own behaviour
+implies, strictly before the read that would otherwise reach Google first;
+test_mcp_server.py checks each MCP tool the same way. The mechanism itself
 (one consent for the union of missing scopes, no second prompt in the same
 command, the failure reason) is tested in test_consent.py.
 """
@@ -20,7 +20,6 @@ from typer.testing import CliRunner
 
 from majordomo import api, config, readers
 from majordomo.cli import app
-from majordomo.mcp_server import create_server
 
 runner = CliRunner()
 
@@ -148,84 +147,6 @@ def test_cli_send_asks_only_the_send_scope_before_sending(order, monkeypatch):
     assert order == [("consent", {"send": True}), ("read", "send")]
 
 
-# --- MCP ------------------------------------------------------------------
-
-
-def _tool(name):
-    return create_server()._tool_manager.get_tool(name).fn
-
-
-def test_mcp_spaces_asks_before_reading(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
-    out = _tool("spaces")()
-    assert out["rows"] == []
-    assert order == [("consent", {"api_read": False}), ("read", "spaces")]
-
-
-def test_mcp_spaces_owner_asks_before_any_membership_read(order, monkeypatch):
-    def owned_spaces(cfg, blocked, **kw):
-        order.append(("read", "owned_spaces"))
-        return []
-
-    monkeypatch.setattr(api, "owned_spaces", owned_spaces)
-    out = _tool("spaces")(owner=True)
-    assert out["rows"] == []
-    assert order == [
-        ("consent", {"api_read": True, "owner": True, "people": True}),
-        ("read", "owned_spaces"),
-    ]
-
-
-def test_mcp_people_asks_for_people_scope_before_reading(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
-    out = _tool("people")()
-    assert out["rows"] == []
-    assert order == [("consent", {"api_read": False, "people": True}), ("read", "people")]
-
-
-def test_mcp_tasks_asks_for_people_scope_before_reading(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
-    out = _tool("tasks")()
-    assert out["rows"] == []
-    assert order == [("consent", {"api_read": False, "people": True, "own": False}), ("read", "tasks")]
-
-
-def test_mcp_tasks_to_me_asks_for_the_own_task_list_too(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
-    _tool("tasks")(to_me=True)
-    assert order[0] == ("consent", {"api_read": False, "people": True, "own": True})
-
-
-def test_mcp_messages_asks_for_people_scope_before_reading(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
-    out = _tool("messages")()
-    assert out["rows"] == []
-    assert order == [("consent", {"api_read": False, "people": True}), ("read", "messages")]
-
-
-def test_mcp_attachments_asks_api_read_and_people_before_reading(order, monkeypatch):
-    def attachments(cfg, blocked, **kw):
-        order.append(("read", "attachments"))
-        return []
-
-    monkeypatch.setattr(api, "attachments", attachments)
-    out = _tool("attachments")(space="spaces/A")
-    assert out["rows"] == []
-    assert order == [("consent", {"api_read": True, "people": True}), ("read", "attachments")]
-
-
-def test_mcp_send_asks_only_the_send_scope_before_sending(order, monkeypatch):
-    def send(cfg, blocked, **kw):
-        order.append(("read", "send"))
-        return {"name": "spaces/A/messages/1"}
-
-    monkeypatch.setattr(api, "send", send)
-    out = _tool("send")(space="spaces/A", text="hi")
-    assert out["name"] == "spaces/A/messages/1"
-    assert order == [("consent", {"send": True}), ("read", "send")]
-
-
-
 # --- --as / identity --------------------------------------------------------
 
 
@@ -268,19 +189,6 @@ def test_cli_as_does_not_apply_to_mcp():
     result = runner.invoke(app, ["--as", "bot", "mcp"])
     assert result.exit_code == 2
     assert "identity on each call" in result.output
-
-
-def test_mcp_send_sends_as_the_named_identity(bot_config, monkeypatch):
-    seen = {}
-
-    def send(cfg, blocked, **kw):
-        seen["identity"] = config.identity(cfg)
-        return {"name": "spaces/A/messages/1"}
-
-    monkeypatch.setattr(api, "send", send)
-    out = _tool("send")(space="spaces/A", text="hi", identity="bot")
-    assert out["name"] == "spaces/A/messages/1"
-    assert seen["identity"]["name"] == "bot"
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from majordomo import config, roster
+from majordomo.errors import MajordomoError, NotFound
 
 
 def _person(pid, *names, email=None):
@@ -148,7 +149,7 @@ def test_email_resolves_from_the_people_file(tmp_path):
     r.names(["users/3"])
     assert r.email_of("users/3") == "bo@example.com"
     assert r.resolve_person("BO@example.com") == "users/3"
-    with pytest.raises(SystemExit, match="no one known by"):
+    with pytest.raises(NotFound, match="no one known by"):
         r.resolve_person("new@example.com")
     assert r.resolve_person("new@example.com", by_email=lambda e: "users/5") == "users/5"
 
@@ -199,8 +200,9 @@ def test_substring_unique(tmp_path):
 
 
 def test_ambiguous_lists_candidates(tmp_path):
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(MajordomoError) as exc:
         _seeded(tmp_path).resolve_person("Alice")
+    assert not isinstance(exc.value, NotFound)
     msg = str(exc.value)
     assert "matches 2 people" in msg
     assert "users/1 (Alice Smith)" in msg
@@ -209,7 +211,7 @@ def test_ambiguous_lists_candidates(tmp_path):
 
 def test_unknown_name_fails_then_seed_helps(tmp_path):
     r = _seeded(tmp_path)
-    with pytest.raises(SystemExit, match="no one seen as 'Carol'"):
+    with pytest.raises(NotFound, match="no one seen as 'Carol'"):
         r.resolve_person("Carol")
     calls = []
 
@@ -236,19 +238,20 @@ def test_space_by_name_and_seed(tmp_path):
     r.remember_space({"name": "spaces/A", "displayName": "Back Office (Digital)"})
     r.learn_space_name("spaces/B", "Marketing + PR")
     assert r.resolve_space("back office") == "spaces/A"
-    with pytest.raises(SystemExit, match="no space named 'Kitchen'"):
+    with pytest.raises(NotFound, match="no space named 'Kitchen'"):
         r.resolve_space("Kitchen")
     assert r.resolve_space("Kitchen", seed=lambda: r.learn_space_name("spaces/C", "Kitchen")) == "spaces/C"
     r.learn_space_name("spaces/D", "Marketing")
     assert r.resolve_space("marketing") == "spaces/D"
-    with pytest.raises(SystemExit, match="matches 2 spaces"):
+    with pytest.raises(MajordomoError, match="matches 2 spaces") as exc:
         r.resolve_space("market")
+    assert not isinstance(exc.value, NotFound)
 
 
 def test_a_blocked_space_never_matches_by_name(tmp_path):
     r, _ = _roster(tmp_path)
     r.remember_space({"name": "spaces/P", "displayName": "Private"})
-    with pytest.raises(SystemExit, match="no space named"):
+    with pytest.raises(NotFound, match="no space named"):
         r.resolve_space("Private", blocked=["spaces/P"])
 
 

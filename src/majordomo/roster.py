@@ -35,6 +35,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import config
+from .errors import MajordomoError, NotFound
 
 PEOPLE_FILE = "people.json"
 SPACES_FILE = "spaces.json"
@@ -386,7 +387,7 @@ class Roster:
             if found is None and by_email is not None:
                 found = by_email(who)
             if found is None:
-                raise SystemExit(
+                raise NotFound(
                     f"majordomo: no one known by {who}; an email resolves over the "
                     "Chat API (majordomo login), or give users/<id>."
                 )
@@ -398,9 +399,9 @@ class Roster:
         if len(matches) == 1:
             return next(iter(matches))
         if not matches:
-            raise SystemExit(f"majordomo: no one seen as '{who}'; give users/<id> or an email.")
+            raise NotFound(f"majordomo: no one seen as '{who}'; give users/<id> or an email.")
         listed = ", ".join(f"{s} ({', '.join(v)})" for s, v in sorted(matches.items()))
-        raise SystemExit(f"majordomo: '{who}' matches {len(matches)} people: {listed}")
+        raise MajordomoError(f"majordomo: '{who}' matches {len(matches)} people: {listed}")
 
     def resolve_space(self, who: str, *, seed=None, blocked=None, where: str = "") -> str:
         """``who`` (a ``spaces/<id>`` or a display name) to a ``spaces/<id>``.
@@ -417,6 +418,6 @@ class Roster:
         if len(matches) == 1:
             return next(iter(matches))
         if not matches:
-            raise SystemExit(f"majordomo: no space named '{who}'{where}; give spaces/<id>.")
+            raise NotFound(f"majordomo: no space named '{who}'{where}; give spaces/<id>.")
         listed = ", ".join(f"{s} ({', '.join(v)})" for s, v in sorted(matches.items()))
-        raise SystemExit(f"majordomo: '{who}' matches {len(matches)} spaces: {listed}")
+        raise MajordomoError(f"majordomo: '{who}' matches {len(matches)} spaces: {listed}")

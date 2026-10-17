@@ -34,14 +34,7 @@ def _config(identity: Optional[str] = None) -> dict:
     # Every tool call starts here: a note left from an earlier call that
     # returned no envelope (send) belongs to that call, not this one.
     config.drain_notes()
-    try:
-        return config.load_config(identity)
-    except SystemExit as exc:
-        # A config-time hard failure (a bad WORLD_AS_OF, a missing config) must
-        # fail this tool call with its message, not kill the long-running server.
-        # The bound is parsed per call, so the server honors the environment its
-        # launcher set rather than dying opaquely at handshake.
-        raise RuntimeError(str(exc)) from None
+    return config.load_config(identity)
 
 
 def _reader(source: Optional[str], cfg: Optional[dict] = None):
@@ -51,12 +44,7 @@ def _reader(source: Optional[str], cfg: Optional[dict] = None):
     # (inside the reader) see that check's result instead of asking again.
     if cfg is None:
         cfg = _config()
-    try:
-        return cfg, readers.make_reader(cfg, source)
-    except SystemExit as exc:
-        # A forced-cache read against a dead cache exits the CLI with one
-        # line; here it answers the tool call, it does not end the server.
-        raise RuntimeError(str(exc)) from None
+    return cfg, readers.make_reader(cfg, source)
 
 
 def _envelope(source: str, rows: list[dict]) -> dict:
@@ -92,10 +80,7 @@ def create_server() -> MCPServer:
         if owner:
             cfg = _config()
             api.ensure_command_scopes(cfg, api_read=True, owner=True, people=True)
-            try:
-                rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
-            except SystemExit as exc:
-                raise RuntimeError(str(exc)) from None
+            rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
             return _envelope("nocache", rows)
         cfg = _config()
         api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"))
@@ -115,10 +100,7 @@ def create_server() -> MCPServer:
         api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"), people=True)
         _cfg, reader = _reader(source, cfg=cfg)
         start, end = dates.resolve(window, since, until)
-        try:
-            rows = reader.people(person=person, start=start, end=end)
-        except SystemExit as exc:
-            raise RuntimeError(str(exc)) from None
+        rows = reader.people(person=person, start=start, end=end)
         return _envelope(reader.source, rows)
 
     @server.tool()
@@ -147,18 +129,15 @@ def create_server() -> MCPServer:
         cfg, reader = _reader(source, cfg=cfg)
         me = config.require_user_id(cfg) if (to_me or by_me) else None
         start, end = dates.resolve(window, since, until)
-        try:
-            rows = reader.tasks(
-                to_user=me if to_me else None,
-                by_user=me if by_me else None,
-                assignee=assignee,
-                space=space,
-                start=start,
-                end=end,
-                limit=limit,
-            )
-        except SystemExit as exc:
-            raise RuntimeError(str(exc)) from None
+        rows = reader.tasks(
+            to_user=me if to_me else None,
+            by_user=me if by_me else None,
+            assignee=assignee,
+            space=space,
+            start=start,
+            end=end,
+            limit=limit,
+        )
         return _envelope(reader.source, rows)
 
     @server.tool()
@@ -182,10 +161,7 @@ def create_server() -> MCPServer:
         api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"), people=True)
         _cfg, reader = _reader(source, cfg=cfg)
         start, end = dates.resolve(window, since, until)
-        try:
-            rows = reader.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
-        except SystemExit as exc:
-            raise RuntimeError(str(exc)) from None
+        rows = reader.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
         return _envelope(reader.source, rows)
 
     @server.tool()
@@ -219,12 +195,9 @@ def create_server() -> MCPServer:
         cfg = _config()
         api.ensure_command_scopes(cfg, api_read=True, people=True)
         start, end = dates.resolve(window, since, until)
-        try:
-            rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
-                                   message=message, person=person, start=start, end=end, limit=limit,
-                                   download_to=download_to)
-        except SystemExit as exc:
-            raise RuntimeError(str(exc)) from None
+        rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
+                               message=message, person=person, start=start, end=end, limit=limit,
+                               download_to=download_to)
         return _envelope("nocache", rows)
 
     @server.tool()
@@ -244,13 +217,8 @@ def create_server() -> MCPServer:
         """
         cfg = _config(identity)
         api.ensure_command_scopes(cfg, send=True)
-        try:
-            return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
-                            to=to, text=text, attachments=attachments)
-        except SystemExit as exc:
-            # Core refusals arrive as SystemExit; they answer this tool call,
-            # they do not end the server process.
-            raise RuntimeError(str(exc)) from None
+        return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
+                        to=to, text=text, attachments=attachments)
 
     return server
 

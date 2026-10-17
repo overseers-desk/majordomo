@@ -1,5 +1,5 @@
 """The login path must never leak credentials: Typer must not dump locals on a
-crash, and ``api.login`` must turn an OAuth failure into a clean ``SystemExit``
+crash, and ``api.login`` must turn an OAuth failure into a clean ``MajordomoError``
 (no raw exception, no locals). Offline — the OAuth flow is monkeypatched to fail.
 """
 
@@ -13,6 +13,7 @@ import pytest
 
 from majordomo import api
 from majordomo.cli import app
+from majordomo.errors import MajordomoError
 
 
 def test_typer_hides_locals():
@@ -26,7 +27,7 @@ def _raise_with_secret(*_a, **_k):
     raise ValueError("invalid_client: secret CLIENT_SECRET_PLACEHOLDER")
 
 
-def test_login_failure_is_clean_system_exit(monkeypatch):
+def test_login_failure_is_a_clean_refusal(monkeypatch):
     # login() imports InstalledAppFlow inside the function, so swap the module.
     flow_obj = types.SimpleNamespace(from_client_secrets_file=_raise_with_secret)
     fake_flow = types.ModuleType("google_auth_oauthlib.flow")
@@ -41,7 +42,7 @@ def test_login_failure_is_clean_system_exit(monkeypatch):
         client_path = fh.name
     with tempfile.TemporaryDirectory() as td:
         cfg = {"api": {"client_file": client_path, "token_file": f"{td}/token.json"}}
-        with pytest.raises(SystemExit) as ei:
+        with pytest.raises(MajordomoError) as ei:
             api.login(cfg)
     msg = str(ei.value)
     assert "login failed" in msg

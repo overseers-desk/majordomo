@@ -8,6 +8,7 @@ import _shim  # noqa: F401
 import pytest
 
 from majordomo import config
+from majordomo.errors import MajordomoError
 
 
 def _config_toml(tmp_path, monkeypatch, text):
@@ -48,7 +49,7 @@ def test_without_a_name_the_command_acts_as_the_personal_login(tmp_path, monkeyp
 
 def test_an_unknown_identity_stops_the_command(tmp_path, monkeypatch):
     _config_toml(tmp_path, monkeypatch, "[identity.bot]\nservice_account_file = '~/bot-key.json'\n")
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(MajordomoError) as ei:
         config.load_config("nosuch")
     assert "[identity.nosuch]" in str(ei.value)
     assert "(configured: bot)" in str(ei.value)
@@ -56,7 +57,7 @@ def test_an_unknown_identity_stops_the_command(tmp_path, monkeypatch):
 
 def test_an_identity_without_a_key_file_stops_the_command(tmp_path, monkeypatch):
     _config_toml(tmp_path, monkeypatch, "[identity.bot]\n")
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(MajordomoError) as ei:
         config.load_config("bot")
     assert "service_account_file" in str(ei.value)
 

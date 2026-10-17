@@ -18,6 +18,7 @@ import sys
 from datetime import datetime, timezone
 
 from . import config, db, reports, roster, sieve
+from .errors import MajordomoError, NotFound
 
 # A "reader" is any object with `source` and the four report methods
 # (spaces / people / tasks / messages). CacheReader and api.NocacheReader are
@@ -159,8 +160,8 @@ class CacheReader:
         from .api import NocacheReader
         try:
             nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees, ros=self.roster)
-        except SystemExit as exc:
-            raise SystemExit(f"majordomo: {email}: an email resolves over the Chat API; {exc}") from None
+        except MajordomoError as exc:
+            raise MajordomoError(f"majordomo: {email}: an email resolves over the Chat API; {exc}") from None
         return nc._by_email(email)
 
     def resolve_person(self, who: str) -> str:
@@ -175,7 +176,7 @@ class CacheReader:
         user = self.resolve_person(who)
         found = next(iter(reports.dm_spaces(self.conn, self.blocked, user=user)), {}).get("space_name")
         if found is None or not sieve.allows(self.blocked, found):
-            raise SystemExit(f"majordomo: no direct message space with {user}{self.where}.")
+            raise NotFound(f"majordomo: no direct message space with {user}{self.where}.")
         return found
 
     # --- the reports -----------------------------------------------------
@@ -247,13 +248,13 @@ class FreshReader:
     def resolve_space(self, who: str) -> str:
         try:
             return self.cache.resolve_space(who)
-        except SystemExit:
+        except NotFound:
             return self._nocache().resolve_space(who)
 
     def dm_space_for(self, who: str) -> str:
         try:
             return self.cache.dm_space_for(who)
-        except SystemExit:
+        except NotFound:
             return self._nocache().dm_space_for(who)
 
     # Stable dimensions never need a freshness fetch.
@@ -378,7 +379,7 @@ def make_reader(cfg: dict, source: str | None = None):
         if source == "cache":
             # --cache promises to fail here rather than fall back; the failure
             # is a one-line answer, not the driver's traceback.
-            raise SystemExit(
+            raise MajordomoError(
                 f"majordomo: cache unreachable with --cache ({exc}); "
                 "drop the flag to fall back to the direct API."
             ) from None

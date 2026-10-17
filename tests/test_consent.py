@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from majordomo import api, config, roster
+from majordomo.errors import MajordomoError, ScopeError
 
 CHAT_ONLY = ["https://www.googleapis.com/auth/chat.spaces.readonly"]
 
@@ -30,7 +31,7 @@ def world(monkeypatch):
     def consent(cfg, *, open_browser=True, timeout=None):
         state["consents"].append({"open_browser": open_browser, "timeout": timeout})
         if state["declines"]:
-            raise SystemExit("majordomo: login failed or was not completed")
+            raise MajordomoError("majordomo: login failed or was not completed")
         state["scopes"] = api.LOGIN_SCOPES
         return "token.json"
 
@@ -101,8 +102,9 @@ def test_send_short_of_its_scope_consents_then_sends(world, monkeypatch):
 
 def test_send_declined_is_refused_with_how_to_grant(world):
     world["declines"] = True
-    with pytest.raises(SystemExit, match="majordomo login"):
+    with pytest.raises(ScopeError, match="majordomo login") as ei:
         api.send({}, [], space="spaces/A", text="hi")
+    assert ei.value.scopes == [api.SEND_SCOPE]
 
 
 # --- consent_mode ---------------------------------------------------------------
@@ -215,7 +217,7 @@ def test_ensure_command_scopes_asks_nothing_already_granted(world):
 
 def test_ensure_command_scopes_is_quiet_with_no_saved_token_at_all(world, monkeypatch):
     def no_token(cfg):
-        raise SystemExit("majordomo: no OAuth token at ...; run `majordomo login`.")
+        raise MajordomoError("majordomo: no OAuth token at ...; run `majordomo login`.")
 
     monkeypatch.setattr(api, "get_credentials", no_token)
     api.ensure_command_scopes({}, people=True)
@@ -307,7 +309,7 @@ def test_ensure_scopes_prints_the_failure_reason_not_the_raw_exception(world, mo
     monkeypatch.setattr(
         api, "_consent",
         lambda cfg, **kw: (_ for _ in ()).throw(
-            SystemExit("majordomo: login failed or was not completed (ValueError). "
+            MajordomoError("majordomo: login failed or was not completed (ValueError). "
                        "Check /tmp/client.json and the Cloud project, then retry `majordomo login`.")
         ),
     )
@@ -320,7 +322,7 @@ def test_a_failed_consent_prints_only_to_stderr(world, monkeypatch, capsys):
     monkeypatch.setattr(
         api, "_consent",
         lambda cfg, **kw: (_ for _ in ()).throw(
-            SystemExit("majordomo: login failed or was not completed (ValueError). Check x.")
+            MajordomoError("majordomo: login failed or was not completed (ValueError). Check x.")
         ),
     )
     assert api.people_service({}) is None
@@ -344,13 +346,13 @@ def test_identity_send_asks_nothing_of_the_personal_login(monkeypatch):
 def test_identity_refuses_every_shape_that_reads():
     for flags in ({}, {"api_read": True}, {"people": True},
                   {"api_read": True, "owner": True, "people": True}, {"send": True, "people": True}):
-        with pytest.raises(SystemExit) as ei:
+        with pytest.raises(MajordomoError) as ei:
             api.ensure_command_scopes(BOT, **flags)
         assert "does not read as it" in str(ei.value), flags
 
 
 def test_identity_has_no_login():
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(MajordomoError) as ei:
         api.login(BOT)
     assert "there is no login" in str(ei.value)
 

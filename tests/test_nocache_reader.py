@@ -6,7 +6,10 @@ import _shim  # noqa: F401
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from majordomo import api, db, readers
+from majordomo.errors import MajordomoError, NotFound, ScopeError
 
 
 def _fake_chat(spaces: list, msgs: dict):
@@ -114,12 +117,8 @@ def test_assignee_by_name_nocache(tmp_path):
     r.roster = roster.Roster(tmp_path, lookup=_people({"people/1": "Alice Quill"}))
     r.tasks()  # a first read names the assignee into the cache file
     assert len(r.tasks(assignee="Ali")) == 1
-    try:
+    with pytest.raises(NotFound, match="no one seen as"):
         r.tasks(assignee="Zzz")
-    except SystemExit as exc:
-        assert "no one seen as" in str(exc)
-    else:
-        raise AssertionError("an unseen name must fail")
 
 
 def test_block_assignees_nocache():
@@ -133,12 +132,9 @@ def test_make_reader_auto_falls_back_to_nocache_when_db_down():
     api.NocacheReader.from_config = staticmethod(lambda cfg, blocked, blocked_assignees=None: "NOCACHE")
     try:
         assert readers.make_reader({"sieve": {}}, None) == "NOCACHE"      # auto -> nocache
-        message = None
-        try:
+        with pytest.raises(MajordomoError) as ei:
             readers.make_reader({"sieve": {}}, "cache")                # forced cache -> loud, one line
-        except SystemExit as exc:
-            message = str(exc)
-        assert message is not None, "forced cache with a dead DB did not fail"
+        message = str(ei.value)
         assert "cache unreachable" in message and "db down" in message  # clean answer, cause named
     finally:
         db.connect, api.NocacheReader.from_config = orig_connect, orig_from
@@ -198,12 +194,8 @@ def test_space_by_display_name(tmp_path):
     r = api.NocacheReader(service=_fake_chat(SPACES, MSGS), blocked=["spaces/BLOCK"],
                           ros=roster.Roster(tmp_path))
     assert r.resolve_space("work") == "spaces/OK"
-    try:
+    with pytest.raises(NotFound, match="no space named"):
         r.resolve_space("Private")  # blocked spaces are never listed, so never named
-    except SystemExit as exc:
-        assert "no space named" in str(exc)
-    else:
-        raise AssertionError("a blocked space must not resolve by name")
 
 
 def test_person_alone_reads_the_dm(tmp_path):
@@ -307,12 +299,10 @@ def test_spaces_owner_scope_insufficient_points_at_login():
 
     chat.spaces().members().list.side_effect = members_list
     r = api.NocacheReader(service=chat, blocked=[])
-    try:
+    with pytest.raises(ScopeError) as ei:
         r.spaces(owner=True)
-    except SystemExit as exc:
-        assert "--owner" in str(exc) and "majordomo login" in str(exc)
-    else:
-        raise AssertionError("a token without the memberships scope must be refused cleanly")
+    assert "--owner" in str(ei.value) and "majordomo login" in str(ei.value)
+    assert ei.value.scopes == [api.MEMBERSHIPS_SCOPE]
 
 
 def test_login_mints_the_memberships_scope():

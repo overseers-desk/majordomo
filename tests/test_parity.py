@@ -5,7 +5,10 @@ import _shim  # noqa: F401
 import io
 import sys
 
+import pytest
+
 from majordomo import db, models, output, reports, sieve
+from majordomo.errors import MajordomoError
 
 
 def test_filter_assignees_by_id_or_name():
@@ -70,11 +73,8 @@ def test_messages_thread_filter_sql():
 
 
 def test_messages_needs_space_or_thread():
-    try:
+    with pytest.raises(MajordomoError, match="needs --space"):
         reports.messages(None, [])
-    except SystemExit:
-        return
-    raise AssertionError("messages with neither space nor thread should exit")
 
 
 
