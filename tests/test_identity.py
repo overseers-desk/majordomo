@@ -1,6 +1,6 @@
 """Config accessors: ``[me]`` (email cannot drive filters in v1, so the CLI
 keys off ``[me].user_id``), the sieve, and ``[identity.NAME]``, the Chat app a
-command sends as with ``--as NAME``.
+command acts as with ``--as NAME``.
 """
 
 import _shim  # noqa: F401

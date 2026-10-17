@@ -131,7 +131,7 @@ A Chat app's service-account key, named as `[identity.NAME]` in `config.toml`, l
 
 - `send` posts as the app: text only, into spaces it is a member of, and `--to` reaches the app's own DM with that person.
 - `spaces`, `tasks` and `messages` read as the app under the sieve wherever majordomo reads the Chat API (`--nocache`, `--live`'s top-up, the fallback when the cache is unreachable): only the spaces it is a member of and their public messages, `--person` alone reading the app's DM with that person. A read the cache serves is the mirror's, as without `--as`.
-- People show as `users/<id>` unless the name cache already holds them, and `tasks --to-me` comes without notes or due dates: the app has no People API and no Google Tasks list.
+- People show as `users/<id>` unless a run on your own login has already named them, and `tasks --to-me` comes without notes or due dates: the app has no People API and no Google Tasks list.
 - Reading messages as the app needs the `chat.app.messages.readonly` scope, which a Google Workspace administrator approves for the app once; sending needs none.
 - `people`, `spaces --owner`, `attachments` and `login` refuse under `--as`.
 
