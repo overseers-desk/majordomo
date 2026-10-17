@@ -1,3 +1,37 @@
+majordomo (0.4.0) unstable; urgency=medium
+
+  * majordomo imports as a Python library. load_config takes a dict in
+    config.toml's shape or a path to a TOML file; make_reader, tasks and
+    messages read with the credentials and name-cache directory they are
+    handed; send posts; drain_notes returns what majordomo had to say. The
+    library reads only what it is handed, and importing it has no side
+    effect.
+  * A refusal is raised as MajordomoError, with NotFound for a space,
+    person or thread that matches nothing and ScopeError for credentials
+    short of a Google scope, never as an exit. The command prints its one
+    line and exits 1; an MCP client sees the same line.
+  * --as NAME reads spaces, tasks and messages as the Chat app in
+    [identity.NAME], over the Chat API and under the sieve: the spaces the
+    app is a member of and their public messages. Reading messages as the
+    app needs the chat.app.messages.readonly scope, which a Google
+    Workspace administrator approves for the app once. --cache, --live,
+    people, spaces --owner, attachments and login refuse under --as. The
+    MCP spaces, tasks and messages tools take identity.
+  * The cache database settings may sit in a [db] table in config.toml
+    beside .env; a key set in both takes [db]'s value. WORLD_AS_OF is read
+    by the command and the MCP server only; a library caller hands the
+    bound to load_config.
+  * A space named by id that does not exist, or that the sieve blocks,
+    answers "not found" on every source, the cache included.
+  * The command prints its notes on stderr after the up-front permission
+    check, before a refusal's line, and at its end; the MCP server carries
+    them in its answer.
+  * The command and the MCP server keep the name cache under
+    $XDG_CACHE_HOME/majordomo/; a library call keeps it in the cache_dir it
+    is handed, or keeps none.
+
+ -- Weiwu Zhang <a@colourful.land>  Sat, 17 Oct 2026 18:48:03 +1000
+
 majordomo (0.3.0) unstable; urgency=medium
 
   * send can post as a Chat app (a bot): name its service-account key as
