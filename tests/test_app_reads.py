@@ -1,7 +1,8 @@
 """Reading Google Chat as a Chat app (``[identity.NAME]``, ``--as NAME``):
 the app's key, asked for ``chat.bot`` and ``chat.app.messages.readonly``,
 serves spaces, tasks and messages over the Chat API under the sieve, never the
-cache, which is the personal login's, and the personal login is never touched. People are named from the name cache alone,
+cache, the mirror being a person's view of Chat, not the app's, and the personal
+login is never touched. People are named from the name cache alone,
 with no People call and no note; what serves only a person's login refuses
 naming the app."""
 
@@ -125,7 +126,7 @@ def test_the_app_reads_the_chat_api_and_refuses_the_cache(google, monkeypatch):
     monkeypatch.setattr(readers.db, "connect", lambda settings: pytest.fail("the cache was opened"))
     assert readers.make_reader(_bot()).source == "nocache"
     for source in ("cache", "live"):
-        with pytest.raises(MajordomoError, match="your own login") as ei:
+        with pytest.raises(MajordomoError, match="a person's view of Chat") as ei:
             readers.make_reader(_bot(), source)
         assert not isinstance(ei.value, (ScopeError, NotFound))
 
@@ -184,7 +185,7 @@ def test_cli_as_reads_the_chat_api_unasked_and_refuses_cache(google, bot_home):
     result = runner.invoke(app, ["--as", "bot", "--cache", "tasks"])
     assert result.exit_code == 1
     assert result.output.strip().splitlines() == [
-        "majordomo: the cache is read on your own login, not as the Chat app bot; drop --as or --cache."]
+        "majordomo: the cache mirrors a person's view of Chat, not the Chat app bot's; drop --as or --cache."]
 
 
 if __name__ == "__main__":

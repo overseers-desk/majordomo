@@ -402,7 +402,8 @@ def make_reader(cfg: dict, source: str | None = None, *, credentials=None, cache
     catches, an absent backend, is real and expected.
 
     Under an `[identity.NAME]` the Chat app reads the Chat API: the mirror is
-    the personal login's, so auto is "nocache" and "cache" or "live" refuse.
+    a person's view of Chat, not the app's, so auto is "nocache" and "cache"
+    or "live" refuse.
 
     `credentials`, google-auth credentials, serve every Chat, People and
     Tasks call in place of the token file the cfg names. `cache_dir` holds the
@@ -414,7 +415,7 @@ def make_reader(cfg: dict, source: str | None = None, *, credentials=None, cache
     if ident:
         if source in ("cache", "live"):
             raise MajordomoError(
-                f"majordomo: the cache is read on your own login, not as the Chat app {ident['name']}; "
+                f"majordomo: the cache mirrors a person's view of Chat, not the Chat app {ident['name']}'s; "
                 f"drop --as or --{source}."
             )
         source = "nocache"
