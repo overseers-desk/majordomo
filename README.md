@@ -160,7 +160,7 @@ majordomo mcp                       # run the MCP server (stdio)
 
 ## Replay bounds: `WORLD_AS_OF`
 
-`WORLD_AS_OF` is the office-wide replay bound (design: [WORLD_AS_OF.design.md](WORLD_AS_OF.design.md)): an ISO-8601 timestamp with a timezone offset, exported into the environment by a replay harness so a run sees the world as it stood at that instant. The command reads it from the environment, and the MCP server reads it on every tool call, so a running server honors what its launcher set. A program using majordomo as a library hands the bound to `load_config(..., world_as_of=...)`: the library reads only what it is handed, so a `WORLD_AS_OF` in its host's environment bounds nothing.
+`WORLD_AS_OF` is the office-wide replay bound (design: [WORLD_AS_OF.design.md](WORLD_AS_OF.design.md)): an ISO-8601 timestamp with a timezone offset, exported into the environment by a replay harness so a run sees the world as it stood at that instant. A program using majordomo as a library hands the bound to `load_config(..., world_as_of=...)`; a `WORLD_AS_OF` in its host's environment bounds nothing.
 
 ```bash
 WORLD_AS_OF='2026-07-12T17:07:00+10:00' majordomo tasks --window 7d
