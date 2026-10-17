@@ -172,29 +172,29 @@ Imported as a library, majordomo reads only what it is handed: a config, credent
 
 ```python
 from datetime import datetime, timezone
-from google.oauth2 import service_account
 import majordomo
 
-# A Chat app's key. A personal login instead names the token `majordomo login`
-# wrote, "api": {"token_file": "/path/to/token.json"} in the dict below, and
-# leaves credentials= out.
-creds = service_account.Credentials.from_service_account_file(
-    "/srv/app/chat-app-key.json",
-    scopes=["https://www.googleapis.com/auth/chat.bot",
-            "https://www.googleapis.com/auth/chat.app.messages.readonly"],
-)
-data_dir = "/srv/app/majordomo"            # cache_dir: the name cache's directory
-
+# Reading as a Chat app: the key sits under [identity.NAME] and identity= names it.
+# A personal login instead names the token `majordomo login` wrote,
+# "api": {"token_file": "/path/to/token.json"}, and passes no identity.
 cfg = majordomo.load_config(
-    {"me": {"user_id": "users/1234567890"}, "sieve": {"block_spaces": ["spaces/AAAA"]}},
+    {
+        "me": {"user_id": "users/1234567890"},
+        "sieve": {"block_spaces": ["spaces/AAAA"]},
+        "identity": {"bot": {"service_account_file": "/srv/app/chat-app-key.json"}},
+    },
+    identity="bot",
     world_as_of=None,                      # or "2026-07-12T17:07:00+10:00"
 )
+data_dir = "/srv/app/majordomo"            # cache_dir: the name cache's directory
 rows = majordomo.tasks(cfg, start=datetime(2026, 7, 1, tzinfo=timezone.utc),
-                       source="nocache", credentials=creds, cache_dir=data_dir)
-msgs = majordomo.messages(cfg, "Back Office", source="nocache", credentials=creds, cache_dir=data_dir)
+                       cache_dir=data_dir)
+msgs = majordomo.messages(cfg, "Back Office", cache_dir=data_dir)
 for note in majordomo.drain_notes():
     print(note)
 ```
+
+A google-auth credentials object of any kind can be passed as `credentials=` to `tasks`, `messages` or `make_reader` in place of the file the config names.
 
 - `load_config` takes a dict in `config.toml`'s shape, copied and taken as written (it names its own paths); a path to a TOML file; or nothing, which reads your own `config.toml`. `identity="NAME"` acts as the Chat app in `[identity.NAME]`, which reads over the Chat API (`"cache"` and `"live"` refuse). A program hands the replay bound to `world_as_of`; a `WORLD_AS_OF` in its host's environment bounds nothing.
 - `tasks` and `messages` return the rows `--json` carries, as dicts whose datetimes are naive UTC; an aware `start` or `end` is converted and a naive one taken as UTC. `source` is `"cache"`, `"live"`, `"nocache"`, or None for the cache with the Chat API as its fallback; the cache's connection is the config's `[db]` table. `credentials`, a google-auth credentials object, serves every Google call in place of the token file `[api]` names. `cache_dir` holds the name cache's `people.json` and `spaces.json`; without it nothing is kept on disk and each call fetches the names it shows. Both call `make_reader(cfg, source, credentials=, cache_dir=)`, whose reader's `source` names the one that served.
