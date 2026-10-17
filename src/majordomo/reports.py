@@ -43,6 +43,10 @@ def space_watermark(conn, space: str) -> datetime | None:
     return rows[0]["wm"] if rows and rows[0]["wm"] else None
 
 
+def space_known(conn, space: str) -> bool:
+    return bool(db.query(conn, "SELECT 1 FROM googlechat_spaces WHERE name = %s LIMIT 1", [space]))
+
+
 def active_spaces(conn, blocked: list[str], *, horizon_days: int = FRESH_HORIZON_DAYS) -> list[tuple[str, datetime]]:
     """Spaces with a cached message within `horizon_days`, each mapped to its newest
     cached message time, ranked most-recent first. The live top-up polls only these

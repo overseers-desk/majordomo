@@ -38,6 +38,7 @@ def cache(monkeypatch, tmp_path):
          "assignee_user_name": "users/2", "assignee": "Rex", "created_at": datetime(2026, 5, 2)}])
     monkeypatch.setattr(reports, "messages", lambda conn, blocked, **kw: [
         {"name": "spaces/A/messages/1", "space_name": "spaces/A", "sender_name": "users/1"}])
+    monkeypatch.setattr(reports, "space_known", lambda conn, space: space == "spaces/A")
     monkeypatch.setattr(reports, "people", lambda conn, blocked, **kw: [
         {"user_id": "users/1", "display": "Ada Q", "msgs": 3, "tasks": 1}])
     monkeypatch.setattr(reports, "mention_rows", lambda conn, blocked: [])

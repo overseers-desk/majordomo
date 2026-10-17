@@ -15,7 +15,7 @@ majordomo reconstructs the tasks made through Google Chat's "Create a task for @
 - **Domain or consumer, and who owns it.** `spaces` reports whether each space belongs to a Google Workspace domain or a consumer/personal account, straight from the Chat API; `--owner` also resolves the space's Owner.
 - **Three modes, one shape.** The fast path reads an existing server-side cache of Chat (the [data model](DATA-MODEL.md)). `--live` is up-to-dateness: it serves the cache and tops it up from the Chat API with anything newer. `--nocache` reads the Chat API directly and decodes tasks itself, so the tool also works without the cache. Every result is tagged with its source; an unforced read uses the cache and falls back to the direct API automatically when the cache is unreachable.
 - **Send** a message to a space, or a reply into a thread, as the logged-in account with optional file attachments, or as a Chat app (`majordomo send`, `--as`).
-- **A privacy sieve** in the core drops blocked spaces (and assignees) before any caller (CLI or MCP) can see them; it refuses sends into blocked spaces the same way.
+- **A privacy sieve** in the core drops blocked spaces (and assignees) before any caller (CLI or MCP) can see them; a blocked space named explicitly, to read or to send into, answers "not found" exactly as an absent one does.
 - **Output** as a rich console table, `--json`, or `--csv`.
 
 ## Install

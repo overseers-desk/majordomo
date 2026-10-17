@@ -168,7 +168,8 @@ class CacheReader:
         return self.roster.resolve_person(who, by_email=self._by_email, seed=self._seed_names)
 
     def resolve_space(self, who: str) -> str:
-        return self.roster.resolve_space(who, seed=self._seed_spaces, blocked=self.blocked, where=self.where)
+        return self.roster.resolve_space(who, seed=self._seed_spaces, blocked=self.blocked, where=self.where,
+                                         exists=lambda s: reports.space_known(self.conn, s))
 
     def dm_space_for(self, who: str) -> str:
         """The direct-message space with a person, from the mirror (the DM
@@ -205,16 +206,21 @@ class CacheReader:
         rows = name_assignees(self.roster, self.blocked_assignees, rows)
         return fill_own(rows, self.own if to_user else None)
 
-    def messages(self, space: str | None = None, *, person: str | None = None, **kw) -> list[dict]:
+    def messages(self, space: str | None = None, *, person: str | None = None,
+                 thread: str | None = None, **kw) -> list[dict]:
+        from .api import _space_of
+
         sender = None
         if space:
             space = self.resolve_space(space)
+        if thread and (home := _space_of(thread.split(".")[0])):
+            self.resolve_space(home)
         if person:
-            if space or kw.get("thread"):
+            if space or thread:
                 sender = self.resolve_person(person)
             else:
                 space = self.dm_space_for(person)
-        rows = reports.messages(self.conn, self.blocked, space=space, sender=sender, **kw)
+        rows = reports.messages(self.conn, self.blocked, space=space, thread=thread, sender=sender, **kw)
         return name_senders(self.roster, rows)
 
 
@@ -273,6 +279,15 @@ class FreshReader:
         return max(cand) if cand else None
 
     @staticmethod
+    def _cached(read, *args, **kw) -> list[dict]:
+        """The cache's rows, none for a space the mirror lacks: the top-up then
+        reads that space over the whole window."""
+        try:
+            return read(*args, **kw)
+        except NotFound:
+            return []
+
+    @staticmethod
     def _merge(base: list[dict], fresh: list[dict], *, key: str, time_key: str, reverse: bool, limit: int) -> list[dict]:
         seen = {r.get(key) for r in base}
         merged = base + [r for r in fresh if r.get(key) not in seen]
@@ -312,8 +327,8 @@ class FreshReader:
             assignee = self.cache.resolve_person(assignee)
         if space:
             space = self.resolve_space(space)
-        base = self.cache.tasks(to_user=to_user, by_user=by_user, assignee=assignee,
-                                space=space, start=start, end=end, limit=limit)
+        base = self._cached(self.cache.tasks, to_user=to_user, by_user=by_user, assignee=assignee,
+                            space=space, start=start, end=end, limit=limit)
         targets = self._bounded_targets(self._targets(space))
         if not targets:
             return base
@@ -326,20 +341,24 @@ class FreshReader:
 
     def messages(self, space: str | None = None, *, person=None, thread=None, start=None, end=None,
                  limit=reports.MESSAGE_LIMIT) -> list[dict]:
+        from .api import _space_of
+
         if space:
             space = self.resolve_space(space)
+        home = _space_of(thread.split(".")[0]) if thread else None
+        if home:
+            self.resolve_space(home)
         if person:
             if space or thread:
                 person = self.cache.resolve_person(person)
             else:
                 space, person = self.dm_space_for(person), None
-        base = self.cache.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
+        base = self._cached(self.cache.messages, space, person=person, thread=thread,
+                            start=start, end=end, limit=limit)
         if space:
             targets = [(space, reports.space_watermark(self.cache.conn, space))]
         elif thread:
-            from .api import _space_of
-            sp = _space_of(thread.split(".")[0])
-            targets = [(sp, reports.space_watermark(self.cache.conn, sp))] if sp else []
+            targets = [(home, reports.space_watermark(self.cache.conn, home))] if home else []
         else:
             return base  # reports.messages already required space or thread
         targets = self._bounded_targets(targets)
