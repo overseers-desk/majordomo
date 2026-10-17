@@ -9,7 +9,7 @@ Under the WORLD_AS_OF bound ``cfg`` carries (WORLD_AS_OF.design.md) the bound
 is the clock: relative windows anchor to it, not to now (``7d`` is the seven
 days before the bound, ``month`` the calendar month before the one containing
 it), and ``end`` is clamped down to it (a later user-supplied ``--until`` gets
-a note). Without ``cfg`` the window is unbounded.
+a note).
 Without the frozen now, a replayed ``--window 7d`` resolves against the replay
 date and silently reports nothing.
 """
@@ -76,5 +76,5 @@ def resolve(
         start = (end - timedelta(days=1)).replace(day=1)
     else:
         raise MajordomoError(f"majordomo: unknown window {window!r}; use one of {', '.join(WINDOWS)}")
-    # Identity when WORLD_AS_OF is unset; under a bound an open end closes at it.
+    # Identity when unbounded; under a bound an open end closes at it.
     return (start, config.world_clamp(end, bound))

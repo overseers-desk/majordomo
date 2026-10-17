@@ -192,8 +192,7 @@ class Roster:
     token cannot reach it (it raises its own note); it is called at most once,
     and only when an id is missing from the file. Holding the files, the
     lookup and the run's spellings together is what lets one object be the
-    single resolver both backends and every report share. A ``frozen``
-    roster, a run under WORLD_AS_OF, never writes its files.
+    single resolver both backends and every report share.
     """
 
     def __init__(self, directory: Path | None = None, lookup=None, frozen: bool = False):
