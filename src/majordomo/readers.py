@@ -385,7 +385,7 @@ def make_reader(cfg: dict, source: str | None = None):
     cache/live/auto all need the DB, which the cfg's `[db]` names; if `[db]` is
     incomplete or the DB unreachable, "cache" raises while "live"/auto degrade
     to the direct API (the only fresh source left). The fault that fallback
-    catches — an absent backend — is real and expected, so this is not a
+    catches, an absent backend, is real and expected, so this is not a
     phantom-problem fallback.
     """
     blocked = config.block_spaces(cfg)
