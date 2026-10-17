@@ -141,8 +141,15 @@ def identity(config: dict) -> dict | None:
 
 
 def load_env() -> dict:
+    """The database credentials from the env file.
+
+    A missing file raises an ordinary exception, not SystemExit, like
+    ``db._driver``: the only caller is ``db.connect``, and the reader seam
+    turns any failure there into the fallback to reading Google directly (or,
+    with --cache, into its own one-line exit carrying this message).
+    """
     if not ENV_FILE.exists():
-        raise SystemExit(f"majordomo: no database .env at {ENV_FILE}")
+        raise FileNotFoundError(f"no database .env at {ENV_FILE}")
     env: dict[str, str] = {}
     for line in ENV_FILE.read_text().splitlines():
         line = line.strip()
