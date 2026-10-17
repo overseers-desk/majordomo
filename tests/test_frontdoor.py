@@ -3,7 +3,8 @@ once, at the start of a command, for every scope the command's shape lacks,
 when someone can answer it, then checks again; with nobody there (no display
 and no terminal, CI, a WORLD_AS_OF replay) or under an identity it does not
 ask. Declined or failed, the command carries on and a note gives the safe
-reason. Everything the flow prints goes to stderr."""
+reason. Everything the flow prints goes to stderr. ``load`` reads the user's
+own files: config.toml, with the ``.env`` beside it merged into ``[db]``."""
 
 import _shim  # noqa: F401
 
@@ -275,6 +276,26 @@ def test_identity_has_no_login(monkeypatch):
     with pytest.raises(MajordomoError) as ei:
         frontdoor.login(BOT)
     assert "there is no login" in str(ei.value)
+
+
+# --- load -------------------------------------------------------------------
+
+
+def _home_config(tmp_path, monkeypatch, toml):
+    (tmp_path / "config.toml").write_text(toml)
+    monkeypatch.setattr(config, "config_dir", lambda: tmp_path)
+    monkeypatch.delenv("WORLD_AS_OF", raising=False)
+
+
+def test_load_merges_the_env_file_into_db_and_db_keys_win(tmp_path, monkeypatch):
+    _home_config(tmp_path, monkeypatch, "[db]\nMYSQL_HOST = 'from-toml'\n")
+    (tmp_path / ".env").write_text("# the cache\nMYSQL_HOST=from-env\nMYSQL_USER='u'\n")
+    assert frontdoor.load()["db"] == {"MYSQL_HOST": "from-toml", "MYSQL_USER": "u"}
+
+
+def test_load_without_an_env_file_adds_no_db(tmp_path, monkeypatch):
+    _home_config(tmp_path, monkeypatch, "[me]\nuser_id = 'users/1'\n")
+    assert "db" not in frontdoor.load()
 
 
 if __name__ == "__main__":

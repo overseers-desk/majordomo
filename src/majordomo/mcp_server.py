@@ -37,7 +37,7 @@ def _config(identity: Optional[str] = None) -> dict:
     # Every tool call starts here: a note left from an earlier call that
     # returned no envelope (send) belongs to that call, not this one.
     config.drain_notes()
-    return config.load_config(identity)
+    return frontdoor.load(identity)
 
 
 def _reader(source: Optional[str], cfg: Optional[dict] = None):
@@ -213,7 +213,7 @@ def create_server() -> MCPServer:
         start, end = dates.resolve(window, since, until)
         rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
                                message=message, person=person, start=start, end=end, limit=limit,
-                               download_to=download_to)
+                               download_to=download_to and os.path.expanduser(download_to))
         return _envelope("nocache", rows)
 
     @tool
@@ -234,7 +234,8 @@ def create_server() -> MCPServer:
         cfg = _config(identity)
         frontdoor.up_front(cfg, send=True)
         return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
-                        to=to, text=text, attachments=attachments)
+                        to=to, text=text,
+                        attachments=attachments and [os.path.expanduser(p) for p in attachments])
 
     return server
 

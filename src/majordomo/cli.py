@@ -1,14 +1,20 @@
-"""majordomo — command-line front door. Thin: parse flags, pick a reader, render.
+"""majordomo — command-line front door. Thin: load the config, parse flags,
+pick a reader, render.
 
-All behaviour lives in the core (readers / reports / decoder), so the MCP front
-door calls the same readers. Source is cache by default (direct-API fallback if the
-cache is down); `--cache` / `--live` (cache + freshness top-up) / `--nocache`
-(direct API) select it. Output is console, `--json`, or `--csv`.
+The front doors call the core (readers / reports / decoder) and add no
+business logic, so this one and the MCP server read through the same readers.
+Google's consent flow, which needs a browser or a person at a terminal, lives
+in frontdoor.py with the reading of the user's own config files; both front
+doors call it and the core never imports it, while the core still chooses
+and uses every credential. Source is cache by default (direct-API fallback if
+the cache is down); `--cache` / `--live` (cache + freshness top-up) /
+`--nocache` (direct API) select it. Output is console, `--json`, or `--csv`.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from typing import List, Optional
 
 import typer
@@ -104,7 +110,7 @@ def _up_front(cfg: dict, **shape) -> None:
 
 
 def _open(ctx: typer.Context, *, people: bool = False, **shape):
-    cfg = config.load_config(ctx.obj["identity"])
+    cfg = frontdoor.load(ctx.obj["identity"])
     # Up front, before the reader touches the cache or the API: everything
     # this command's shape needs, so a decline or a timeout costs nothing
     # already spent reading.
@@ -138,7 +144,7 @@ def login(ctx: typer.Context) -> None:
     itself, up front before the command does anything, opening the same
     consent page, when someone is there to answer.
     """
-    path = frontdoor.login(config.load_config(ctx.obj["identity"]))
+    path = frontdoor.login(frontdoor.load(ctx.obj["identity"]))
     typer.echo(f"majordomo: token written to {path}")
 
 
@@ -166,7 +172,7 @@ def spaces(
     """
     if owner:
         from . import api
-        cfg = config.load_config(ctx.obj["identity"])
+        cfg = frontdoor.load(ctx.obj["identity"])
         # Up front: the membership scope and the People scope owner_display
         # needs, before the first (slow, quota-backed-off) membership read.
         _up_front(cfg, api_read=True, owner=True, people=True)
@@ -293,13 +299,13 @@ def attachments(
     message text, not files.
     """
     from . import api
-    cfg = config.load_config(ctx.obj["identity"])
+    cfg = frontdoor.load(ctx.obj["identity"])
     # Always the direct API and always naming senders, regardless of flags.
     _up_front(cfg, api_read=True, people=True)
     start, end = dates.resolve(window, since, until)
     rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
                            message=message, person=person, start=start, end=end, limit=limit,
-                           download_to=download)
+                           download_to=download and os.path.expanduser(download))
     emit(rows, models.ATTACHMENT_COLUMNS, "nocache", json_out, csv_out)
     _warn_if_capped(rows, limit)
     failed = [r["error"] for r in rows if r.get("error")]
@@ -331,10 +337,10 @@ def send(
     reaches the app's own DM. Refused while WORLD_AS_OF is set.
     """
     from . import api
-    cfg = config.load_config(ctx.obj["identity"])
+    cfg = frontdoor.load(ctx.obj["identity"])
     _up_front(cfg, send=True)
     created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
-                       to=to, text=text, attachments=attach)
+                       to=to, text=text, attachments=attach and [os.path.expanduser(p) for p in attach])
     if json_out:
         typer.echo(json.dumps(created, indent=2, default=str))
     else:

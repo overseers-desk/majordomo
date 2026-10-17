@@ -27,7 +27,7 @@ runner = CliRunner()
 def _config_file(tmp_path, monkeypatch):
     toml = tmp_path / "config.toml"
     toml.write_text("[me]\nuser_id = 'users/1'\n")
-    monkeypatch.setattr(config, "CONFIG_TOML", toml)
+    monkeypatch.setattr(config, "config_dir", lambda: tmp_path)
     # Keep _claude_command.refresh() (run by every CLI invocation) a no-op:
     # point it at a directory that does not exist, so it never writes.
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "no-claude-here"))

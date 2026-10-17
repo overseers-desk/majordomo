@@ -129,7 +129,7 @@ def test_block_assignees_nocache():
 def test_make_reader_auto_falls_back_to_nocache_when_db_down():
     orig_connect, orig_from = db.connect, api.NocacheReader.from_config
     db.connect = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db down"))
-    api.NocacheReader.from_config = staticmethod(lambda cfg, blocked, blocked_assignees=None: "NOCACHE")
+    api.NocacheReader.from_config = staticmethod(lambda cfg, blocked, blocked_assignees=None, **kw: "NOCACHE")
     try:
         assert readers.make_reader({"sieve": {}}, None) == "NOCACHE"      # auto -> nocache
         with pytest.raises(MajordomoError) as ei:

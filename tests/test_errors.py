@@ -41,7 +41,7 @@ def test_a_scope_error_carries_its_scopes():
 def cli(tmp_path, monkeypatch):
     toml = tmp_path / "config.toml"
     toml.write_text("[me]\nuser_id = 'users/1'\n")
-    monkeypatch.setattr(config, "CONFIG_TOML", toml)
+    monkeypatch.setattr(config, "config_dir", lambda: tmp_path)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "no-claude-here"))
     monkeypatch.delenv("WORLD_AS_OF", raising=False)
     monkeypatch.setattr(api, "ensure_command_scopes", lambda cfg, **flags: None)

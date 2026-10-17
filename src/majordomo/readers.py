@@ -380,10 +380,11 @@ def make_reader(cfg: dict, source: str | None = None):
     - "live": up-to-dateness — cache base + a freshness top-up from the API.
     - None (auto): cache, falling back to the direct API only if the DB is down.
 
-    cache/live/auto all need the DB; if it is unreachable, "cache" raises while
-    "live"/auto degrade to the direct API (the only fresh source left). The fault
-    that fallback catches — an absent backend — is real and expected, so this is
-    not a phantom-problem fallback.
+    cache/live/auto all need the DB, which the cfg's `[db]` names; if `[db]` is
+    incomplete or the DB unreachable, "cache" raises while "live"/auto degrade
+    to the direct API (the only fresh source left). The fault that fallback
+    catches — an absent backend — is real and expected, so this is not a
+    phantom-problem fallback.
     """
     blocked = config.block_spaces(cfg)
     blocked_assignees = config.block_assignees(cfg)
@@ -391,7 +392,7 @@ def make_reader(cfg: dict, source: str | None = None):
         from .api import NocacheReader
         return NocacheReader.from_config(cfg, blocked, blocked_assignees)
     try:
-        cache = CacheReader(db.connect(), blocked, blocked_assignees, cfg=cfg)
+        cache = CacheReader(db.connect(cfg.get("db") or {}), blocked, blocked_assignees, cfg=cfg)
     except Exception as exc:
         if source == "cache":
             # --cache promises to fail here rather than fall back; the failure

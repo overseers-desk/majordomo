@@ -98,6 +98,8 @@ MYSQL_PASSWORD=…
 MYSQL_DATABASE=…
 ```
 
+The same keys may sit in a `[db]` table in `config.toml` instead; a key set in both takes `[db]`'s value.
+
 ## Authenticating
 
 majordomo signs in as **you**, through Google's own browser consent screen. `majordomo login` opens that flow, the account you pick grants access to its own Chat, and the resulting refresh token is stored for that account. Two things follow:

@@ -1,11 +1,18 @@
-"""Load majordomo's two config files from ``~/.config/majordomo/``, name the
-cache directory, and carry the once-per-run notes.
+"""The config majordomo runs with, where the user's own files sit, the cache
+directory, and the once-per-run notes.
 
-- ``config.toml`` — human-edited: ``[me]`` (the configured subject),
-  ``[sieve]`` (blocked spaces), and ``[identity.NAME]`` (a Chat app's
-  service-account key, to send as with ``--as NAME``).
-- ``.env`` — the MariaDB connection (``MYSQL_*``), copied from the BI project;
-  a read-only DB user swaps in later without any code change.
+A config has config.toml's shape, whether ``load_config`` is handed it as a
+dict or reads it from a TOML file:
+
+- ``[me]`` (the configured subject), ``[sieve]`` (blocked spaces and
+  assignees), ``[api]`` (the OAuth token and client files),
+  ``[identity.NAME]`` (a Chat app's service-account key, to send as with
+  ``--as NAME``), and ``[db]`` (the MariaDB connection, the ``MYSQL_*`` keys).
+- The user's own files sit in ``config_dir()``: ``config.toml``, which
+  ``load_config()`` reads when handed nothing, and ``.env``, the MariaDB
+  connection copied from the BI project, which the front doors merge into
+  ``[db]`` (frontdoor.load); a read-only DB user swaps in later without any
+  code change.
 - ``$XDG_CACHE_HOME/majordomo/`` (``~/.cache/majordomo/`` when unset, on Linux
   and macOS alike), program-written: the People API person and Chat space
   objects majordomo has fetched (roster.py). Everything there is refetchable,
@@ -14,6 +21,7 @@ cache directory, and carry the once-per-run notes.
 
 from __future__ import annotations
 
+import copy
 import os
 import tomllib
 from datetime import datetime, timezone
@@ -21,9 +29,19 @@ from pathlib import Path
 
 from .errors import MajordomoError
 
-CONFIG_DIR = Path(os.path.expanduser("~/.config/majordomo"))
-CONFIG_TOML = CONFIG_DIR / "config.toml"
-ENV_FILE = CONFIG_DIR / ".env"
+
+def config_dir() -> Path:
+    """The user's own config directory, resolved per call, so importing
+    majordomo reads nothing under the home directory."""
+    return Path(os.path.expanduser("~/.config/majordomo"))
+
+
+def config_toml() -> Path:
+    return config_dir() / "config.toml"
+
+
+def env_file() -> Path:
+    return config_dir() / ".env"
 
 
 def cache_dir() -> Path:
@@ -33,10 +51,10 @@ def cache_dir() -> Path:
     return Path(base).expanduser() / "majordomo"
 
 
-# Notes the core raises about a run, each held once until a front door drains
-# them (the CLI onto stderr, the MCP server into its answer's ``notes``),
-# after which the next call may raise them afresh. The core owns the wording
-# and prints nothing; a front door only carries it.
+# Notes raised about a run, each held once until a front door drains them
+# (the CLI onto stderr, the MCP server into its answer's ``notes``), after
+# which the next call may raise them afresh. The core owns the wording and
+# prints nothing; a front door only carries it.
 _pending: list[str] = []
 
 
@@ -105,28 +123,76 @@ def world_clamp(end: datetime | None) -> datetime | None:
     return min(end, bound)
 
 
-def load_config(identity: str | None = None) -> dict:
-    """The parsed config.toml. ``identity`` names the ``[identity.NAME]`` the
-    command acts as (``--as NAME``), checked here so a misspelt name stops the
-    command before anything else runs."""
+# The tables majordomo reads from a config.
+_TABLES = ("me", "sieve", "api", "identity", "db")
+_SIEVE_LISTS = ("block_spaces", "block_assignees")
+
+
+def load_config(source: str | os.PathLike | dict | None = None, identity: str | None = None) -> dict:
+    """The config, in config.toml's shape. ``source`` is a dict, taken as it
+    stands (a copy, so the caller's own is never changed); a path to a TOML
+    file; or None for the user's ``config.toml``. A file's ``[api]`` files
+    default to ``token.json`` and ``client_secret.json`` beside it, and ``~``
+    in its paths is the home directory; a dict names its paths itself.
+    ``identity`` names the ``[identity.NAME]`` the command acts as
+    (``--as NAME``), checked here so a misspelt name stops the command before
+    anything else runs."""
     # Parse the bound before anything else: a bad WORLD_AS_OF stops every
     # command, including ones that fetch no dates (design §5, hard failure
     # everywhere).
     world_as_of()
-    if not CONFIG_TOML.exists():
-        raise MajordomoError(f"majordomo: no config at {CONFIG_TOML}")
-    with open(CONFIG_TOML, "rb") as fh:
-        cfg = tomllib.load(fh)
+    if isinstance(source, dict):
+        cfg = copy.deepcopy(source)
+        where = "the config passed in"
+        _check(cfg, where)
+    else:
+        path = config_toml() if source is None else Path(source)
+        if not path.exists():
+            raise MajordomoError(f"majordomo: no config at {path}")
+        with open(path, "rb") as fh:
+            cfg = tomllib.load(fh)
+        where = str(path)
+        _check(cfg, where)
+        _file_paths(cfg, path.parent)
     if identity is not None:
         tables = cfg.get("identity") or {}
         if not (tables.get(identity) or {}).get("service_account_file"):
-            known = ", ".join(sorted(n for n, t in tables.items() if (t or {}).get("service_account_file")))
+            known = ", ".join(sorted(n for n, t in tables.items() if t.get("service_account_file")))
             raise MajordomoError(
-                f"majordomo: no [identity.{identity}] with a service_account_file in {CONFIG_TOML}"
+                f"majordomo: no [identity.{identity}] with a service_account_file in {where}"
                 f" (configured: {known or 'none'})."
             )
         cfg["_identity"] = identity
     return cfg
+
+
+def _check(cfg: dict, where: str) -> None:
+    """Refuse a config whose tables are not tables or whose sieve lists are
+    not lists of strings: a sieve list read as anything else would let a
+    blocked space through. Keys majordomo does not know are kept."""
+    for name in _TABLES:
+        if cfg.get(name) is not None and not isinstance(cfg[name], dict):
+            raise MajordomoError(f"majordomo: [{name}] in {where} must be a table.")
+    for name, table in (cfg.get("identity") or {}).items():
+        if not isinstance(table, dict):
+            raise MajordomoError(f"majordomo: [identity.{name}] in {where} must be a table.")
+    sieve = cfg.get("sieve") or {}
+    for name in _SIEVE_LISTS:
+        value = sieve.get(name)
+        if value is not None and not (isinstance(value, list) and all(isinstance(v, str) for v in value)):
+            raise MajordomoError(f"majordomo: [sieve].{name} in {where} must be a list of strings.")
+
+
+def _file_paths(cfg: dict, directory: Path) -> None:
+    api = cfg.setdefault("api", {})
+    api["token_file"] = api.get("token_file") or str(directory / "token.json")
+    api["client_file"] = api.get("client_file") or str(directory / "client_secret.json")
+    for key, value in api.items():
+        if isinstance(value, str):
+            api[key] = os.path.expanduser(value)
+    for table in (cfg.get("identity") or {}).values():
+        if isinstance(table.get("service_account_file"), str):
+            table["service_account_file"] = os.path.expanduser(table["service_account_file"])
 
 
 def identity(config: dict) -> dict | None:
@@ -138,13 +204,10 @@ def identity(config: dict) -> dict | None:
     return {"name": name, **config["identity"][name]}
 
 
-def load_env() -> dict:
-    """The database credentials from the env file. A missing file raises, and
-    the reader seam falls back."""
-    if not ENV_FILE.exists():
-        raise FileNotFoundError(f"no database .env at {ENV_FILE}")
+def parse_env_file(path: str | os.PathLike) -> dict[str, str]:
+    """The ``KEY=value`` lines of a ``.env`` file, quotes stripped."""
     env: dict[str, str] = {}
-    for line in ENV_FILE.read_text().splitlines():
+    for line in Path(path).read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -191,9 +254,9 @@ def block_assignees(config: dict) -> list[str]:
     return list((config.get("sieve") or {}).get("block_assignees") or [])
 
 
-def api_token_file(config: dict) -> str:
-    return (config.get("api") or {}).get("token_file") or str(CONFIG_DIR / "token.json")
+def api_token_file(config: dict) -> str | None:
+    return (config.get("api") or {}).get("token_file")
 
 
-def api_client_file(config: dict) -> str:
-    return (config.get("api") or {}).get("client_file") or str(CONFIG_DIR / "client_secret.json")
+def api_client_file(config: dict) -> str | None:
+    return (config.get("api") or {}).get("client_file")
