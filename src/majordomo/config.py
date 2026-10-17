@@ -6,8 +6,8 @@ dict or reads it from a TOML file:
 
 - ``[me]`` (the configured subject), ``[sieve]`` (blocked spaces and
   assignees), ``[api]`` (the OAuth token and client files),
-  ``[identity.NAME]`` (a Chat app's service-account key, to send as with
-  ``--as NAME``), and ``[db]`` (the MariaDB connection, the ``MYSQL_*`` keys).
+  ``[identity.NAME]`` (a Chat app's service-account key, for ``--as NAME``),
+  and ``[db]`` (the MariaDB connection, the ``MYSQL_*`` keys).
 - The user's own files sit in ``config_dir()``: ``config.toml``, which
   ``load_config()`` reads when handed nothing, and ``.env``, the MariaDB
   connection copied from the BI project, which the front doors merge into

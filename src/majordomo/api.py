@@ -10,12 +10,8 @@ the same check made by a feature that reaches for a scope itself, which then
 falls back or refuses. People are named through roster.py, which reads the
 People API over this token. A command run as an ``[identity.NAME]``
 (``--as NAME``) holds a Chat app's service-account key instead of this token
-(``chat_credentials`` chooses): it sends as the app, and reads spaces, tasks
-and messages as the app under the sieve, public messages only, in the spaces
-the app is a member of. The app has no consent flow, no People API and no
-Google Tasks list, so names come only from the name cache and ``--to-me``
-rows carry no notes; the people report, space owners and attachments refuse
-under it.
+(``chat_credentials`` chooses), and sends and reads as that app, which has no
+consent flow, no People API and no Google Tasks list.
 
 A no-cache read is windowed and slow under Google's read quota, which
 is why the default path is the BI cache.

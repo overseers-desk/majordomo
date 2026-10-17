@@ -2,8 +2,8 @@
 the app's key, asked for ``chat.bot`` and ``chat.app.messages.readonly``,
 serves spaces, tasks and messages over the Chat API under the sieve, and the
 personal login is never touched. People are named from the name cache alone,
-with no People call and no note; what serves only a person's login (the
-people report, space owners, attachments, login) refuses naming the app."""
+with no People call and no note; what serves only a person's login refuses
+naming the app."""
 
 import _shim  # noqa: F401
 
