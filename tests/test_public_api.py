@@ -306,7 +306,7 @@ def test_an_identity_reads_the_chat_api_and_refuses_the_cache(google):
     assert majordomo.tasks(cfg, credentials=CHAT_ONLY)
     assert "people" not in google["built"] and majordomo.drain_notes() == []
     for source in ("cache", "live"):
-        with pytest.raises(majordomo.MajordomoError, match="your own login") as ei:
+        with pytest.raises(majordomo.MajordomoError, match="a person's view of Chat") as ei:
             majordomo.tasks(cfg, source=source, credentials=CHAT_ONLY)
         assert not isinstance(ei.value, (majordomo.NotFound, majordomo.ScopeError))
 

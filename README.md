@@ -130,7 +130,7 @@ majordomo login
 A Chat app's service-account key, named as `[identity.NAME]` in `config.toml`, lets majordomo act as that app with no login: `--as NAME` before the command, or `identity` on the MCP `send`, `spaces`, `tasks` and `messages` tools.
 
 - `send` posts as the app: text only, into spaces it is a member of, and `--to` reaches the app's own DM with that person.
-- `spaces`, `tasks` and `messages` read over the Chat API as the app, under the sieve: only the spaces it is a member of and their public messages, `--person` alone reading the app's DM with that person. The cache is your own login's view, so `--as` reads the API without a source flag, and `--cache` and `--live` refuse under it.
+- `spaces`, `tasks` and `messages` read over the Chat API as the app, under the sieve: only the spaces it is a member of and their public messages, `--person` alone reading the app's DM with that person. The cache mirrors a person's view of Chat, not the app's, so `--as` reads the API without a source flag, and `--cache` and `--live` refuse under it.
 - Senders show as `users/<id>` unless a run on your own login has already named them, while task assignees keep the @-spelling of the message that assigned them; `tasks --to-me` comes without notes or due dates. The app has no People API and no Google Tasks list.
 - Reading messages as the app needs the `chat.app.messages.readonly` scope, which a Google Workspace administrator approves for the app once, as [Google's Chat app authentication page](https://developers.google.com/workspace/chat/authenticate-authorize-chat-app) describes. Until then, and in a space the app is not a member of, the read fails saying so. Sending needs no approval.
 - `people`, `spaces --owner`, `attachments` and `login` refuse under `--as`.
@@ -172,7 +172,18 @@ Imported as a library, majordomo reads only what it is handed: a config, credent
 
 ```python
 from datetime import datetime, timezone
+from google.oauth2 import service_account
 import majordomo
+
+# A Chat app's key. A personal login instead names the token `majordomo login`
+# wrote, "api": {"token_file": "/path/to/token.json"} in the dict below, and
+# leaves credentials= out.
+creds = service_account.Credentials.from_service_account_file(
+    "/srv/app/chat-app-key.json",
+    scopes=["https://www.googleapis.com/auth/chat.bot",
+            "https://www.googleapis.com/auth/chat.app.messages.readonly"],
+)
+data_dir = "/srv/app/majordomo"            # cache_dir: the name cache's directory
 
 cfg = majordomo.load_config(
     {"me": {"user_id": "users/1234567890"}, "sieve": {"block_spaces": ["spaces/AAAA"]}},
@@ -180,8 +191,7 @@ cfg = majordomo.load_config(
 )
 rows = majordomo.tasks(cfg, start=datetime(2026, 7, 1, tzinfo=timezone.utc),
                        source="nocache", credentials=creds, cache_dir=data_dir)
-msgs = majordomo.messages(cfg, "Back Office", person="Alice",
-                          source="nocache", credentials=creds, cache_dir=data_dir)
+msgs = majordomo.messages(cfg, "Back Office", source="nocache", credentials=creds, cache_dir=data_dir)
 for note in majordomo.drain_notes():
     print(note)
 ```
