@@ -66,7 +66,8 @@ def test_connect_names_the_settings_db_lacks(monkeypatch):
     _driver_present(monkeypatch)
     with pytest.raises(MajordomoError) as ei:
         db.connect({"MYSQL_HOST": "h", "MYSQL_PORT": "3306"})
-    assert str(ei.value) == "majordomo: no cache database: [db] lacks MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE"
+    assert str(ei.value) == ("majordomo: no cache database: [db] (or the .env beside config.toml) "
+                             "lacks MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE")
 
 
 def test_forced_cache_without_db_refuses_in_one_line(tmp_path, monkeypatch):
@@ -77,5 +78,6 @@ def test_forced_cache_without_db_refuses_in_one_line(tmp_path, monkeypatch):
     _driver_present(monkeypatch)
     result = CliRunner().invoke(app, ["--cache", "spaces"])
     assert result.exit_code == 1
-    assert result.output.startswith("majordomo: cache unreachable with --cache (")
-    assert "[db] lacks MYSQL_HOST" in result.output and result.output.count("\n") == 1
+    assert result.output.startswith("majordomo: cache unreachable with --cache (no cache database: [db] ")
+    assert "lacks MYSQL_HOST" in result.output and result.output.count("majordomo: ") == 1
+    assert result.output.count("\n") == 1

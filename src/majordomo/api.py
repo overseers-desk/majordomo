@@ -158,11 +158,11 @@ def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = Fa
     reads before its first name lookup ran) learns of the gap before it has
     spent any of that.
 
-    Quiet when the shape needs nothing, under WORLD_AS_OF (a bounded run asks
-    no consent), and when there is no saved token at all: by policy, an
-    install that never ran `majordomo login` meets the no-token message of
-    the features that check for themselves, which sends it to `majordomo
-    login`, rather than a consent page it did not ask for.
+    Quiet when the shape needs nothing, under a WORLD_AS_OF bound (a bounded
+    run asks no consent), and when there is no saved token at all: an install
+    that never ran `majordomo login` meets the "no OAuth token at …" error
+    ``get_credentials`` raises, which sends it to `majordomo login`, rather
+    than a consent page it did not ask for.
     """
     ident = config.identity(cfg)
     if ident:
@@ -173,7 +173,7 @@ def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = Fa
         raise MajordomoError(f"majordomo: majordomo sends as {ident['name']} but does not read as it.")
     wanted = [(scopes, purpose) for key, scopes, purpose in _SCOPE_GROUPS
               if {"api_read": api_read, "owner": owner, "send": send, "people": people, "own": own}[key]]
-    if not wanted or config.world_as_of() is not None:
+    if not wanted or config.world_as_of(cfg) is not None:
         return
     try:
         creds = get_credentials(cfg)
@@ -235,7 +235,7 @@ def own_tasks(cfg: dict, service=None) -> dict | None:
     created fresh there. None, with a one-line note, when there is no usable
     token or it cannot read the lists; None too under WORLD_AS_OF, the lists
     being current-state. ``service`` is injected by tests."""
-    if config.world_as_of() is not None:
+    if config.world_as_of(cfg) is not None:
         return None
     if service is None:
         try:
@@ -400,7 +400,7 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
     ``[identity.NAME]``, it sends as that Chat app: into spaces the app is a
     member of, ``to`` reaching the app's own DM, and with no attachments.
     """
-    if config.world_as_of() is not None:
+    if config.world_as_of(cfg) is not None:
         raise MajordomoError(
             "majordomo: WORLD_AS_OF is set (a replay bound); refusing to send "
             "a real message from a bounded run."
@@ -482,8 +482,10 @@ class NocacheReader:
     source = "nocache"
 
     def __init__(self, creds=None, blocked=None, blocked_assignees=None, service=None,
-                 ros: roster.Roster | None = None, me: str | None = None, people=None, own=None):
+                 ros: roster.Roster | None = None, me: str | None = None, people=None, own=None,
+                 bound: datetime | None = None):
         self.blocked = blocked or []
+        self.bound = bound  # WORLD_AS_OF, naive UTC; None reads unbounded
         self.blocked_assignees = blocked_assignees or []
         self.own = own  # the person's own task list, for --to-me's fill (readers.fill_own)
         if service is not None:
@@ -494,7 +496,7 @@ class NocacheReader:
         self._spaces: list[dict] | None = None
         # ``people`` is the People lookup for a roster built here; a shared
         # roster brings its own.
-        self.roster = ros or roster.Roster(lookup=people)
+        self.roster = ros or roster.Roster(lookup=people, frozen=bound is not None)
         # The account's own id, so the other party of a DM can be told apart.
         self.me = me
 
@@ -502,7 +504,8 @@ class NocacheReader:
     def from_config(cls, cfg: dict, blocked: list[str], blocked_assignees: list[str] | None = None,
                     ros: roster.Roster | None = None, creds=None, own=None) -> "NocacheReader":
         return cls(creds or get_credentials(cfg), blocked, blocked_assignees, ros=ros,
-                   me=config.me_user_id(cfg), people=people_lookup(cfg), own=own or own_tasks_lookup(cfg))
+                   me=config.me_user_id(cfg), people=people_lookup(cfg), own=own or own_tasks_lookup(cfg),
+                   bound=config.world_as_of(cfg))
 
     # --- people and spaces by name ---------------------------------------
 
@@ -570,7 +573,7 @@ class NocacheReader:
         # WORLD_AS_OF is enforced here, at the one _time_filter caller, so
         # tasks / people / messages are all server-bounded by createTime.
         out, token = [], None
-        flt = _time_filter(start, config.world_clamp(end))
+        flt = _time_filter(start, config.world_clamp(end, self.bound))
         while True:
             try:
                 resp = self.chat.spaces().messages().list(
@@ -613,13 +616,12 @@ class NocacheReader:
         # The Chat API gives no message count cheaply, so minimal_messages is not
         # applied here (the CLI notes the filter is cache-only).
         found = self._all_spaces()
-        bound = config.world_as_of()
-        if bound is not None:
+        if self.bound is not None:
             # spaces.list takes no date filter, so this is post-filter territory:
             # drop spaces created after the bound. A space without createTime
             # (created before ~mid-2021) is kept as current-state and flagged.
             found = [s for s in found
-                     if (ct := _parse_dt(s.get("createTime"))) is None or ct < bound]
+                     if (ct := _parse_dt(s.get("createTime"))) is None or ct < self.bound]
         rows = []
         for s in found:
             # `customer` (a Workspace domain id) comes back free on the same
@@ -727,7 +729,6 @@ class NocacheReader:
             targets = [space]
         else:
             return []
-        bound = config.world_as_of()
         rows: list[dict] = []
         for sp in targets:
             if sp and not sieve.allows(self.blocked, sp):
@@ -741,12 +742,12 @@ class NocacheReader:
                        "sender_name": (m.get("sender") or {}).get("name"),
                        "sender_type": (m.get("sender") or {}).get("type"),
                        "create_time": _parse_dt(m.get("createTime")), "text": m.get("text")}
-                if bound is not None:
+                if self.bound is not None:
                     # Neither store keeps pre-edit bodies: a message edited after
                     # the bound carries its post-edit text. Mark it rather than
                     # drop it: dropping would misreport it as never sent.
                     lu = _parse_dt(m.get("lastUpdateTime"))
-                    if lu is not None and lu > bound:
+                    if lu is not None and lu > self.bound:
                         row["edited_after_bound"] = True
                 rows.append(row)
         # Chat pages a space oldest-first, so the tail is the recent end: the
@@ -889,8 +890,9 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
         service = build("chat", "v1", credentials=get_credentials(cfg), cache_discovery=False)
         people = people_lookup(cfg)
 
-    bound = config.world_as_of()
-    reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg), people=people)
+    bound = config.world_as_of(cfg)
+    reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg), people=people,
+                           bound=bound)
     sender = None
     if space:
         space = reader.resolve_space(space)

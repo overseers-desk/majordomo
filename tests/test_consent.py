@@ -36,7 +36,6 @@ def world(monkeypatch):
     monkeypatch.setattr(api, "_require_google", lambda: (None, None, lambda *a, **k: "PEOPLE"))
     monkeypatch.setattr(frontdoor, "grant", grant)
     monkeypatch.setattr(frontdoor, "consent_mode", lambda: "browser")
-    monkeypatch.delenv(config.WORLD_AS_OF_ENV, raising=False)
     config.drain_notes()
     return state
 
@@ -119,9 +118,8 @@ def test_ensure_command_scopes_is_quiet_with_no_saved_token_at_all(world, monkey
     api.ensure_command_scopes({}, people=True)
 
 
-def test_ensure_command_scopes_is_quiet_under_world_as_of(world, monkeypatch):
-    monkeypatch.setenv(config.WORLD_AS_OF_ENV, "2026-01-01T00:00:00+00:00")
-    api.ensure_command_scopes({}, people=True)
+def test_ensure_command_scopes_is_quiet_under_world_as_of(world):
+    api.ensure_command_scopes(config.load_config({}, world_as_of="2026-01-01T00:00:00+00:00"), people=True)
 
 
 BOT = {"_identity": "bot", "identity": {"bot": {"service_account_file": "bot-key.json"}}}

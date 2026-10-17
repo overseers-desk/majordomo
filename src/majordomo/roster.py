@@ -22,8 +22,9 @@ Spellings a caller may type that the API does not hold (the frozen ``@name``
 of a task or a mention) are derived from the mirror on the cache path and held
 for the run only; they are never stored.
 
-Under WORLD_AS_OF the files are read, never written. People API names are
-current-state and served like space names (WORLD_AS_OF.design.md §3 rule 1).
+Under WORLD_AS_OF the roster is frozen: the files are read, never written.
+People API names are current-state and served like space names
+(WORLD_AS_OF.design.md §3 rule 1).
 """
 
 from __future__ import annotations
@@ -191,12 +192,14 @@ class Roster:
     token cannot reach it (it raises its own note); it is called at most once,
     and only when an id is missing from the file. Holding the files, the
     lookup and the run's spellings together is what lets one object be the
-    single resolver both backends and every report share.
+    single resolver both backends and every report share. A ``frozen``
+    roster, a run under WORLD_AS_OF, never writes its files.
     """
 
-    def __init__(self, directory: Path | None = None, lookup=None):
+    def __init__(self, directory: Path | None = None, lookup=None, frozen: bool = False):
         self.dir = directory or config.cache_dir()
         self.lookup = lookup
+        self.frozen = frozen
         self._service = None
         self._looked_up = False
         self.people: dict[str, dict] = _load(self.dir / PEOPLE_FILE)
@@ -210,8 +213,8 @@ class Roster:
     # --- the files --------------------------------------------------------
 
     def save(self) -> None:
-        """Rewrite each changed file whole. A no-op under WORLD_AS_OF."""
-        if not self._dirty or config.world_as_of() is not None:
+        """Rewrite each changed file whole. A no-op when frozen."""
+        if not self._dirty or self.frozen:
             return
         if PEOPLE_FILE in self._dirty:
             _write(self.dir / PEOPLE_FILE, self.people)

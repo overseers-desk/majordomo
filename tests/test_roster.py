@@ -2,7 +2,7 @@
 lookup (batched, the sources asked for, profile name over contact label,
 write-back, refetch when stale, soft failure); mention parsing; person and
 space resolution (id, email, whole name, substring, ambiguity, none, a backend
-seed); the XDG cache path; and WORLD_AS_OF read-only."""
+seed); the XDG cache path; and a frozen roster, a WORLD_AS_OF run's, read-only."""
 
 import _shim  # noqa: F401
 
@@ -47,9 +47,9 @@ def _people_service(directory: dict):
     return svc
 
 
-def _roster(tmp_path, directory=None):
+def _roster(tmp_path, directory=None, frozen=False):
     svc = _people_service(directory or {})
-    return roster.Roster(tmp_path, lookup=lambda: svc), svc
+    return roster.Roster(tmp_path, lookup=lambda: svc, frozen=frozen), svc
 
 
 # --- the files ---------------------------------------------------------------
@@ -257,9 +257,8 @@ def test_a_blocked_space_never_matches_by_name(tmp_path):
 
 # --- WORLD_AS_OF --------------------------------------------------------------------
 
-def test_bounded_run_serves_names_and_never_writes(tmp_path, monkeypatch):
-    monkeypatch.setenv(config.WORLD_AS_OF_ENV, "2026-01-01T00:00:00+00:00")
-    r, _ = _roster(tmp_path, {"people/1": _person("1", ("Ada Quill", "PROFILE"))})
+def test_a_frozen_roster_serves_names_and_never_writes(tmp_path):
+    r, _ = _roster(tmp_path, {"people/1": _person("1", ("Ada Quill", "PROFILE"))}, frozen=True)
     assert r.names(["users/1"]) == {"users/1": "Ada Quill"}
     r.remember_space({"name": "spaces/A", "displayName": "Kitchen Ops"})
     r.save()

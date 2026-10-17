@@ -1,5 +1,7 @@
 # WORLD_AS_OF: design for replay-bounded reads
 
+*The staging record, kept as written before the code: §1–§4 state the semantics the code keeps, and §5–§6 are the plan it was built from. Where the bound is read and how a bad one is refused are in DESIGN.md, "Where the configuration comes from".*
+
 WORLD_AS_OF is an office-wide environment variable holding an ISO-8601 timestamp with timezone (e.g. `2026-07-12T17:07:00+10:00`). When set, nothing dated after that instant may leave majordomo, so a benchmark session replayed later sees the world as it stood then. Unset means normal operation at zero cost. Set but unparseable is a hard failure on every code path, including commands that take no dates, because a silently ignored bound produces a contaminated run that looks valid. This document is the implementation design; the commits that follow it carry it out (the config parser through the documentation commit), and it changed no code itself.
 
 ## 1. The data-fetch surfaces

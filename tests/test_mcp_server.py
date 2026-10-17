@@ -140,6 +140,18 @@ def test_mcp_send_sends_as_the_named_identity(tmp_path, monkeypatch):
     assert seen["identity"]["name"] == "bot"
 
 
+def test_the_bound_is_read_per_call_and_a_bad_one_fails_only_that_call(order, monkeypatch):
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
+    spaces = _tool("spaces")
+    monkeypatch.setenv("WORLD_AS_OF", "garbage")
+    with pytest.raises(ToolError, match="WORLD_AS_OF='garbage'"):
+        spaces()
+    monkeypatch.setenv("WORLD_AS_OF", "2026-07-12T17:07:00+10:00")
+    assert spaces()["world_as_of"] == "2026-07-12T17:07:00+10:00"
+    monkeypatch.delenv("WORLD_AS_OF")
+    assert "world_as_of" not in spaces()
+
+
 def test_a_refusal_reaches_the_client_as_its_one_line(tmp_path, monkeypatch):
     # The SDK shows the client a ToolError's text; anything else it reports
     # only as "Error executing tool spaces", a crash.

@@ -1,5 +1,5 @@
-"""The config majordomo runs with, where the user's own files sit, the cache
-directory, and the once-per-run notes.
+"""The config majordomo runs with and the WORLD_AS_OF bound it carries, where
+the user's own files sit, the cache directory, and the once-per-run notes.
 
 A config has config.toml's shape, whether ``load_config`` is handed it as a
 dict or reads it from a TOML file:
@@ -70,9 +70,9 @@ def drain_notes() -> list[str]:
     return out
 
 # The office-wide replay bound (WORLD_AS_OF.design.md): when set, nothing dated
-# after this instant may leave majordomo. Read from the environment on every
-# call. A long-running MCP server honors the environment its launcher set and
-# fails per call, not at handshake.
+# after this instant may leave majordomo. The front doors read it from this
+# environment variable and hand it to load_config; the core reads it only from
+# the config.
 WORLD_AS_OF_ENV = "WORLD_AS_OF"
 
 # The once-per-run honesty flag (design §3 rule 1): metadata the store keeps no
@@ -82,20 +82,17 @@ WORLD_CURRENT_STATE_NOTE = (
 )
 
 
-def world_as_of() -> datetime | None:
-    """The WORLD_AS_OF bound as a naive-UTC datetime, or None when unset.
+def _parse_bound(raw) -> datetime:
+    """A WORLD_AS_OF value, ISO-8601 with a timezone offset, as naive UTC.
 
-    The variable is ISO-8601 with a timezone offset. Set but unparseable (or
-    timezone-naive) is a hard failure on every code path: a silently ignored
-    bound produces a contaminated run that looks valid. The store and
-    ``dates.resolve`` work in naive UTC, so the offset is converted then dropped.
+    Unparseable or timezone-naive is a hard failure on every code path: a
+    silently ignored bound produces a contaminated run that looks valid. The
+    store and ``dates.resolve`` work in naive UTC, so the offset is converted
+    then dropped.
     """
-    raw = os.environ.get(WORLD_AS_OF_ENV)
-    if raw is None:
-        return None
     try:
         parsed = datetime.fromisoformat(raw)
-    except ValueError:
+    except (TypeError, ValueError):
         parsed = None
     if parsed is None or parsed.tzinfo is None:
         raise MajordomoError(
@@ -106,14 +103,21 @@ def world_as_of() -> datetime | None:
     return parsed.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def world_clamp(end: datetime | None) -> datetime | None:
-    """Clamp an end-exclusive upper bound to WORLD_AS_OF; identity when unset.
+def world_as_of(config: dict) -> datetime | None:
+    """The config's WORLD_AS_OF bound as a naive-UTC datetime, or None for an
+    unbounded run. Never read from the environment: a library caller is
+    bounded by what it handed ``load_config``, whatever its host exports."""
+    raw = config.get("_world_as_of")
+    return None if raw is None else _parse_bound(raw)
+
+
+def world_clamp(end: datetime | None, bound: datetime | None) -> datetime | None:
+    """Clamp an end-exclusive upper bound to ``bound``; identity when None.
 
     The one clamp rule (design §2): ``end = min(end or WORLD_AS_OF, WORLD_AS_OF)``
     wherever an end bound exists. Enforcement lives inside each backend (the
     reader seam), so the cache->nocache fallback cannot leak.
     """
-    bound = world_as_of()
     if bound is None:
         return end
     if end is None:
@@ -128,7 +132,8 @@ _TABLES = ("me", "sieve", "api", "identity", "db")
 _SIEVE_LISTS = ("block_spaces", "block_assignees")
 
 
-def load_config(source: str | os.PathLike | dict | None = None, identity: str | None = None) -> dict:
+def load_config(source: str | os.PathLike | dict | None = None, identity: str | None = None,
+                world_as_of: str | datetime | None = None) -> dict:
     """The config, in config.toml's shape. ``source`` is a dict, taken as it
     stands (a copy, so the caller's own is never changed); a path to a TOML
     file; or None for the user's ``config.toml``. A file's ``[api]`` files
@@ -136,11 +141,16 @@ def load_config(source: str | os.PathLike | dict | None = None, identity: str | 
     in its paths is the home directory; a dict names its paths itself.
     ``identity`` names the ``[identity.NAME]`` the command acts as
     (``--as NAME``), checked here so a misspelt name stops the command before
-    anything else runs."""
+    anything else runs. ``world_as_of`` is the WORLD_AS_OF bound, an ISO-8601
+    string with a timezone offset or an aware datetime, kept in the config as
+    text for every read to clamp to; None runs unbounded."""
     # Parse the bound before anything else: a bad WORLD_AS_OF stops every
-    # command, including ones that fetch no dates (design §5, hard failure
-    # everywhere).
-    world_as_of()
+    # command, including ones that fetch no dates or have no config yet
+    # (design §5, hard failure everywhere).
+    if isinstance(world_as_of, datetime):
+        world_as_of = world_as_of.isoformat()
+    if world_as_of is not None:
+        _parse_bound(world_as_of)
     if isinstance(source, dict):
         cfg = copy.deepcopy(source)
         where = "the config passed in"
@@ -163,6 +173,8 @@ def load_config(source: str | os.PathLike | dict | None = None, identity: str | 
                 f" (configured: {known or 'none'})."
             )
         cfg["_identity"] = identity
+    if world_as_of is not None:
+        cfg["_world_as_of"] = world_as_of
     return cfg
 
 

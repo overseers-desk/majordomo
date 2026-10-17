@@ -38,7 +38,9 @@ def connect(settings: dict):
     pymysql, DictCursor = _driver()
     missing = [key for key in _REQUIRED if key not in settings]
     if missing:
-        raise MajordomoError(f"majordomo: no cache database: [db] lacks {', '.join(missing)}")
+        raise MajordomoError(
+            f"majordomo: no cache database: [db] (or the .env beside config.toml) lacks {', '.join(missing)}"
+        )
     return pymysql.connect(
         host=settings["MYSQL_HOST"],
         port=int(settings.get("MYSQL_PORT", "3306")),

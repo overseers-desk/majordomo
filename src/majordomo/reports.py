@@ -4,10 +4,11 @@ mirror the BI project's coord reader. (Assignee blocking lives in the reader
 layer.)
 
 WORLD_AS_OF (WORLD_AS_OF.design.md) is enforced here, inside the backend, not
-at the front door: every dated read already carries an end-exclusive upper
-bound (`create_time < %s` / `created_at < %s`), so the bound is one clamp on
-`end`, and the cache->nocache fallback cannot leak, because each backend
-bounds itself.
+at the front door: each report takes it as ``bound`` (naive UTC, None for an
+unbounded run). Every dated read already carries an end-exclusive upper bound
+(`create_time < %s` / `created_at < %s`), so the bound is one clamp on `end`,
+and the cache->nocache fallback cannot leak, because each backend bounds
+itself.
 """
 
 from __future__ import annotations
@@ -67,13 +68,12 @@ def active_spaces(conn, blocked: list[str], *, horizon_days: int = FRESH_HORIZON
     return [(r["space_name"], r["wm"]) for r in rows]
 
 
-def _floor_check(conn, *, space: str | None = None) -> None:
+def _floor_check(conn, *, space: str | None = None, bound: datetime | None = None) -> None:
     """Warn when WORLD_AS_OF predates the oldest cached message in the queried
     scope. The mirror keeps a twelve-month floor, so an older bound yields a
     silently thin answer: contamination by omission, given the same visibility
-    as leakage (WORLD_AS_OF.design.md §3 rule 4). No-op when unset.
+    as leakage (WORLD_AS_OF.design.md §3 rule 4). No-op when unbounded.
     """
-    bound = config.world_as_of()
     if bound is None:
         return
     where, params = ("WHERE space_name = %s", [space]) if space else ("", [])
@@ -87,7 +87,8 @@ def _floor_check(conn, *, space: str | None = None) -> None:
         )
 
 
-def spaces(conn, blocked: list[str], *, minimal_messages: int = 1) -> list[dict]:
+def spaces(conn, blocked: list[str], *, minimal_messages: int = 1,
+           bound: datetime | None = None) -> list[dict]:
     """Spaces with at least `minimal_messages` mirrored messages (default 1, so
     Google's auto-created empty meeting groups drop out; 0 shows them).
 
@@ -96,8 +97,7 @@ def spaces(conn, blocked: list[str], *, minimal_messages: int = 1) -> list[dict]
     postdates the cutoff, the proxy for "did not yet visibly exist". Space
     metadata (display name, type) is current-state and flagged, not rewound.
     """
-    bound = config.world_as_of()
-    _floor_check(conn)
+    _floor_check(conn, bound=bound)
     msg_bound = " AND m.create_time < %s" if bound else ""
     task_bound = " AND t.created_at < %s" if bound else ""
     clause, params = sieve.clause(blocked, "s.name")
@@ -117,13 +117,14 @@ def spaces(conn, blocked: list[str], *, minimal_messages: int = 1) -> list[dict]
     return sieve.filter_rows(blocked, rows)
 
 
-def people(conn, blocked: list[str], *, start: datetime | None = None, end: datetime | None = None) -> list[dict]:
+def people(conn, blocked: list[str], *, start: datetime | None = None, end: datetime | None = None,
+           bound: datetime | None = None) -> list[dict]:
     """All participants (message senders union task assignees) over the window,
     with message and task counts. ``display`` is the prose @name on the task
     side (the mirror carries no user display names); the reader names each
     person through roster.py."""
-    end = config.world_clamp(end)
-    _floor_check(conn)
+    end = config.world_clamp(end, bound)
+    _floor_check(conn, bound=bound)
     clause, sp = sieve.clause(blocked, "space_name")
     wm, pm = [clause], list(sp)
     wt, pt = [clause], list(sp)
@@ -167,9 +168,10 @@ def tasks(
     start: datetime | None = None,
     end: datetime | None = None,
     limit: int = TASK_LIMIT,
+    bound: datetime | None = None,
 ) -> list[dict]:
-    end = config.world_clamp(end)
-    _floor_check(conn, space=space)
+    end = config.world_clamp(end, bound)
+    _floor_check(conn, space=space, bound=bound)
     where: list[str] = []
     params: list = []
     join = ""
@@ -220,6 +222,7 @@ def messages(
     start: datetime | None = None,
     end: datetime | None = None,
     limit: int = MESSAGE_LIMIT,
+    bound: datetime | None = None,
 ) -> list[dict]:
     """Messages in a space or a thread, oldest-first, optionally only those a
     given ``users/<id>`` sent."""
@@ -227,8 +230,8 @@ def messages(
         raise MajordomoError("majordomo: messages needs --space, --thread, or --person.")
     if space and not sieve.allows(blocked, space):
         return []
-    end = config.world_clamp(end)
-    _floor_check(conn, space=space)
+    end = config.world_clamp(end, bound)
+    _floor_check(conn, space=space, bound=bound)
     where: list[str] = []
     params: list = []
     if thread:
@@ -273,13 +276,12 @@ def messages(
 
 # --- the prose spellings the mirror holds: roster.py's name seeds ----------
 
-def mention_rows(conn, blocked: list[str]) -> list[dict]:
+def mention_rows(conn, blocked: list[str], *, bound: datetime | None = None) -> list[dict]:
     """Every message carrying a user mention: text, annotations and time, for
     the reader to turn into (id, spelling, date) spellings. One pass over the
     mention-bearing rows, which the sieve bounds like every read, and
     WORLD_AS_OF too, so a replay never learns a later spelling."""
     clause, params = sieve.clause(blocked, "space_name")
-    bound = config.world_as_of()
     return db.query(
         conn,
         f"""
@@ -292,11 +294,10 @@ def mention_rows(conn, blocked: list[str]) -> list[dict]:
     )
 
 
-def task_names(conn, blocked: list[str]) -> list[dict]:
+def task_names(conn, blocked: list[str], *, bound: datetime | None = None) -> list[dict]:
     """Each (assignee id, prose @name) a task creation froze, with the last
     time it was used, bounded by WORLD_AS_OF like mention_rows."""
     clause, params = sieve.clause(blocked, "space_name")
-    bound = config.world_as_of()
     return db.query(
         conn,
         f"""

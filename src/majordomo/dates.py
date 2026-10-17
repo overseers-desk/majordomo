@@ -5,10 +5,11 @@ Windows mirror the BI project's coord reader: ``7d``, ``30d``, ``month``
 overrides the window. Bounds are naive UTC datetimes (or ``None`` for an open
 end), matching ``coord_tasks.created_at`` / ``googlechat_messages.create_time``.
 
-Under WORLD_AS_OF (WORLD_AS_OF.design.md) the bound is the clock: relative
-windows anchor to it, not to now (``7d`` is the seven days before the bound,
-``month`` the calendar month before the one containing it), and ``end`` is
-clamped down to it (a later user-supplied ``--until`` gets a note).
+Under the WORLD_AS_OF bound ``cfg`` carries (WORLD_AS_OF.design.md) the bound
+is the clock: relative windows anchor to it, not to now (``7d`` is the seven
+days before the bound, ``month`` the calendar month before the one containing
+it), and ``end`` is clamped down to it (a later user-supplied ``--until`` gets
+a note). Without ``cfg`` the window is unbounded.
 Without the frozen now, a replayed ``--window 7d`` resolves against the replay
 date and silently reports nothing.
 """
@@ -45,8 +46,10 @@ def resolve(
     window: str = "month",
     since: str | None = None,
     until: str | None = None,
+    *,
+    cfg: dict | None = None,
 ) -> tuple[datetime | None, datetime | None]:
-    bound = config.world_as_of()
+    bound = config.world_as_of(cfg) if cfg else None
     if since or until:
         start, end = _parse(since), _parse(until)
         if bound is None:
@@ -58,7 +61,7 @@ def resolve(
                 f"majordomo: --until {until!r} is after WORLD_AS_OF "
                 f"({bound.isoformat()} UTC); clamped to the bound."
             )
-        return (start, config.world_clamp(end))
+        return (start, config.world_clamp(end, bound))
     now = bound if bound is not None else _now_utc()
     if window == "all":
         start, end = None, None
@@ -74,4 +77,4 @@ def resolve(
     else:
         raise MajordomoError(f"majordomo: unknown window {window!r}; use one of {', '.join(WINDOWS)}")
     # Identity when WORLD_AS_OF is unset; under a bound an open end closes at it.
-    return (start, config.world_clamp(end))
+    return (start, config.world_clamp(end, bound))
