@@ -56,10 +56,10 @@ def _open_quietly(url, new=0, autoraise=True):
 
 
 def grant(cfg: dict, *, open_browser: bool = True, timeout: int | None = None) -> str:
-    """Run Google's consent flow for every scope majordomo uses
-    (api.LOGIN_SCOPES), write the token, return its path. Everything the flow
-    prints goes to stderr. With ``timeout`` set, an unanswered consent fails
-    after that many seconds rather than waiting."""
+    """Run Google's consent flow for every scope majordomo uses, write the
+    token, return its path. Everything the flow prints goes to stderr. With
+    ``timeout`` set, an unanswered consent fails after that many seconds
+    rather than waiting."""
     import contextlib
     import types
     import webbrowser
@@ -95,7 +95,7 @@ def grant(cfg: dict, *, open_browser: bool = True, timeout: int | None = None) -
     except Exception as exc:
         # Swallow the raw exception (and its locals, and its message/args):
         # a failed OAuth exchange carries the client secret and authorization
-        # code in them. Only the safe reason _consent_reason picks out survives.
+        # code in them.
         raise MajordomoError(
             f"majordomo: login failed or was not completed ({_consent_reason(exc)}). "
             f"Check {client_file} and the Cloud project, then retry `majordomo login`."
@@ -136,11 +136,10 @@ def login(cfg: dict) -> str:
 
 def up_front(cfg: dict, **shape) -> None:
     """Before a command reads anything, check that the saved login holds every
-    scope its shape needs (api.ensure_command_scopes), and ask Google once for
-    whatever is missing when someone can answer. Not asked, declined, failed
-    or unanswered, the command carries on: each feature short of its scope
-    falls back or refuses for itself, and a failed attempt leaves its safe
-    reason in the notes. A command run as an identity is never asked, the
+    scope its shape needs, and ask Google once for whatever is missing when
+    someone can answer. Not asked, declined, failed or unanswered, the command
+    carries on: each feature short of its scope falls back or refuses for
+    itself, and a failed attempt leaves its safe reason in the notes. A command run as an identity is never asked, the
     app having no consent flow."""
     try:
         api.ensure_command_scopes(cfg, **shape)

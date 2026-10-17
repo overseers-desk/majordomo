@@ -78,9 +78,8 @@ def test_send_short_of_its_scope_raises_naming_it(world, monkeypatch):
 
 # --- scopes_for / ensure_command_scopes: the up-front, per-command check -----
 #
-# A command works out its own shape (does it read the API directly, resolve
-# --owner, send, or show people) and learns everything that shape lacks in one
-# go, before any Chat or People call.
+# A command works out its own shape and learns everything that shape lacks in
+# one go, before any Chat or People call.
 
 def test_scopes_for_maps_a_shape_to_its_scopes():
     assert api.scopes_for() == []

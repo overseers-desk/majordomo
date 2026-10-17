@@ -1,18 +1,17 @@
-"""Direct Chat API access: OAuth login, the no-cache read path, send, and
-attachments. Reads the Chat API directly and decodes tasks itself (decoder.py),
-so majordomo works without the BI backend. Needs the `api` extra
+"""Direct Chat API access: the saved OAuth token, the no-cache read path,
+send, and attachments. Reads the Chat API directly and decodes tasks itself
+(decoder.py), so majordomo works without the BI backend. Needs the `api` extra
 (google-api-python-client, google-auth). Read records are tagged
 ``source = "nocache"``; the sieve (spaces + assignees) is applied here too.
 The token is minted by Google's consent flow, which a front door runs
-(frontdoor.py). ``ensure_command_scopes`` names, from a command's shape
-(reading the API directly, ``--owner``, ``send``, showing people), every scope
-the saved token lacks, by raising ``ScopeError``; ``ensure_scopes`` is the same
-check made by a feature that reaches for a scope itself (``people_service``,
-``own_tasks``, ``send``), which then falls back or refuses. People are named
-through roster.py, which reads the People API over this token. A command run
-as an ``[identity.NAME]`` (``--as NAME``) holds a Chat app's service-account
-key instead of this token, and only sends: the app has no consent flow, no
-People API, and no file upload.
+(frontdoor.py). ``ensure_command_scopes`` names, from a command's shape, every
+scope the saved token lacks, by raising ``ScopeError``; ``ensure_scopes`` is
+the same check made by a feature that reaches for a scope itself, which then
+falls back or refuses. People are named through roster.py, which reads the
+People API over this token. A command run as an ``[identity.NAME]``
+(``--as NAME``) holds a Chat app's service-account key instead of this token,
+and only sends: the app has no consent flow, no People API, and no file
+upload.
 
 A no-cache read is windowed and slow under Google's read quota, which
 is why the default path is the BI cache.
@@ -124,8 +123,7 @@ def _short_of(scopes: list[str], purpose: str) -> ScopeError:
 def ensure_scopes(creds, needed: list[str], purpose: str):
     """``creds`` if it holds ``needed``; else ScopeError carrying the missing
     scopes and ``purpose``. Whoever calls this decides what the refusal
-    means: a soft fallback for a display name, a refusal for a send. Asking
-    Google for the scopes is a front door's business (frontdoor.py)."""
+    means: a soft fallback for a display name, a refusal for a send."""
     missing = _missing(creds, needed)
     if missing:
         raise _short_of(missing, purpose)
