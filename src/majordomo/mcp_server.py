@@ -36,9 +36,9 @@ def _jsonable(rows: list[dict]) -> list[dict]:
 def _config(identity: Optional[str] = None) -> dict:
     # Every tool call starts here: a note left from an earlier call that
     # returned no envelope (send) belongs to that call, not this one. The
-    # WORLD_AS_OF bound is read and parsed here too, per call, so the server
-    # honors the environment its launcher set, and a bad bound fails the call
-    # with its line rather than killing the server at handshake.
+    # WORLD_AS_OF bound is read and parsed here too, per call, so a bad bound
+    # fails only that call, with its line, rather than killing the server at
+    # handshake.
     config.drain_notes()
     return frontdoor.load(identity)
 
@@ -84,7 +84,8 @@ def create_server() -> MCPServer:
         return fn
 
     @tool
-    def spaces(minimal_messages: int = 1, owner: bool = False, source: Optional[str] = None) -> dict:
+    def spaces(minimal_messages: int = 1, owner: bool = False, source: Optional[str] = None,
+               identity: Optional[str] = None) -> dict:
         """List spaces with message and task counts, and whether each belongs to a
         Google Workspace domain or a consumer/personal account (domain_owned,
         from the space's `customer` field; blank on a cache-only read, the
@@ -94,14 +95,16 @@ def create_server() -> MCPServer:
         per space regardless of source, needing the memberships permission (a
         login without it opens Google's consent page up front, before any
         space is read).
-        source: cache | live | nocache.
+        source: cache | live | nocache. identity names an [identity.NAME] in
+        config.toml, a Chat app: a read over the Chat API then runs as that
+        app and lists only the spaces it is a member of; owner refuses under
+        it.
         """
+        cfg = _config(identity)
         if owner:
-            cfg = _config()
             frontdoor.up_front(cfg, api_read=True, owner=True, people=True)
             rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
             return _envelope("nocache", rows, cfg)
-        cfg = _config()
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"))
         _cfg, reader = _reader(source, cfg=cfg)
         return _envelope(reader.source, reader.spaces(minimal_messages=minimal_messages), cfg)
@@ -133,6 +136,7 @@ def create_server() -> MCPServer:
         until: Optional[str] = None,
         limit: int = readers.reports.TASK_LIMIT,
         source: Optional[str] = None,
+        identity: Optional[str] = None,
     ) -> dict:
         """Report tasks by assignee/space/date. to_me/by_me need [me].user_id; to_me
         rows also carry notes and due from the signed-in person's own Google Tasks list.
@@ -141,9 +145,13 @@ def create_server() -> MCPServer:
         People API names and, on the cache path, the spellings seen in tasks
         and @-mentions, whole then substring, and must match one person). space is spaces/<id> or its display name.
         window is one of 7d, 30d, month, year, all; since/until are ISO dates.
-        source: cache | live | nocache.
+        source: cache | live | nocache. identity names an [identity.NAME] in
+        config.toml, a Chat app: a read over the Chat API then runs as that
+        app, seeing only the public messages of the spaces it is a member of;
+        people show as users/<id> unless already named, and to_me rows carry
+        no notes or due dates.
         """
-        cfg = _config()
+        cfg = _config(identity)
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True, own=to_me)
         cfg, reader = _reader(source, cfg=cfg)
         me = config.require_user_id(cfg) if (to_me or by_me) else None
@@ -169,14 +177,19 @@ def create_server() -> MCPServer:
         until: Optional[str] = None,
         limit: int = readers.reports.MESSAGE_LIMIT,
         source: Optional[str] = None,
+        identity: Optional[str] = None,
     ) -> dict:
         """Report messages in a space, a thread, or with a person, over a date
         range. person is users/<id>, an email, or a name: alone it reads your
         direct messages with them, both sides; with space it keeps only their
         messages there. space is spaces/<id> or its display name. Rows are
-        oldest-first and a capped answer keeps the newest.
+        oldest-first and a capped answer keeps the newest. identity names an
+        [identity.NAME] in config.toml, a Chat app: a read over the Chat API
+        then runs as that app, seeing only the public messages of the spaces
+        it is a member of, person alone reading the app's DM with them;
+        people show as users/<id> unless already named.
         """
-        cfg = _config()
+        cfg = _config(identity)
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True)
         _cfg, reader = _reader(source, cfg=cfg)
         start, end = dates.resolve(window, since, until, cfg=cfg)

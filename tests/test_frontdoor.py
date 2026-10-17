@@ -15,7 +15,7 @@ import types
 import pytest
 
 from majordomo import api, config, frontdoor, roster
-from majordomo.errors import MajordomoError, ScopeError
+from majordomo.errors import MajordomoError
 
 CHAT_ONLY = ["https://www.googleapis.com/auth/chat.spaces.readonly"]
 BOT = {"_identity": "bot", "identity": {"bot": {"service_account_file": "bot-key.json"}}}
@@ -87,13 +87,12 @@ def test_world_as_of_never_grants(world):
     assert world["grants"] == []
 
 
-def test_an_identity_is_never_asked(world, monkeypatch):
-    def short(cfg, **shape):
-        raise ScopeError("majordomo: short.", scopes=[api.SEND_SCOPE], purpose="sending messages")
-
-    monkeypatch.setattr(api, "ensure_command_scopes", short)
-    frontdoor.up_front(BOT, send=True)
+def test_an_identity_is_never_asked(world):
+    for shape in ({"send": True}, {"api_read": True, "people": True, "own": True},
+                  {"api_read": True, "owner": True, "people": True}):
+        frontdoor.up_front(BOT, **shape)
     assert world["grants"] == []
+    assert config.drain_notes() == []
 
 
 def test_the_consent_line_names_the_purpose_on_stderr(world, capsys):
