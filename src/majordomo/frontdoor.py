@@ -156,15 +156,16 @@ def up_front(cfg: dict, **shape) -> None:
     scope its shape needs, and ask Google once for whatever is missing when
     someone can answer. Not asked, declined, failed or unanswered, the command
     carries on: each feature short of its scope falls back or refuses for
-    itself, and a failed attempt leaves its safe reason in the notes. A command run as an identity is never asked, the
-    app having no consent flow."""
+    itself, and a failed attempt leaves its safe reason in the notes. A
+    command run as an identity is never asked: ``ensure_command_scopes`` is
+    quiet for it, the app having no consent flow."""
     try:
         api.ensure_command_scopes(cfg, **shape)
         return
     except ScopeError as exc:
         purpose = exc.purpose
     mode = consent_mode()
-    if mode is None or config.identity(cfg):
+    if mode is None:
         return
     print(
         "majordomo: this version of majordomo needs more Google permissions than "

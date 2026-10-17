@@ -4,8 +4,10 @@ mirror the BI project's coord reader. (Assignee blocking lives in the reader
 layer.)
 
 WORLD_AS_OF (WORLD_AS_OF.design.md) is enforced here, inside the backend, not
-at the front door: each report takes it as ``bound`` (naive UTC, None for an
-unbounded run). Every dated read already carries an end-exclusive upper bound
+at the front door: the reports that return dated rows or counts (``spaces``,
+``people``, ``tasks``, ``messages``, and the name seeds ``mention_rows`` and
+``task_names``) take it as ``bound`` (naive UTC, None for an unbounded run).
+Every dated read already carries an end-exclusive upper bound
 (`create_time < %s` / `created_at < %s`), so the bound is one clamp on `end`,
 and the cache->nocache fallback cannot leak, because each backend bounds
 itself.

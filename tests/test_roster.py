@@ -2,7 +2,9 @@
 lookup (batched, the sources asked for, profile name over contact label,
 write-back, refetch when stale, soft failure); mention parsing; person and
 space resolution (id, email, whole name, substring, ambiguity, none, a backend
-seed); the XDG cache path; and a frozen roster, a WORLD_AS_OF run's, read-only."""
+seed); the XDG cache path the front doors hand in, and a roster handed no
+directory, which keeps no file; and a WORLD_AS_OF run's roster, which reads
+the files and writes nothing back."""
 
 import _shim  # noqa: F401
 
@@ -47,9 +49,9 @@ def _people_service(directory: dict):
     return svc
 
 
-def _roster(tmp_path, directory=None, frozen=False):
+def _roster(tmp_path, directory=None, write_back=True):
     svc = _people_service(directory or {})
-    return roster.Roster(tmp_path, lookup=lambda: svc, frozen=frozen), svc
+    return roster.Roster(tmp_path, lookup=lambda: svc, write_back=write_back), svc
 
 
 # --- the files ---------------------------------------------------------------
@@ -82,11 +84,48 @@ def test_nothing_learnt_writes_nothing(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_default_path_follows_xdg_cache(monkeypatch, tmp_path):
+def test_the_front_doors_cache_dir_follows_xdg_cache(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    assert roster.Roster().dir == tmp_path / "majordomo"
+    assert config.cache_dir() == tmp_path / "majordomo"
     monkeypatch.delenv("XDG_CACHE_HOME")
-    assert roster.Roster().dir == Path.home() / ".cache" / "majordomo"
+    assert config.cache_dir() == Path.home() / ".cache" / "majordomo"
+
+
+def test_the_cli_hands_every_read_and_send_the_xdg_name_cache(monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+
+    from majordomo import api, readers
+    from majordomo.cli import app
+
+    (tmp_path / "config.toml").write_text("[me]\nuser_id = 'users/1'\n")
+    monkeypatch.setattr(config, "config_dir", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "no-claude-here"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    monkeypatch.delenv("WORLD_AS_OF", raising=False)
+    monkeypatch.setattr(api, "ensure_command_scopes", lambda cfg, **shape: None)
+    dirs = []
+    reader = types.SimpleNamespace(source="cache", tasks=lambda **kw: [])
+    monkeypatch.setattr(readers, "make_reader",
+                        lambda cfg, source, cache_dir=None: dirs.append(cache_dir) or reader)
+    for name in ("owned_spaces", "attachments", "send"):
+        monkeypatch.setattr(api, name, lambda cfg, blocked, cache_dir=None, **kw: dirs.append(cache_dir) or [])
+    for args in (["tasks"], ["spaces", "--owner"], ["attachments", "--space", "spaces/A"],
+                 ["send", "--space", "spaces/A", "--json", "hi"]):
+        result = CliRunner().invoke(app, args)
+        assert result.exit_code == 0, result.output
+    assert dirs == [tmp_path / "xdg" / "majordomo"] * 4
+
+
+def test_a_roster_without_a_directory_keeps_no_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(roster, "_load", lambda path: pytest.fail(f"read {path}"))
+    monkeypatch.setattr(roster, "_write", lambda path, data: pytest.fail(f"wrote {path}"))
+    svc = _people_service({"people/1": _person("1", ("Ada Quill", "PROFILE"))})
+    r = roster.Roster(lookup=lambda: svc)
+    assert r.dir is None
+    assert r.names(["users/1"]) == {"users/1": "Ada Quill"}
+    r.remember_space({"name": "spaces/A", "displayName": "Kitchen Ops"})
+    r.save()
+    assert r.resolve_space("kitchen") == "spaces/A"
 
 
 # --- the People lookup -------------------------------------------------------
@@ -257,12 +296,16 @@ def test_a_blocked_space_never_matches_by_name(tmp_path):
 
 # --- WORLD_AS_OF --------------------------------------------------------------------
 
-def test_a_frozen_roster_serves_names_and_never_writes(tmp_path):
-    r, _ = _roster(tmp_path, {"people/1": _person("1", ("Ada Quill", "PROFILE"))}, frozen=True)
-    assert r.names(["users/1"]) == {"users/1": "Ada Quill"}
+def test_a_bounded_roster_reads_the_files_and_writes_nothing_back(tmp_path):
+    stored, _ = _roster(tmp_path, {"people/2": _person("2", ("Bo Vance", "PROFILE"))})
+    stored.names(["users/2"])
+    before = (tmp_path / "people.json").read_text()
+    r, _ = _roster(tmp_path, {"people/1": _person("1", ("Ada Quill", "PROFILE"))}, write_back=False)
+    assert r.names(["users/1", "users/2"]) == {"users/1": "Ada Quill", "users/2": "Bo Vance"}
     r.remember_space({"name": "spaces/A", "displayName": "Kitchen Ops"})
     r.save()
-    assert list(tmp_path.iterdir()) == []
+    assert sorted(x.name for x in tmp_path.iterdir()) == ["people.json"]
+    assert (tmp_path / "people.json").read_text() == before
 
 
 if __name__ == "__main__":

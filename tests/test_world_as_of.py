@@ -227,19 +227,30 @@ def test_people_both_aggregation_arms_are_bounded(monkeypatch):
 
 def test_the_cache_reader_takes_its_bound_from_the_config(monkeypatch):
     calls = _capture_queries(monkeypatch)
-    reader = readers.CacheReader(None, [], cfg=BOUNDED)
-    assert reader.roster.frozen
-    reader.tasks(end=datetime(2027, 1, 1))
+    readers.CacheReader(None, [], cfg=BOUNDED).tasks(end=datetime(2027, 1, 1))
     _sql, params = _sql_with(calls, "FROM coord_tasks t")
     assert BOUND_UTC in params and datetime(2027, 1, 1) not in params
-    assert not readers.CacheReader(None, [], cfg={}).roster.frozen
 
 
 def test_a_nocache_reader_from_a_config_carries_its_bound(monkeypatch):
     monkeypatch.setattr(api, "_require_google", lambda: (None, None, lambda *a, **k: MagicMock()))
-    reader = api.NocacheReader.from_config(BOUNDED, [], creds=object())
-    assert reader.bound == BOUND_UTC and reader.roster.frozen
+    assert api.NocacheReader.from_config(BOUNDED, [], creds=object()).bound == BOUND_UTC
     assert api.NocacheReader.from_config({}, [], creds=object()).bound is None
+
+
+def test_a_bounded_read_uses_the_name_cache_and_writes_nothing_back(monkeypatch, tmp_path):
+    # Names are current-state (design §3 rule 1): served from the name cache,
+    # never written back from a replay.
+    monkeypatch.setattr(db, "connect", lambda settings: None)
+    monkeypatch.setattr(api, "_require_google", lambda: (None, None, lambda *a, **k: MagicMock()))
+
+    def write_back(cfg, source):
+        reader = readers.make_reader(cfg, source, credentials=object(), cache_dir=tmp_path)
+        return getattr(reader, "cache", reader).roster.write_back
+
+    assert [write_back(BOUNDED, s) for s in ("cache", "live", "nocache")] == [False] * 3
+    assert [write_back({}, s) for s in ("cache", "live", "nocache")] == [True] * 3
+    assert not api.NocacheReader(service=MagicMock(), bound=BOUND_UTC, cache_dir=tmp_path).roster.write_back
 
 
 # --- FreshReader (--live): degrade to cache when the mirror reaches the bound
@@ -381,7 +392,7 @@ def test_the_cli_bounds_every_report_by_the_environment_s_bound(args, monkeypatc
         return []
 
     reader = types.SimpleNamespace(source="cache", spaces=report, people=report, tasks=report, messages=report)
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: reader)
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source, **kw: reader)
     monkeypatch.setattr(api, "owned_spaces", lambda cfg, blocked, **kw: [])
     monkeypatch.setattr(api, "attachments", lambda cfg, blocked, **kw: report(**kw))
     result = CliRunner().invoke(app, args + ["--json"])

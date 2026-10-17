@@ -217,8 +217,9 @@ def people_lookup(cfg: dict | None, credentials=None):
 
 
 OWN_NOTE = (
-    "majordomo: your saved login cannot read your Google Tasks list, so the tasks "
-    "assigned to you show without notes or due dates; run `majordomo login`."
+    "majordomo: the Google login majordomo reads with cannot read your Google Tasks "
+    "list, so the tasks assigned to you show without notes or due dates; on your "
+    "saved login, `majordomo login` grants it."
 )
 
 
@@ -233,19 +234,21 @@ def _pages(call, key: str, **kw):
             return
 
 
-def own_tasks(cfg: dict, service=None) -> dict | None:
+def own_tasks(cfg: dict, service=None, credentials=None) -> dict | None:
     """The signed-in person's tasks assigned from Chat spaces, from every one
     of their Google Tasks lists, indexed for readers.fill_own: ``by_thread``
     maps (space, thread) to the task made from that thread's message,
     ``by_space`` maps a space to (updated time, task) pairs for the tasks
-    created fresh there. None, with a one-line note, when there is no usable
-    token or it cannot read the lists; None too under WORLD_AS_OF, the lists
-    being current-state. ``service`` is injected by tests."""
+    created fresh there. Read over ``credentials`` when handed in, else the
+    saved login. None, with a one-line note, when there is no usable token or
+    it cannot read the lists; None too under WORLD_AS_OF, the lists being
+    current-state. ``service`` is injected by tests."""
     if config.world_as_of(cfg) is not None:
         return None
     if service is None:
         try:
-            creds = ensure_scopes(get_credentials(cfg), [TASKS_SCOPE], OWN_PURPOSE)
+            creds = ensure_scopes(credentials if credentials is not None else get_credentials(cfg),
+                                  [TASKS_SCOPE], OWN_PURPOSE)
         except MajordomoError:
             config.note_once(OWN_NOTE)
             return None
@@ -267,13 +270,13 @@ def own_tasks(cfg: dict, service=None) -> dict | None:
     return index
 
 
-def own_tasks_lookup(cfg: dict | None):
+def own_tasks_lookup(cfg: dict | None, credentials=None):
     """A memoised own_tasks for a config, so one command lists the API once
     whatever readers it builds; None without a config, and None as a Chat
     app, which holds no Google Tasks list."""
     if cfg is None or config.identity(cfg):
         return None
-    return functools.cache(lambda: own_tasks(cfg))
+    return functools.cache(lambda: own_tasks(cfg, credentials=credentials))
 
 
 def get_credentials(cfg: dict):
@@ -283,7 +286,8 @@ def get_credentials(cfg: dict):
     token_file = config.api_token_file(cfg)
     if not token_file:
         raise MajordomoError(
-            "majordomo: no OAuth token configured; set [api].token_file or pass credentials=."
+            "majordomo: no OAuth token configured; set [api].token_file, or pass "
+            "credentials= to make_reader, tasks or messages."
         )
     if not os.path.exists(token_file):
         raise MajordomoError(
@@ -411,7 +415,7 @@ def _upload_attachment(service, space: str, path: str) -> dict:
 def send(cfg: dict, blocked: list[str], *, space: str | None = None,
          thread: str | None = None, to: str | None = None,
          text: str | None = None, attachments: list[str] | None = None,
-         service=None, people=None) -> dict:
+         service=None, people=None, cache_dir=None) -> dict:
     """Create a message in a space, in a thread, or in a person's 1:1 DM;
     returns the created message as the API gives it. Carries text, one or more
     file attachments, or both (at least one is required). The sieve refuses a
@@ -421,7 +425,9 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
     ``[identity.NAME]``, it sends as that Chat app: into spaces the app is a
     member of, ``to`` reaching the app's own DM, and with no attachments. The
     key is asked for ``chat.bot`` alone, which needs no administrator's
-    approval.
+    approval. ``cache_dir`` holds the name cache a ``to`` or ``space`` given
+    by name resolves through (roster.py); without one, names resolve from
+    what this call fetches.
     """
     if config.world_as_of(cfg) is not None:
         raise MajordomoError(
@@ -456,7 +462,8 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
             people = people_lookup(cfg)
         _, _, build = _require_google()
         service = build("chat", "v1", credentials=creds, cache_discovery=False)
-    reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg), people=people)
+    reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg), people=people,
+                           cache_dir=cache_dir)
     if to:
         space = reader.dm_space_for(to)
     elif space:
@@ -506,7 +513,7 @@ class NocacheReader:
 
     def __init__(self, creds=None, blocked=None, blocked_assignees=None, service=None,
                  ros: roster.Roster | None = None, me: str | None = None, people=None, own=None,
-                 bound: datetime | None = None, identity: dict | None = None):
+                 bound: datetime | None = None, identity: dict | None = None, cache_dir=None):
         self.blocked = blocked or []
         self.bound = bound  # WORLD_AS_OF, naive UTC; None reads unbounded
         self.identity = identity  # config.identity: the Chat app read as; None for a person's login
@@ -518,18 +525,19 @@ class NocacheReader:
             _, _, build = _require_google()
             self.chat = build("chat", "v1", credentials=creds, cache_discovery=False)
         self._spaces: list[dict] | None = None
-        # ``people`` is the People lookup for a roster built here; a shared
+        # ``people`` and ``cache_dir`` make the roster built here; a shared
         # roster brings its own.
-        self.roster = ros or roster.Roster(lookup=people, frozen=bound is not None)
+        self.roster = ros or roster.Roster(cache_dir, lookup=people, write_back=bound is None)
         # The account's own id, so the other party of a DM can be told apart.
         self.me = me
 
     @classmethod
     def from_config(cls, cfg: dict, blocked: list[str], blocked_assignees: list[str] | None = None,
-                    ros: roster.Roster | None = None, creds=None, own=None) -> "NocacheReader":
+                    ros: roster.Roster | None = None, creds=None, own=None, cache_dir=None) -> "NocacheReader":
         return cls(chat_credentials(cfg, creds), blocked, blocked_assignees, ros=ros,
-                   me=config.me_user_id(cfg), people=people_lookup(cfg, creds), own=own or own_tasks_lookup(cfg),
-                   bound=config.world_as_of(cfg), identity=config.identity(cfg))
+                   me=config.me_user_id(cfg), people=people_lookup(cfg, creds),
+                   own=own or own_tasks_lookup(cfg, creds), bound=config.world_as_of(cfg),
+                   identity=config.identity(cfg), cache_dir=cache_dir)
 
     # --- people and spaces by name ---------------------------------------
 
@@ -610,9 +618,9 @@ class NocacheReader:
                     raise NotFound(f"majordomo: {space_name}: not found.") from None
                 if status == 403 and self.identity:
                     raise ScopeError(
-                        f"majordomo: Google refused the Chat app {self.identity['name']} a read of {space_name}; an "
-                        f"app reads messages with {APP_MESSAGES_SCOPE}, which a Google Workspace "
-                        "administrator approves for the app once.",
+                        f"majordomo: Google refused the Chat app {self.identity['name']} a read of {space_name}: "
+                        f"the app is not a member of that space, or it lacks {APP_MESSAGES_SCOPE}, "
+                        "which a Google Workspace administrator approves for the app once.",
                         scopes=[APP_MESSAGES_SCOPE], purpose="reading messages as a Chat app",
                     ) from None
                 raise
@@ -715,7 +723,7 @@ class NocacheReader:
         out = sieve.filter_rows(self.blocked, out)
         out = sieve.filter_assignees(self.blocked_assignees, out)
         rows = readers.name_assignees(self.roster, self.blocked_assignees, out[:limit])
-        return readers.fill_own(rows, self.own if to_user else None)
+        return readers.fill_own(rows, self.own if to_user and to_user == self.me else None)
 
     def people(self, *, person=None, start=None, end=None) -> list[dict]:
         readers.person_only(self.identity, "the people report")
@@ -788,18 +796,20 @@ class NocacheReader:
         return readers.name_senders(self.roster, sieve.filter_rows(self.blocked, rows)[-limit:])
 
 
-def owned_spaces(cfg: dict, blocked: list[str], *, minimal_messages: int = 1, owner: bool = False) -> list[dict]:
+def owned_spaces(cfg: dict, blocked: list[str], *, minimal_messages: int = 1, owner: bool = False,
+                 cache_dir=None) -> list[dict]:
     """Spaces with their domain/consumer status and, with ``owner=True``, who
     owns each one. Always reads the direct API regardless of the caller's
     --cache/--live/--nocache choice, the same as `attachments`: both front
     doors call this one function rather than building a `NocacheReader`
     themselves, so the "always direct" exception has one home. A token short
     of the memberships scope is refused by the first member read, as a
-    ScopeError.
+    ScopeError. Owners are named through the name cache in ``cache_dir``.
     """
     if owner:
         readers.person_only(config.identity(cfg), "finding space owners")
-    return NocacheReader.from_config(cfg, blocked).spaces(minimal_messages=minimal_messages, owner=owner)
+    reader = NocacheReader.from_config(cfg, blocked, cache_dir=cache_dir)
+    return reader.spaces(minimal_messages=minimal_messages, owner=owner)
 
 
 # --- attachments ---------------------------------------------------------
@@ -899,7 +909,7 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
                 person: str | None = None,
                 start: datetime | None = None, end: datetime | None = None,
                 limit: int = 500, download_to: str | None = None,
-                service=None, people=None) -> list[dict]:
+                service=None, people=None, cache_dir=None) -> list[dict]:
     """The files posted in a space, a thread, on one message, or by a person.
 
     One of space / thread / message / person names the scope; a person alone
@@ -911,7 +921,8 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
     fetched. The API is the only
     path, the mirror holding no attachment rows, so this needs `majordomo
     login`. WORLD_AS_OF bounds it like any read: a file posted after the bound
-    is not reported.
+    is not reported. Senders are named through the name cache in
+    ``cache_dir``.
     """
     readers.person_only(config.identity(cfg), "reading attachments")
     given = sorted(n for n, v in (("space", space), ("thread", thread), ("message", message), ("person", person)) if v)
@@ -928,7 +939,7 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
 
     bound = config.world_as_of(cfg)
     reader = NocacheReader(blocked=blocked, service=service, me=config.me_user_id(cfg), people=people,
-                           bound=bound)
+                           bound=bound, cache_dir=cache_dir)
     sender = None
     if space:
         space = reader.resolve_space(space)

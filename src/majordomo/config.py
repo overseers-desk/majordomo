@@ -13,10 +13,11 @@ dict or reads it from a TOML file:
   connection copied from the BI project, which the front doors merge into
   ``[db]`` (frontdoor.load); a read-only DB user swaps in later without any
   code change.
-- ``$XDG_CACHE_HOME/majordomo/`` (``~/.cache/majordomo/`` when unset, on Linux
-  and macOS alike), program-written: the People API person and Chat space
-  objects majordomo has fetched (roster.py). Everything there is refetchable,
-  so it is a cache.
+- ``cache_dir()``, ``$XDG_CACHE_HOME/majordomo/`` (``~/.cache/majordomo/``
+  when unset, on Linux and macOS alike), program-written: the People API
+  person and Chat space objects majordomo has fetched (roster.py), where the
+  front doors keep them; a library caller names its own directory or none.
+  Everything there is refetchable, so it is a cache.
 """
 
 from __future__ import annotations
@@ -45,8 +46,9 @@ def env_file() -> Path:
 
 
 def cache_dir() -> Path:
-    """The XDG cache directory for majordomo, resolved per call so a test or a
-    launcher can point it elsewhere through the environment."""
+    """The XDG cache directory the front doors keep the name cache in,
+    resolved per call so a test or a launcher can point it elsewhere through
+    the environment."""
     base = os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")
     return Path(base).expanduser() / "majordomo"
 

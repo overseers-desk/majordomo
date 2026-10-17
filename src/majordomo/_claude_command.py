@@ -83,6 +83,15 @@ majordomo messages --thread spaces/AAAA/messages/BBBB
 
 Raw messages in one space, one thread (any message resource name in the thread), or with one person: `--person` alone reads your direct messages with them, both sides; with `--space` it keeps only their messages there. Rows are oldest-first and a capped answer keeps the newest.
 
+## Reading as a Chat app
+
+```bash
+majordomo --as bot tasks --window month
+majordomo --as bot messages --space "Back Office" --window 7d
+```
+
+`--as NAME`, before the command, acts as the Chat app (bot) whose service-account key is `[identity.NAME]` in `config.toml`; a name not configured fails listing the configured ones. `spaces`, `tasks` and `messages` then read over the Chat API as the app, never from the cache, which is your own login's view (`--cache` and `--live` refuse under `--as`). The app sees only the spaces it is a member of and their public messages; `--person` alone reads the app's DM with that person, people show as `users/<id>` unless already named, and `--to-me` rows carry no notes or due dates. Reading messages as the app needs a Google Workspace administrator to approve its `chat.app.messages.readonly` scope once; until then the read fails saying so. `people`, `spaces --owner`, `attachments` and `login` refuse under `--as`.
+
 ## Attachments
 
 ```bash
@@ -108,7 +117,7 @@ majordomo --as bot send --space "Back Office" "Queue is clear."
 
 One target: `--space` posts to the space, `--thread` replies in a thread (any message resource name in it works), `--to` reaches a person's existing 1:1 DM (a person you have never DM'd is refused; majordomo does not open new DMs). `--attach <path>` uploads a local file as an attachment and repeats for several; the message text then becomes optional, so a file can go on its own. Sends as the logged-in account (attachments need no permission beyond sending). A blocked space answers "not found". While `WORLD_AS_OF` is set, a send is refused: a bounded run is a replay.
 
-`--as NAME`, before the command, sends as the Chat app (bot) whose service-account key is `[identity.NAME]` in `config.toml`; Chat shows it from the app, labelled App. A name not configured fails listing the configured ones. The app sends text only, into spaces it is a member of, and `--to` reaches the app's own DM with that person. `spaces`, `tasks` and `messages` take `--as` too: with `--nocache` they read as the app, which sees only the spaces it is a member of and their public messages; `--person` alone reads the app's DM with that person, people show as `users/<id>` unless already named, and `--to-me` rows carry no notes or due dates. A read served by the cache is the mirror's, as without `--as`. Reading messages as the app needs a Google Workspace administrator to approve its `chat.app.messages.readonly` scope once; until then the read fails saying so. `people`, `spaces --owner`, `attachments` and `login` refuse under `--as`.
+`--as NAME`, before the command, sends as that Chat app (see "Reading as a Chat app"); Chat shows it from the app, labelled App. The app sends text only, into spaces it is a member of, and `--to` reaches the app's own DM with that person.
 
 A message that someone may turn into a Chat task (right-click, convert to task) gives the task its title from its first paragraph. Chat cuts that paragraph at about 140 characters, back to the last whole word, so keep it under 135. Write it as the whole job in one sentence. Everything else goes after a blank line, outside the title:
 
