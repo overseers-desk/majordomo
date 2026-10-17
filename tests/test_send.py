@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from majordomo import api
+from majordomo.errors import MajordomoError, NotFound, ScopeError
 
 
 def _chat(created=None):
@@ -73,7 +74,7 @@ def test_reply_accepts_thread_resource_name():
 
 def test_blocked_space_worded_as_not_found():
     chat = _chat()
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(NotFound) as ei:
         api.send({}, ["spaces/BLOCK"], space="spaces/BLOCK", text="hi", service=chat)
     assert str(ei.value) == "majordomo: spaces/BLOCK: not found."
     chat.spaces().messages().create.assert_not_called()
@@ -81,7 +82,7 @@ def test_blocked_space_worded_as_not_found():
 
 def test_blocked_space_refused_for_a_thread_reply_too():
     chat = _chat()
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(NotFound) as ei:
         api.send({}, ["spaces/BLOCK"], thread="spaces/BLOCK/messages/T.1", text="hi", service=chat)
     assert str(ei.value) == "majordomo: spaces/BLOCK: not found."
     chat.spaces().messages().create.assert_not_called()
@@ -92,7 +93,7 @@ def test_404_uses_the_same_wording_as_the_sieve():
     err = Exception("404")
     err.resp = types.SimpleNamespace(status=404)
     chat.spaces().messages().create.return_value.execute.side_effect = err
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(NotFound) as ei:
         api.send({}, [], space="spaces/GONE", text="hi", service=chat)
     assert str(ei.value) == "majordomo: spaces/GONE: not found."
 
@@ -109,7 +110,7 @@ def test_non_404_api_errors_stay_loud():
 def test_world_as_of_refuses_send(monkeypatch):
     monkeypatch.setenv(api.config.WORLD_AS_OF_ENV, "2026-07-12T17:07:00+10:00")
     chat = _chat()
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(MajordomoError) as ei:
         api.send({}, [], space="spaces/OK", text="hi", service=chat)
     assert "WORLD_AS_OF" in str(ei.value)
     chat.spaces().messages().create.assert_not_called()
@@ -119,7 +120,7 @@ def test_token_without_send_scope_points_at_login(monkeypatch):
     read_only = types.SimpleNamespace(
         scopes=["https://www.googleapis.com/auth/chat.spaces.readonly"])
     monkeypatch.setattr(api, "get_credentials", lambda cfg: read_only)
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(ScopeError) as ei:
         api.send({}, [], space="spaces/OK", text="hi")
     assert "majordomo login" in str(ei.value)
 
@@ -140,7 +141,7 @@ def test_to_accepts_the_users_id_form():
 
 def test_to_without_an_existing_dm_refused_cleanly():
     chat = _chat_with_dm({})
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(NotFound) as ei:
         api.send({}, [], to="bob@example.com", text="hi", service=chat)
     assert str(ei.value) == "majordomo: no direct message space with users/bob@example.com."
     chat.spaces().messages().create.assert_not_called()
@@ -148,19 +149,19 @@ def test_to_without_an_existing_dm_refused_cleanly():
 
 def test_to_blocked_dm_answers_like_an_absent_one():
     chat = _chat_with_dm({"users/alice@example.com": "spaces/BLOCKDM"})
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(NotFound) as ei:
         api.send({}, ["spaces/BLOCKDM"], to="alice@example.com", text="hi", service=chat)
     assert str(ei.value) == "majordomo: no direct message space with users/alice@example.com."
     chat.spaces().messages().create.assert_not_called()
 
 
 def test_needs_exactly_one_target():
-    with pytest.raises(SystemExit):
+    with pytest.raises(MajordomoError):
         api.send({}, [], text="hi", service=_chat())
-    with pytest.raises(SystemExit):
+    with pytest.raises(MajordomoError):
         api.send({}, [], space="spaces/OK", thread="spaces/OK/threads/T",
                  text="hi", service=_chat())
-    with pytest.raises(SystemExit):
+    with pytest.raises(MajordomoError):
         api.send({}, [], space="spaces/OK", to="alice@example.com",
                  text="hi", service=_chat())
 
@@ -225,7 +226,7 @@ def test_attachment_only_send_omits_text(tmp_path, monkeypatch):
 
 
 def test_send_needs_text_or_attachment():
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(MajordomoError) as ei:
         api.send({}, [], space="spaces/OK", service=_chat())
     assert "text, an attachment" in str(ei.value)
 
@@ -234,7 +235,7 @@ def test_missing_attachment_file_fails_loud_before_upload(tmp_path, monkeypatch)
     _fake_media(monkeypatch)
     missing = tmp_path / "nope.pdf"
     chat = _chat()
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(MajordomoError) as ei:
         api.send({}, [], space="spaces/OK", text="hi", attachments=[str(missing)], service=chat)
     assert "attachment not found" in str(ei.value)
     assert str(missing) in str(ei.value)
@@ -246,7 +247,7 @@ def test_attachment_into_blocked_space_refused_before_upload(tmp_path, monkeypat
     _fake_media(monkeypatch)
     f = tmp_path / "f.pdf"; f.write_bytes(b"z")
     chat = _chat()
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(NotFound) as ei:
         api.send({}, ["spaces/BLOCK"], space="spaces/BLOCK", text="hi",
                  attachments=[str(f)], service=chat)
     assert str(ei.value) == "majordomo: spaces/BLOCK: not found."
@@ -279,7 +280,7 @@ def test_to_accepts_a_cached_name(tmp_path, monkeypatch):
 
 
 def test_to_unknown_name_is_refused():
-    with pytest.raises(SystemExit, match="no one seen as"):
+    with pytest.raises(NotFound, match="no one seen as"):
         api.send({}, [], to="Nobody Known", text="hi", service=_chat_with_dm({}))
 
 
@@ -338,7 +339,7 @@ def test_identity_refuses_attachments_before_any_upload(tmp_path, monkeypatch):
     f = tmp_path / "doc.pdf"
     f.write_bytes(b"%PDF-1.4 test")
     chat = _chat()
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(MajordomoError) as ei:
         api.send(cfg, [], space="spaces/OK", text="hi", attachments=[str(f)], service=chat)
     assert "bot is a Chat app" in str(ei.value)
     chat.media().upload.assert_not_called()
@@ -348,6 +349,6 @@ def test_identity_refuses_attachments_before_any_upload(tmp_path, monkeypatch):
 def test_identity_with_a_missing_key_file_names_it(tmp_path, monkeypatch):
     _personal_login_untouched(monkeypatch)
     cfg = {"_identity": "bot", "identity": {"bot": {"service_account_file": str(tmp_path / "gone.json")}}}
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(MajordomoError) as ei:
         api.send(cfg, [], space="spaces/OK", text="hi")
     assert "gone.json" in str(ei.value) and "[identity.bot]" in str(ei.value)

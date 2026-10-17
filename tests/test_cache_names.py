@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from majordomo import readers, reports, roster
+from majordomo.errors import NotFound
 
 
 def _people(directory):
@@ -69,9 +70,9 @@ def test_a_name_only_the_mirror_holds_still_resolves(cache):
 def test_a_miss_says_it_looked_only_in_the_cache(cache, monkeypatch):
     monkeypatch.setattr(reports, "dm_spaces", lambda conn, blocked, user=None: [])
     monkeypatch.setattr(reports, "spaces", lambda conn, blocked, **kw: [])
-    with pytest.raises(SystemExit, match="users/9 in the cache .*--nocache"):
+    with pytest.raises(NotFound, match="users/9 in the cache .*--nocache"):
         cache.dm_space_for("users/9")
-    with pytest.raises(SystemExit, match="no space named 'Kitchen' in the cache .*--nocache"):
+    with pytest.raises(NotFound, match="no space named 'Kitchen' in the cache .*--nocache"):
         cache.resolve_space("Kitchen")
 
 

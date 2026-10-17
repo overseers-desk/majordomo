@@ -19,6 +19,8 @@ import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .errors import MajordomoError
+
 CONFIG_DIR = Path(os.path.expanduser("~/.config/majordomo"))
 CONFIG_TOML = CONFIG_DIR / "config.toml"
 ENV_FILE = CONFIG_DIR / ".env"
@@ -82,7 +84,7 @@ def world_as_of() -> datetime | None:
     except ValueError:
         parsed = None
     if parsed is None or parsed.tzinfo is None:
-        raise SystemExit(
+        raise MajordomoError(
             f"majordomo: WORLD_AS_OF={raw!r} must be an ISO-8601 timestamp with a "
             "timezone offset (e.g. 2026-07-12T17:07:00+10:00); refusing to run "
             "with an unenforceable bound."
@@ -116,14 +118,14 @@ def load_config(identity: str | None = None) -> dict:
     # everywhere).
     world_as_of()
     if not CONFIG_TOML.exists():
-        raise SystemExit(f"majordomo: no config at {CONFIG_TOML}")
+        raise MajordomoError(f"majordomo: no config at {CONFIG_TOML}")
     with open(CONFIG_TOML, "rb") as fh:
         cfg = tomllib.load(fh)
     if identity is not None:
         tables = cfg.get("identity") or {}
         if not (tables.get(identity) or {}).get("service_account_file"):
             known = ", ".join(sorted(n for n, t in tables.items() if (t or {}).get("service_account_file")))
-            raise SystemExit(
+            raise MajordomoError(
                 f"majordomo: no [identity.{identity}] with a service_account_file in {CONFIG_TOML}"
                 f" (configured: {known or 'none'})."
             )
@@ -141,8 +143,8 @@ def identity(config: dict) -> dict | None:
 
 
 def load_env() -> dict:
-    """The database credentials from the env file. A missing file raises an
-    ordinary exception, not SystemExit, for the reason ``db._driver`` gives."""
+    """The database credentials from the env file. A missing file raises, and
+    the reader seam falls back as ``db._driver`` describes."""
     if not ENV_FILE.exists():
         raise FileNotFoundError(f"no database .env at {ENV_FILE}")
     env: dict[str, str] = {}

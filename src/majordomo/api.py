@@ -36,6 +36,7 @@ import sys
 from datetime import datetime
 
 from . import config, decoder, readers, roster, sieve
+from .errors import MajordomoError, NotFound, ScopeError
 
 PEOPLE_LIMIT = 1000
 # Reading spaces and messages over the Chat API directly: --live, --nocache,
@@ -95,7 +96,7 @@ def _require_google():
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
     except ImportError as exc:
-        raise SystemExit(
+        raise MajordomoError(
             "majordomo: the Google client libraries are missing, so this "
             "install is incomplete; reinstall majordomo."
         ) from exc
@@ -136,14 +137,14 @@ def _consent(cfg: dict, *, open_browser: bool = True, timeout: int | None = None
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow
     except ImportError as exc:
-        raise SystemExit(
+        raise MajordomoError(
             "majordomo: the Google sign-in library is missing, so this "
             "install is incomplete; reinstall majordomo."
         ) from exc
     client_file = os.path.expanduser(config.api_client_file(cfg))
     token_file = os.path.expanduser(config.api_token_file(cfg))
     if not os.path.exists(client_file):
-        raise SystemExit(
+        raise MajordomoError(
             f"majordomo: no OAuth client at {client_file}. Create a Desktop OAuth "
             "client in Google Cloud (Chat API enabled) and save it there."
         )
@@ -167,7 +168,7 @@ def _consent(cfg: dict, *, open_browser: bool = True, timeout: int | None = None
         # Swallow the raw exception (and its locals, and its message/args):
         # a failed OAuth exchange carries the client secret and authorization
         # code in them. Only the safe reason _consent_reason picks out survives.
-        raise SystemExit(
+        raise MajordomoError(
             f"majordomo: login failed or was not completed ({_consent_reason(exc)}). "
             f"Check {client_file} and the Cloud project, then retry `majordomo login`."
         ) from None
@@ -199,7 +200,7 @@ def login(cfg: dict) -> str:
     """Mint a token via the browser OAuth flow, write it, return its path."""
     ident = config.identity(cfg)
     if ident:
-        raise SystemExit(
+        raise MajordomoError(
             f"majordomo: {ident['name']} signs in with its service-account key; there is no login."
         )
     return _consent(cfg)
@@ -273,7 +274,7 @@ def ensure_scopes(cfg: dict, creds, needed: list[str], purpose: str):
     try:
         _consent(cfg, open_browser=(mode == "browser"), timeout=CONSENT_TIMEOUT)
         fresh = get_credentials(cfg)
-    except SystemExit as exc:
+    except MajordomoError as exc:
         config.note_once(str(exc))
         return None
     return None if _missing(fresh, needed) else fresh
@@ -322,14 +323,14 @@ def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = Fa
         # and nothing but a send it can serve.
         if send and not (api_read or owner or people):
             return
-        raise SystemExit(f"majordomo: majordomo sends as {ident['name']} but does not read as it.")
+        raise MajordomoError(f"majordomo: majordomo sends as {ident['name']} but does not read as it.")
     wanted = [(scopes, purpose) for key, scopes, purpose in _SCOPE_GROUPS
               if {"api_read": api_read, "owner": owner, "send": send, "people": people, "own": own}[key]]
     if not wanted:
         return
     try:
         creds = get_credentials(cfg)
-    except SystemExit:
+    except MajordomoError:
         return
     needed: list[str] = []
     purposes: list[str] = []
@@ -348,7 +349,7 @@ def people_service(cfg: dict):
     one-line note, when the token cannot name people and could not be made to."""
     try:
         creds = get_credentials(cfg)
-    except SystemExit:
+    except MajordomoError:
         config.note_once(roster.NO_LOGIN_NOTE)
         return None
     creds = ensure_scopes(cfg, creds, roster.PEOPLE_SCOPES, "the People API, which names people")
@@ -395,7 +396,7 @@ def own_tasks(cfg: dict, service=None) -> dict | None:
     if service is None:
         try:
             creds = ensure_scopes(cfg, get_credentials(cfg), [TASKS_SCOPE], OWN_PURPOSE)
-        except SystemExit:
+        except MajordomoError:
             creds = None
         if creds is None:
             config.note_once(OWN_NOTE)
@@ -430,7 +431,7 @@ def get_credentials(cfg: dict):
     Credentials, Request, _ = _require_google()
     token_file = os.path.expanduser(config.api_token_file(cfg))
     if not os.path.exists(token_file):
-        raise SystemExit(
+        raise MajordomoError(
             f"majordomo: no OAuth token at {token_file}. Run `majordomo login` first."
         )
 
@@ -463,14 +464,14 @@ def get_credentials(cfg: dict):
             try:
                 creds.refresh(Request())
             except Exception as exc:
-                raise SystemExit(
+                raise MajordomoError(
                     f"majordomo: OAuth token refresh failed — {exc}. "
                     f"Re-run `majordomo login` (the OAuth client may be revoked)."
                 )
             with open(token_file, "w") as fh:
                 fh.write(creds.to_json())
         else:
-            raise SystemExit(f"majordomo: OAuth token at {token_file} is invalid; run `majordomo login`.")
+            raise MajordomoError(f"majordomo: OAuth token at {token_file} is invalid; run `majordomo login`.")
     return creds
 
 
@@ -482,7 +483,7 @@ def _service_account_credentials(ident: dict):
 
     path = os.path.expanduser(ident["service_account_file"])
     if not os.path.exists(path):
-        raise SystemExit(f"majordomo: no service-account key at {path} for [identity.{ident['name']}].")
+        raise MajordomoError(f"majordomo: no service-account key at {path} for [identity.{ident['name']}].")
     return service_account.Credentials.from_service_account_file(path, scopes=[BOT_SCOPE])
 
 
@@ -511,10 +512,10 @@ def _dm_space(service, blocked: list[str], to: str) -> dict:
         found = service.spaces().findDirectMessage(name=user).execute()
     except Exception as exc:
         if getattr(getattr(exc, "resp", None), "status", None) == 404:
-            raise SystemExit(absent) from None
+            raise NotFound(absent) from None
         raise
     if not sieve.allows(blocked, found.get("name")):
-        raise SystemExit(absent)
+        raise NotFound(absent)
     return found
 
 
@@ -528,7 +529,7 @@ def _upload_attachment(service, space: str, path: str) -> dict:
 
     path = os.path.expanduser(path)
     if not os.path.isfile(path):
-        raise SystemExit(f"majordomo: attachment not found: {path}")
+        raise MajordomoError(f"majordomo: attachment not found: {path}")
     mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
     media = _media_upload()(path, mimetype=mime)
     try:
@@ -537,7 +538,7 @@ def _upload_attachment(service, space: str, path: str) -> dict:
         ).execute()
     except Exception as exc:
         if getattr(getattr(exc, "resp", None), "status", None) == 404:
-            raise SystemExit(f"majordomo: {space}: not found.") from None
+            raise NotFound(f"majordomo: {space}: not found.") from None
         raise
 
 
@@ -555,17 +556,17 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
     member of, ``to`` reaching the app's own DM, and with no attachments.
     """
     if config.world_as_of() is not None:
-        raise SystemExit(
+        raise MajordomoError(
             "majordomo: WORLD_AS_OF is set (a replay bound); refusing to send "
             "a real message from a bounded run."
         )
     if (space, thread, to).count(None) != 2:
-        raise SystemExit("majordomo: send needs exactly one of space / thread / to.")
+        raise MajordomoError("majordomo: send needs exactly one of space / thread / to.")
     if not text and not attachments:
-        raise SystemExit("majordomo: send needs message text, an attachment, or both.")
+        raise MajordomoError("majordomo: send needs message text, an attachment, or both.")
     ident = config.identity(cfg)
     if ident and attachments:
-        raise SystemExit(
+        raise MajordomoError(
             f"majordomo: {ident['name']} is a Chat app; Google accepts file uploads "
             "only from a person's login."
         )
@@ -578,17 +579,18 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
         body["thread"] = {"name": thread_name}
         kwargs["messageReplyOption"] = "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
     if space and not sieve.allows(blocked, space):
-        raise SystemExit(f"majordomo: {space}: not found.")
+        raise NotFound(f"majordomo: {space}: not found.")
     if service is None:
         if ident:
             creds = _service_account_credentials(ident)
         else:
             creds = ensure_scopes(cfg, get_credentials(cfg), [SEND_SCOPE], "sending messages")
             if creds is None:
-                raise SystemExit(
+                raise ScopeError(
                     "majordomo: this version of majordomo needs more Google permissions "
                     "than your saved login grants (sending messages); run `majordomo login` "
-                    "to grant them."
+                    "to grant them.",
+                    scopes=[SEND_SCOPE], purpose="sending messages",
                 )
             people = people_lookup(cfg)
         _, _, build = _require_google()
@@ -599,7 +601,7 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
     elif space:
         space = reader.resolve_space(space)
         if not sieve.allows(blocked, space):
-            raise SystemExit(f"majordomo: {space}: not found.")
+            raise NotFound(f"majordomo: {space}: not found.")
     reader.roster.save()
     # The space is now resolved and sieve-cleared; upload only after that, so a
     # blocked or absent target is refused before any file leaves the machine.
@@ -610,7 +612,7 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
     except Exception as exc:
         # A 404 answers exactly like the sieve above, one wording for both.
         if getattr(getattr(exc, "resp", None), "status", None) == 404:
-            raise SystemExit(f"majordomo: {space}: not found.") from None
+            raise NotFound(f"majordomo: {space}: not found.") from None
         raise
 
 
@@ -760,10 +762,11 @@ class NocacheReader:
             ).execute(num_retries=6)
         except Exception as exc:
             if getattr(getattr(exc, "resp", None), "status", None) == 403:
-                raise SystemExit(
+                raise ScopeError(
                     "majordomo: this version of majordomo needs more Google permissions "
                     "than your saved login grants (listing space members, for --owner); "
-                    "run `majordomo login` to grant them."
+                    "run `majordomo login` to grant them.",
+                    scopes=[MEMBERSHIPS_SCOPE], purpose="listing space members, for --owner",
                 ) from None
             raise
         members = resp.get("memberships", [])
@@ -978,7 +981,7 @@ def _safe_basename(content_name: str | None, attachment_name: str | None,
 
     base = os.path.basename((content_name or "").strip())
     if not base or base in (".", ".."):
-        raise SystemExit(
+        raise MajordomoError(
             f"majordomo: attachment {attachment_name} has no usable filename "
             f"({content_name!r}); download it by another means."
         )
@@ -998,7 +1001,7 @@ def _fetch(service, row: dict, dest_dir: str) -> str:
     import io
 
     if row["source"] != UPLOADED:
-        raise SystemExit(
+        raise MajordomoError(
             f"majordomo: {row['content_name']} is a {row['source']} attachment, "
             "held in Drive rather than Chat; majordomo reads Chat only."
         )
@@ -1043,12 +1046,12 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
     """
     given = sorted(n for n, v in (("space", space), ("thread", thread), ("message", message), ("person", person)) if v)
     if not (len(given) == 1 or given == ["person", "space"]):
-        raise SystemExit("majordomo: attachments needs one of space / thread / message / person "
-                         "(a person may also be paired with a space).")
+        raise MajordomoError("majordomo: attachments needs one of space / thread / message / person "
+                             "(a person may also be paired with a space).")
     if download_to is not None:
         download_to = os.path.expanduser(download_to)
         if not os.path.isdir(download_to):
-            raise SystemExit(f"majordomo: no such directory: {download_to}")
+            raise MajordomoError(f"majordomo: no such directory: {download_to}")
 
     if service is None:
         _, _, build = _require_google()
@@ -1070,7 +1073,7 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
     scope_space = space or _space_of((thread or message).split(".")[0])
     if scope_space and not sieve.allows(blocked, scope_space):
         # Worded as the sieve words every block: indistinguishable from absent.
-        raise SystemExit(f"majordomo: {scope_space}: not found.")
+        raise NotFound(f"majordomo: {scope_space}: not found.")
     rows: list[dict] = []
     if message:
         # One message named: a single get, rather than paging its whole space.
@@ -1078,7 +1081,7 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
             msg = service.spaces().messages().get(name=message).execute()
         except Exception as exc:
             if getattr(getattr(exc, "resp", None), "status", None) == 404:
-                raise SystemExit(f"majordomo: {message}: not found.") from None
+                raise NotFound(f"majordomo: {message}: not found.") from None
             raise
         created = _parse_dt(msg.get("createTime"))
         if not (bound is not None and created is not None and created >= bound):
@@ -1103,7 +1106,7 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
         for row in rows:
             try:
                 row["path"] = _fetch(service, row, download_to)
-            except SystemExit as exc:
+            except MajordomoError as exc:
                 row["error"] = str(exc)
             except Exception as exc:  # a failed fetch or write, e.g. HTTP 5xx, disk full
                 row["error"] = f"majordomo: {row['content_name']}: {exc}"

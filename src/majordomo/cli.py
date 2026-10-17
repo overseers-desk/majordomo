@@ -12,8 +12,10 @@ import json
 from typing import List, Optional
 
 import typer
+from typer.core import TyperGroup
 
 from . import _claude_command, config, dates, models, readers, version
+from .errors import MajordomoError
 from .output import emit
 
 
@@ -29,7 +31,21 @@ _WORLD_EPILOG = (
     "anchor to it instead of now. Unparseable or offset-less values are a hard error."
 )
 
+
+class _OneLineRefusals(TyperGroup):
+    """A refusal the core raises ends the command as its one line on stderr
+    and exit status 1, never a traceback."""
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except MajordomoError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1)
+
+
 app = typer.Typer(
+    cls=_OneLineRefusals,
     help="Read Google Chat, report who holds which tasks, and send messages.",
     epilog=_WORLD_EPILOG,
     no_args_is_help=True,

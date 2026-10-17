@@ -19,6 +19,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 from . import config
+from .errors import MajordomoError
 
 WINDOWS = ("7d", "30d", "month", "year", "all")
 
@@ -38,7 +39,7 @@ def _parse(value: str | None) -> datetime | None:
     try:
         return datetime.fromisoformat(value)
     except ValueError:
-        raise SystemExit(f"majordomo: bad date {value!r}; use YYYY-MM-DD")
+        raise MajordomoError(f"majordomo: bad date {value!r}; use YYYY-MM-DD")
 
 
 def resolve(
@@ -73,6 +74,6 @@ def resolve(
         end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         start = (end - timedelta(days=1)).replace(day=1)
     else:
-        raise SystemExit(f"majordomo: unknown window {window!r}; use one of {', '.join(WINDOWS)}")
+        raise MajordomoError(f"majordomo: unknown window {window!r}; use one of {', '.join(WINDOWS)}")
     # Identity when WORLD_AS_OF is unset; under a bound an open end closes at it.
     return (start, config.world_clamp(end))

@@ -9,6 +9,7 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 from majordomo import readers
+from majordomo.errors import NotFound
 
 
 def _fresh(cache, nc):
@@ -46,8 +47,8 @@ def test_people_and_spaces_come_straight_from_cache():
 
 def test_a_space_or_dm_the_mirror_lacks_is_looked_up_over_the_api(monkeypatch):
     cache = MagicMock(**{"messages.return_value": []})
-    cache.resolve_space.side_effect = SystemExit("no space named 'Kitchen' in the cache")
-    cache.dm_space_for.side_effect = SystemExit("no direct message space with users/9 in the cache")
+    cache.resolve_space.side_effect = NotFound("no space named 'Kitchen' in the cache")
+    cache.dm_space_for.side_effect = NotFound("no direct message space with users/9 in the cache")
     nc = MagicMock(**{"resolve_space.return_value": "spaces/K", "dm_space_for.return_value": "spaces/DM9",
                       "messages.return_value": []})
     monkeypatch.setattr(readers.reports, "space_watermark", lambda conn, sp: None)

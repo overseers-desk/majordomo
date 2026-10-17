@@ -16,11 +16,9 @@ from . import config
 
 
 def _driver():
-    """The MySQL driver, or an ordinary exception naming how to get it.
-
-    Ordinary, not SystemExit: an absent driver is one way for the cache to be
-    unavailable, and the reader seam turns any such failure into the fallback
-    to reading Google directly. Exiting here would kill that fallback.
+    """The MySQL driver, or an exception naming how to get it: an absent
+    driver is one way for the cache to be unavailable, and the reader seam
+    turns any such failure into the fallback to reading Google directly.
     """
     try:
         import pymysql

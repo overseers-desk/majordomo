@@ -16,6 +16,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 from . import config, db, sieve
+from .errors import MajordomoError
 
 TASK_LIMIT = 1000
 MESSAGE_LIMIT = 2000
@@ -221,7 +222,7 @@ def messages(
     """Messages in a space or a thread, oldest-first, optionally only those a
     given ``users/<id>`` sent."""
     if not space and not thread:
-        raise SystemExit("majordomo: messages needs --space, --thread, or --person.")
+        raise MajordomoError("majordomo: messages needs --space, --thread, or --person.")
     if space and not sieve.allows(blocked, space):
         return []
     end = config.world_clamp(end)

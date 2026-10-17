@@ -4,7 +4,10 @@ import _shim  # noqa: F401
 
 from datetime import datetime
 
+import pytest
+
 from majordomo import dates
+from majordomo.errors import MajordomoError
 
 
 def test_all_is_open():
@@ -34,20 +37,14 @@ def test_explicit_range():
     assert start == datetime(2026, 1, 1) and end == datetime(2026, 2, 1)
 
 
-def test_bad_date_exits():
-    try:
+def test_bad_date_is_refused():
+    with pytest.raises(MajordomoError, match="bad date"):
         dates.resolve("all", since="not-a-date")
-    except SystemExit:
-        return
-    raise AssertionError("bad date should raise SystemExit")
 
 
-def test_unknown_window_exits():
-    try:
+def test_unknown_window_is_refused():
+    with pytest.raises(MajordomoError, match="unknown window"):
         dates.resolve("yesterday")
-    except SystemExit:
-        return
-    raise AssertionError("unknown window should raise SystemExit")
 
 
 if __name__ == "__main__":

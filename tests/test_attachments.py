@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from majordomo import api
+from majordomo.errors import MajordomoError, NotFound
 
 SPACE = "spaces/OK"
 MSG = "spaces/OK/messages/T.1"
@@ -199,7 +200,7 @@ def test_an_all_path_filename_is_reported_not_invented(tmp_path, monkeypatch):
 
 def test_missing_destination_directory_fails_before_any_call(tmp_path):
     chat = _chat(_msg(_att("clip.mp4")))
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(MajordomoError) as ei:
         api.attachments({}, [], message=MSG, download_to=str(tmp_path / "nope"), service=chat)
     assert "no such directory" in str(ei.value)
     chat.spaces().messages().get.assert_not_called()
@@ -209,7 +210,7 @@ def test_missing_destination_directory_fails_before_any_call(tmp_path):
 
 def test_blocked_space_worded_as_not_found():
     chat = _chat()
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(NotFound) as ei:
         api.attachments({}, [SPACE], space=SPACE, service=chat)
     assert str(ei.value) == f"majordomo: {SPACE}: not found."
     chat.spaces().messages().list.assert_not_called()
@@ -217,7 +218,7 @@ def test_blocked_space_worded_as_not_found():
 
 def test_blocked_space_refused_through_a_message_name_too():
     chat = _chat()
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(NotFound) as ei:
         api.attachments({}, [SPACE], message=MSG, service=chat)
     assert str(ei.value) == f"majordomo: {SPACE}: not found."
     chat.spaces().messages().get.assert_not_called()
@@ -228,7 +229,7 @@ def test_absent_message_uses_the_same_wording():
     err = Exception("404")
     err.resp = types.SimpleNamespace(status=404)
     chat.spaces().messages().get.return_value.execute.side_effect = err
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(NotFound) as ei:
         api.attachments({}, [], message=MSG, service=chat)
     assert str(ei.value) == f"majordomo: {MSG}: not found."
 
@@ -243,9 +244,9 @@ def test_non_404_api_errors_stay_loud():
 
 
 def test_needs_exactly_one_scope():
-    with pytest.raises(SystemExit):
+    with pytest.raises(MajordomoError):
         api.attachments({}, [], service=_chat())
-    with pytest.raises(SystemExit):
+    with pytest.raises(MajordomoError):
         api.attachments({}, [], space=SPACE, message=MSG, service=_chat())
 
 
@@ -317,7 +318,7 @@ def test_space_by_display_name(tmp_path, monkeypatch):
 
 
 def test_person_pairs_only_with_space():
-    with pytest.raises(SystemExit):
+    with pytest.raises(MajordomoError):
         api.attachments({}, [], person="users/sam", thread="spaces/OK/messages/T", service=_chat())
-    with pytest.raises(SystemExit):
+    with pytest.raises(MajordomoError):
         api.attachments({}, [], service=_chat())
