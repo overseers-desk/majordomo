@@ -736,9 +736,15 @@ class NocacheReader:
         out, token = [], None
         flt = _time_filter(start, config.world_clamp(end))
         while True:
-            resp = self.chat.spaces().messages().list(
-                parent=space_name, filter=flt, pageToken=token, pageSize=1000
-            ).execute()
+            try:
+                resp = self.chat.spaces().messages().list(
+                    parent=space_name, filter=flt, pageToken=token, pageSize=1000
+                ).execute()
+            except Exception as exc:
+                # An absent space answers in the sieve's words for a blocked one.
+                if getattr(getattr(exc, "resp", None), "status", None) == 404:
+                    raise NotFound(f"majordomo: {space_name}: not found.") from None
+                raise
             out.extend(resp.get("messages", []))
             token = resp.get("nextPageToken")
             if not token:
@@ -885,7 +891,7 @@ class NocacheReader:
         if thread:
             key = thread.split(".")[0]
             sp = _space_of(key)
-            targets = [sp] if sp else [s.get("name") for s in self._all_spaces()]
+            targets = [self.resolve_space(sp)] if sp else [s.get("name") for s in self._all_spaces()]
         elif space:
             targets = [space]
         else:

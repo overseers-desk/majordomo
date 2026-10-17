@@ -113,6 +113,8 @@ The flow and its notes live in the core, so the CLI prints them on stderr and th
 
 The sieve is an allow-list and block-list of spaces. Its purpose is to keep certain conversations out of the agent's view: a user who chats with the tool through MCP should not have private spaces returned by `list_spaces` or scanned by `read_messages`. The lists live in the human-authored TOML, are loaded at the start of every call, and are applied inside the core before any space identifier or message reaches the caller.
 
+A blocked space named explicitly answers "not found", in the same words as a space that does not exist, on every read source and on `send` and `attachments`. An absent one is refused too, because refusing only the blocked one would leak the block list on the cache path, where an absent id would otherwise come back as an empty answer. The cache judges absence by the mirror's space table and the direct API by Chat's 404; `--live` reads a space the mirror lacks over the API before calling it absent. A thread is judged by its space, and a thread missing from a space that exists is an empty answer.
+
 Placing it in the core, not in a wrapper, means any front door (and any future front door) inherits it for free; a future automation that talks to the core directly cannot work around a wrapper-only gate.
 
 ## Sending
