@@ -3,9 +3,10 @@ majordomo (0.4.0) unstable; urgency=medium
   * majordomo imports as a Python library. load_config takes a dict in
     config.toml's shape or a path to a TOML file; make_reader, tasks and
     messages read with the credentials and name-cache directory they are
-    handed; send posts; drain_notes returns what majordomo had to say. The
-    library reads only what it is handed, and importing it has no side
-    effect.
+    handed; send posts; drain_notes returns what majordomo had to say.
+    Importing the library has no side effect, and apart from your own
+    config.toml, which load_config reads when handed nothing, it reads only
+    what it is handed.
   * A refusal is raised as MajordomoError, with NotFound for a space,
     person or thread that matches nothing and ScopeError for credentials
     short of a Google scope, never as an exit. The command prints its one
@@ -26,9 +27,17 @@ majordomo (0.4.0) unstable; urgency=medium
   * The command prints its notes on stderr after the up-front permission
     check, before a refusal's line, and at its end; the MCP server carries
     them in its answer.
-  * The command and the MCP server keep the name cache under
-    $XDG_CACHE_HOME/majordomo/; a library call keeps it in the cache_dir it
-    is handed, or keeps none.
+  * A library call keeps the name cache in the cache_dir it is handed, or
+    keeps none; the command and the MCP server keep it under
+    $XDG_CACHE_HOME/majordomo/ as before.
+  * tasks --to-me fills notes, due dates and titles from the person's own
+    Google Tasks list, under the tasks.readonly permission, which opens a
+    consent page once on upgrade.
+  * Times print marked as UTC (+00:00), in the console and in JSON.
+  * --live looks up a space name or DM the mirror lacks over the Chat API,
+    and a cache miss says it looked only in the cache.
+  * A missing database .env falls back to the direct API, as an absent
+    driver does.
 
  -- Weiwu Zhang <a@colourful.land>  Sat, 17 Oct 2026 18:48:03 +1000
 

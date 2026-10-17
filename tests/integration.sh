@@ -34,9 +34,8 @@ TEST_DM="${MAJORDOMO_TEST_DM:-spaces/jP4cXEAAAAE}"
 DM_FRESH_DAYS="${MAJORDOMO_DM_FRESH_DAYS:-1}"   # the subject DMs daily; staler than this is a broken pipeline
 
 # db_setting [-q] KEY...: print each cache DB setting as the front doors merge
-# them, the .env beside config.toml overlaid by config.toml's own [db] (its keys
-# win), so either file can be their home; exit 1 naming any unset. -q prints no
-# value (a password stays off the screen and out of $ERRF).
+# them; exit 1 naming any unset. -q prints no value (a password stays off the
+# screen and out of $ERRF).
 db_setting() {
   python3 - "$CFGDIR" "$@" <<'PY'
 import pathlib, sys, tomllib
