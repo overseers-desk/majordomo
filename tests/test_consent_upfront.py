@@ -65,7 +65,7 @@ def _stub_reader(calls):
 @pytest.fixture
 def stub_reader(order, monkeypatch):
     """readers.make_reader returns the recording stub above."""
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source, **kw: _stub_reader(order))
     return order
 
 
@@ -84,7 +84,7 @@ def test_cli_shows_the_up_front_notes_before_reading(monkeypatch):
     def ensure_command_scopes(cfg, **flags):
         config.note_once("majordomo: an up-front note.")
 
-    def make_reader(cfg, source):
+    def make_reader(cfg, source, **kw):
         unshown.extend(config.drain_notes())
         return _stub_reader([])
 
@@ -177,7 +177,7 @@ def test_cli_as_reads_a_report_as_the_identity(bot_config, monkeypatch):
     reads: list[tuple] = []
     seen = {}
 
-    def make_reader(cfg, source):
+    def make_reader(cfg, source, **kw):
         seen["identity"] = config.identity(cfg)
         return _stub_reader(reads)
 

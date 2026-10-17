@@ -86,7 +86,7 @@ def _root(
     as_: Optional[str] = typer.Option(
         None, "--as", metavar="NAME",
         help="Act as identity NAME from config.toml (a Chat app's service-account key): send as the app, "
-             "and read spaces, tasks and messages over the Chat API as it."),
+             "and read spaces, tasks and messages over the Chat API as it, never from the cache."),
     _version: bool = typer.Option(
         False, "--version", callback=_version_callback, is_eager=True, help="Show version and exit."
     ),
@@ -114,7 +114,7 @@ def _open(ctx: typer.Context, *, people: bool = False, **shape):
     # this command's shape needs, so a decline or a timeout costs nothing
     # already spent reading.
     _up_front(cfg, api_read=ctx.obj["source"] in ("live", "nocache"), people=people, **shape)
-    return cfg, readers.make_reader(cfg, ctx.obj["source"])
+    return cfg, readers.make_reader(cfg, ctx.obj["source"], cache_dir=config.cache_dir())
 
 
 def _warn_if_capped(rows: list, limit: int) -> None:
@@ -175,7 +175,8 @@ def spaces(
         # Up front: the membership scope and the People scope owner_display
         # needs, before the first (slow, quota-backed-off) membership read.
         _up_front(cfg, api_read=True, owner=True, people=True)
-        rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
+        rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True,
+                                cache_dir=config.cache_dir())
         source = "nocache"
     else:
         cfg, reader = _open(ctx)
@@ -305,7 +306,8 @@ def attachments(
     start, end = dates.resolve(window, since, until, cfg=cfg)
     rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
                            message=message, person=person, start=start, end=end, limit=limit,
-                           download_to=download and os.path.expanduser(download))
+                           download_to=download and os.path.expanduser(download),
+                           cache_dir=config.cache_dir())
     emit(rows, models.ATTACHMENT_COLUMNS, "nocache", json_out, csv_out, world_as_of=cfg.get("_world_as_of"))
     _warn_if_capped(rows, limit)
     failed = [r["error"] for r in rows if r.get("error")]
@@ -340,7 +342,8 @@ def send(
     cfg = frontdoor.load(ctx.obj["identity"])
     _up_front(cfg, send=True)
     created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
-                       to=to, text=text, attachments=attach and [os.path.expanduser(p) for p in attach])
+                       to=to, text=text, attachments=attach and [os.path.expanduser(p) for p in attach],
+                       cache_dir=config.cache_dir())
     if json_out:
         typer.echo(json.dumps(created, indent=2, default=str))
     else:

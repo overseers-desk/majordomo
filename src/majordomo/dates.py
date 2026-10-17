@@ -10,8 +10,8 @@ is the clock: relative windows anchor to it, not to now (``7d`` is the seven
 days before the bound, ``month`` the calendar month before the one containing
 it), and ``end`` is clamped down to it (a later user-supplied ``--until`` gets
 a note).
-Without the frozen now, a replayed ``--window 7d`` resolves against the replay
-date and silently reports nothing.
+Without the bound as the clock, a replayed ``--window 7d`` resolves against
+the replay date and silently reports nothing.
 """
 
 from __future__ import annotations

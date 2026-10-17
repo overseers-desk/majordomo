@@ -130,9 +130,9 @@ majordomo login
 A Chat app's service-account key, named as `[identity.NAME]` in `config.toml`, lets majordomo act as that app with no login: `--as NAME` before the command, or `identity` on the MCP `send`, `spaces`, `tasks` and `messages` tools.
 
 - `send` posts as the app: text only, into spaces it is a member of, and `--to` reaches the app's own DM with that person.
-- `spaces`, `tasks` and `messages` read as the app under the sieve wherever majordomo reads the Chat API (`--nocache`, `--live`'s top-up, the fallback when the cache is unreachable): only the spaces it is a member of and their public messages, `--person` alone reading the app's DM with that person. A read the cache serves is the mirror's, as without `--as`.
-- People show as `users/<id>` unless a run on your own login has already named them, and `tasks --to-me` comes without notes or due dates: the app has no People API and no Google Tasks list.
-- Reading messages as the app needs the `chat.app.messages.readonly` scope, which a Google Workspace administrator approves for the app once; sending needs none.
+- `spaces`, `tasks` and `messages` read over the Chat API as the app, under the sieve: only the spaces it is a member of and their public messages, `--person` alone reading the app's DM with that person. The cache is your own login's view, so `--as` reads the API without a source flag, and `--cache` and `--live` refuse under it.
+- Senders show as `users/<id>` unless a run on your own login has already named them, while task assignees keep the @-spelling of the message that assigned them; `tasks --to-me` comes without notes or due dates. The app has no People API and no Google Tasks list.
+- Reading messages as the app needs the `chat.app.messages.readonly` scope, which a Google Workspace administrator approves for the app once, as [Google's Chat app authentication page](https://developers.google.com/workspace/chat/authenticate-authorize-chat-app) describes. Until then, and in a space the app is not a member of, the read fails saying so. Sending needs no approval.
 - `people`, `spaces --owner`, `attachments` and `login` refuse under `--as`.
 
 ## Commands
@@ -166,9 +166,34 @@ majordomo mcp                       # run the MCP server (stdio)
 - `attachments` lists what was posted; add `--download DIR` to save each file into an existing directory under the name it was posted with, and the path written appears in the output. A file already at that name is left alone and the download saved beside it as name-2, name-3, so a download never clobbers.
 - `spaces` also reports each space's domain (a Google Workspace domain space, or a consumer/personal one) straight from the Chat API; `--owner` resolves who owns it too, one extra call per space that is not a direct message.
 
+## Library use
+
+Imported as a library, majordomo reads only what it is handed: a config, credentials, a directory for its name cache, and a replay bound. It reads no file under the home directory, no `.env` and no environment variable; the command and the MCP server read those and pass them in. The import itself reads nothing.
+
+```python
+from datetime import datetime, timezone
+import majordomo
+
+cfg = majordomo.load_config(
+    {"me": {"user_id": "users/1234567890"}, "sieve": {"block_spaces": ["spaces/AAAA"]}},
+    world_as_of=None,                      # or "2026-07-12T17:07:00+10:00"
+)
+rows = majordomo.tasks(cfg, start=datetime(2026, 7, 1, tzinfo=timezone.utc),
+                       source="nocache", credentials=creds, cache_dir=data_dir)
+msgs = majordomo.messages(cfg, "Back Office", person="Alice",
+                          source="nocache", credentials=creds, cache_dir=data_dir)
+for note in majordomo.drain_notes():
+    print(note)
+```
+
+- `load_config` takes a dict in `config.toml`'s shape, copied and taken as written (it names its own paths); a path to a TOML file; or nothing, which reads your own `config.toml`. `identity="NAME"` acts as the Chat app in `[identity.NAME]`, which reads over the Chat API (`"cache"` and `"live"` refuse). A program hands the replay bound to `world_as_of`; a `WORLD_AS_OF` in its host's environment bounds nothing.
+- `tasks` and `messages` return the rows `--json` carries, as dicts whose datetimes are naive UTC; an aware `start` or `end` is converted and a naive one taken as UTC. `source` is `"cache"`, `"live"`, `"nocache"`, or None for the cache with the Chat API as its fallback; the cache's connection is the config's `[db]` table. `credentials`, a google-auth credentials object, serves every Google call in place of the token file `[api]` names. `cache_dir` holds the name cache's `people.json` and `spaces.json`; without it nothing is kept on disk and each call fetches the names it shows. Both call `make_reader(cfg, source, credentials=, cache_dir=)`, whose reader's `source` names the one that served.
+- A refusal raises `MajordomoError`: `NotFound` for a space, person or thread that matches nothing, a blocked space answering the same; `ScopeError` for credentials short of a Google scope, named in `.scopes`; and a plain `MajordomoError` otherwise, a name that matches several listing them.
+- The library prints nothing. What it has to say (people shown as ids for want of a permission, a bound the store does not reach) waits in `drain_notes()`.
+
 ## Replay bounds: `WORLD_AS_OF`
 
-`WORLD_AS_OF` is the office-wide replay bound (design: [WORLD_AS_OF.design.md](WORLD_AS_OF.design.md)): an ISO-8601 timestamp with a timezone offset, exported into the environment by a replay harness so a run sees the world as it stood at that instant. A program using majordomo as a library hands the bound to `load_config(..., world_as_of=...)`; a `WORLD_AS_OF` in its host's environment bounds nothing.
+`WORLD_AS_OF` is the office-wide replay bound (design: [WORLD_AS_OF.design.md](WORLD_AS_OF.design.md)): an ISO-8601 timestamp with a timezone offset, exported into the environment by a replay harness so a run sees the world as it stood at that instant.
 
 ```bash
 WORLD_AS_OF='2026-07-12T17:07:00+10:00' majordomo tasks --window 7d

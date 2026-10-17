@@ -66,7 +66,7 @@ def test_the_cli_shows_a_refusal_as_one_line_and_exits_1(cli, monkeypatch, exc):
 
 
 def _spaces_reader(spaces):
-    return lambda cfg, source: types.SimpleNamespace(source="cache", spaces=spaces)
+    return lambda cfg, source, **kw: types.SimpleNamespace(source="cache", spaces=spaces)
 
 
 def test_the_notes_a_refused_command_raised_come_before_its_line(cli, monkeypatch):

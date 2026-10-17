@@ -56,7 +56,7 @@ def _tool(name):
 
 
 def test_mcp_spaces_asks_before_reading(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source, **kw: _stub_reader(order))
     out = _tool("spaces")()
     assert out["rows"] == []
     assert order == [("consent", {"api_read": False}), ("read", "spaces")]
@@ -77,27 +77,27 @@ def test_mcp_spaces_owner_asks_before_any_membership_read(order, monkeypatch):
 
 
 def test_mcp_people_asks_for_people_scope_before_reading(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source, **kw: _stub_reader(order))
     out = _tool("people")()
     assert out["rows"] == []
     assert order == [("consent", {"api_read": False, "people": True}), ("read", "people")]
 
 
 def test_mcp_tasks_asks_for_people_scope_before_reading(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source, **kw: _stub_reader(order))
     out = _tool("tasks")()
     assert out["rows"] == []
     assert order == [("consent", {"api_read": False, "people": True, "own": False}), ("read", "tasks")]
 
 
 def test_mcp_tasks_to_me_asks_for_the_own_task_list_too(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source, **kw: _stub_reader(order))
     _tool("tasks")(to_me=True)
     assert order[0] == ("consent", {"api_read": False, "people": True, "own": True})
 
 
 def test_mcp_messages_asks_for_people_scope_before_reading(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source, **kw: _stub_reader(order))
     out = _tool("messages")()
     assert out["rows"] == []
     assert order == [("consent", {"api_read": False, "people": True}), ("read", "messages")]
@@ -145,7 +145,7 @@ def test_mcp_reads_take_the_named_identity(tmp_path, monkeypatch):
         "[me]\nuser_id = 'users/1'\n[identity.bot]\nservice_account_file = 'bot-key.json'\n")
     seen = []
 
-    def make_reader(cfg, source):
+    def make_reader(cfg, source, **kw):
         seen.append(config.identity(cfg)["name"])
         return _stub_reader([])
 
@@ -155,8 +155,22 @@ def test_mcp_reads_take_the_named_identity(tmp_path, monkeypatch):
     assert seen == ["bot", "bot", "bot"]
 
 
+def test_mcp_hands_every_read_and_send_the_xdg_name_cache(order, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    dirs = []
+    monkeypatch.setattr(readers, "make_reader",
+                        lambda cfg, source, cache_dir=None: dirs.append(cache_dir) or _stub_reader([]))
+    for name in ("owned_spaces", "attachments", "send"):
+        monkeypatch.setattr(api, name, lambda cfg, blocked, cache_dir=None, **kw: dirs.append(cache_dir) or [])
+    _tool("tasks")()
+    _tool("spaces")(owner=True)
+    _tool("attachments")(space="spaces/A")
+    _tool("send")(space="spaces/A", text="hi")
+    assert dirs == [tmp_path / "xdg" / "majordomo"] * 4
+
+
 def test_the_bound_is_read_per_call_and_a_bad_one_fails_only_that_call(order, monkeypatch):
-    monkeypatch.setattr(readers, "make_reader", lambda cfg, source: _stub_reader(order))
+    monkeypatch.setattr(readers, "make_reader", lambda cfg, source, **kw: _stub_reader(order))
     spaces = _tool("spaces")
     monkeypatch.setenv("WORLD_AS_OF", "garbage")
     with pytest.raises(ToolError, match="WORLD_AS_OF='garbage'"):

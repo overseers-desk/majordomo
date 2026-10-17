@@ -11,20 +11,22 @@ the Workspace domain profile), the signed-in account's saved contacts, and its
 some people. A profile name wins over a contact label, the label being the
 signed-in user's own naming.
 
-Two files under ``config.cache_dir()``: ``people.json`` and ``spaces.json``,
-each one JSON object keyed by resource name (``people/<id>``, ``spaces/<id>``)
-whose value is ``{"fetched_at": <ISO time>, "person"|"space": <the API object
-as returned>}``. Everything there is refetchable, so it is a cache, and it
-keeps the API's own form rather than a private schema. A file is rewritten
-whole (a temp file, then a rename) when it changed.
+Two files in the directory a roster is handed (the front doors hand it
+``config.cache_dir()``): ``people.json`` and ``spaces.json``, each one JSON
+object keyed by resource name (``people/<id>``, ``spaces/<id>``) whose value is
+``{"fetched_at": <ISO time>, "person"|"space": <the API object as returned>}``.
+Everything there is refetchable, so it is a cache, and it keeps the API's own
+form rather than a private schema. A file is rewritten whole (a temp file,
+then a rename) when it changed. A roster handed no directory reads and writes
+no file: what it fetches serves its own run alone.
 
-Spellings a caller may type that the API does not hold (the frozen ``@name``
-of a task or a mention) are derived from the mirror on the cache path and held
-for the run only; they are never stored.
+Spellings a caller may type that the API does not hold (the ``@name`` a task
+or a mention was written with) are derived from the mirror on the cache path
+and held for the run only; they are never stored.
 
-Under WORLD_AS_OF the roster is frozen: the files are read, never written.
-People API names are current-state and served like space names
-(WORLD_AS_OF.design.md §3 rule 1).
+Under WORLD_AS_OF the files are read and nothing is written back
+(``write_back=False``). People API names are current-state and served like
+space names (WORLD_AS_OF.design.md §3 rule 1).
 """
 
 from __future__ import annotations
@@ -70,9 +72,9 @@ MAX_AGE = timedelta(days=30)
 _OWN_SOURCES = ("PROFILE", "DOMAIN_PROFILE", "ACCOUNT")
 
 LOGIN_NOTE = (
-    "majordomo: this version of majordomo needs more Google permissions than "
-    "your saved login grants (the People API, which names people). Run "
-    "`majordomo login` to grant them; until then people show as users/<id>."
+    "majordomo: the Google login majordomo reads with lacks the People API "
+    "permission, which names people, so people show as users/<id>; on your "
+    "saved login, `majordomo login` grants it."
 )
 NO_LOGIN_NOTE = (
     "majordomo: people are named through the People API, which needs "
@@ -195,14 +197,14 @@ class Roster:
     single resolver both backends and every report share.
     """
 
-    def __init__(self, directory: Path | None = None, lookup=None, frozen: bool = False):
-        self.dir = directory or config.cache_dir()
+    def __init__(self, directory: str | os.PathLike | None = None, lookup=None, write_back: bool = True):
+        self.dir = None if directory is None else Path(directory)
         self.lookup = lookup
-        self.frozen = frozen
+        self.write_back = write_back
         self._service = None
         self._looked_up = False
-        self.people: dict[str, dict] = _load(self.dir / PEOPLE_FILE)
-        self.spaces: dict[str, dict] = _load(self.dir / SPACES_FILE)
+        self.people: dict[str, dict] = _load(self.dir / PEOPLE_FILE) if self.dir else {}
+        self.spaces: dict[str, dict] = _load(self.dir / SPACES_FILE) if self.dir else {}
         self._dirty: set[str] = set()
         # users/<id> -> {spelling: last seen}, and spaces/<id> -> {name: None}:
         # what the mirror carries, for this run's name matching only.
@@ -212,8 +214,9 @@ class Roster:
     # --- the files --------------------------------------------------------
 
     def save(self) -> None:
-        """Rewrite each changed file whole. A no-op when frozen."""
-        if not self._dirty or self.frozen:
+        """Rewrite each changed file whole. A no-op without a directory or
+        without write_back."""
+        if not self._dirty or self.dir is None or not self.write_back:
             return
         if PEOPLE_FILE in self._dirty:
             _write(self.dir / PEOPLE_FILE, self.people)

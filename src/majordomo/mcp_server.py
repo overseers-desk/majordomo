@@ -46,7 +46,7 @@ def _config(identity: Optional[str] = None) -> dict:
 def _reader(source: Optional[str], cfg: Optional[dict] = None):
     if cfg is None:
         cfg = _config()
-    return cfg, readers.make_reader(cfg, source)
+    return cfg, readers.make_reader(cfg, source, cache_dir=config.cache_dir())
 
 
 def _envelope(source: str, rows: list[dict], cfg: dict) -> dict:
@@ -96,14 +96,15 @@ def create_server() -> MCPServer:
         login without it opens Google's consent page up front, before any
         space is read).
         source: cache | live | nocache. identity names an [identity.NAME] in
-        config.toml, a Chat app: a read over the Chat API then runs as that
-        app and lists only the spaces it is a member of; owner refuses under
-        it.
+        config.toml, a Chat app: the read then goes over the Chat API as that
+        app (source cache or live refuses) and lists only the spaces it is a
+        member of; owner refuses under it.
         """
         cfg = _config(identity)
         if owner:
             frontdoor.up_front(cfg, api_read=True, owner=True, people=True)
-            rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
+            rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True,
+                                    cache_dir=config.cache_dir())
             return _envelope("nocache", rows, cfg)
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"))
         _cfg, reader = _reader(source, cfg=cfg)
@@ -146,10 +147,10 @@ def create_server() -> MCPServer:
         and @-mentions, whole then substring, and must match one person). space is spaces/<id> or its display name.
         window is one of 7d, 30d, month, year, all; since/until are ISO dates.
         source: cache | live | nocache. identity names an [identity.NAME] in
-        config.toml, a Chat app: a read over the Chat API then runs as that
-        app, seeing only the public messages of the spaces it is a member of;
-        people show as users/<id> unless already named, and to_me rows carry
-        no notes or due dates.
+        config.toml, a Chat app: the read then goes over the Chat API as that
+        app (source cache or live refuses), seeing only the public messages of
+        the spaces it is a member of; people show as users/<id> unless already
+        named, and to_me rows carry no notes or due dates.
         """
         cfg = _config(identity)
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True, own=to_me)
@@ -184,10 +185,11 @@ def create_server() -> MCPServer:
         direct messages with them, both sides; with space it keeps only their
         messages there. space is spaces/<id> or its display name. Rows are
         oldest-first and a capped answer keeps the newest. identity names an
-        [identity.NAME] in config.toml, a Chat app: a read over the Chat API
-        then runs as that app, seeing only the public messages of the spaces
-        it is a member of, person alone reading the app's DM with them;
-        people show as users/<id> unless already named.
+        [identity.NAME] in config.toml, a Chat app: the read then goes over
+        the Chat API as that app (source cache or live refuses), seeing only
+        the public messages of the spaces it is a member of, person alone
+        reading the app's DM with them; people show as users/<id> unless
+        already named.
         """
         cfg = _config(identity)
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True)
@@ -229,7 +231,8 @@ def create_server() -> MCPServer:
         start, end = dates.resolve(window, since, until, cfg=cfg)
         rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
                                message=message, person=person, start=start, end=end, limit=limit,
-                               download_to=download_to and os.path.expanduser(download_to))
+                               download_to=download_to and os.path.expanduser(download_to),
+                               cache_dir=config.cache_dir())
         return _envelope("nocache", rows, cfg)
 
     @tool
@@ -251,7 +254,8 @@ def create_server() -> MCPServer:
         frontdoor.up_front(cfg, send=True)
         return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
                         to=to, text=text,
-                        attachments=attachments and [os.path.expanduser(p) for p in attachments])
+                        attachments=attachments and [os.path.expanduser(p) for p in attachments],
+                        cache_dir=config.cache_dir())
 
     return server
 

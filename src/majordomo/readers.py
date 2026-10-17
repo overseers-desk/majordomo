@@ -25,12 +25,12 @@ from .errors import MajordomoError, NotFound
 # space sieve and the block_assignees list and apply both.
 
 
-def people_lookup(cfg: dict | None):
+def people_lookup(cfg: dict | None, credentials=None):
     """The roster's People lookup for a config (api.py holds the credentials),
     imported late: api imports this module."""
     from .api import people_lookup as lookup
 
-    return lookup(cfg)
+    return lookup(cfg, credentials)
 
 
 def person_only(identity: dict | None, what: str) -> None:
@@ -46,9 +46,9 @@ def decorate_people(ros: roster.Roster, rows: list[dict], person: str | None,
                     dm_of: dict[str, str]) -> list[dict]:
     """Give each people row its name, the prose spellings seen this run, its
     email and its DM space, and narrow to one person when asked. The name is
-    the roster's (People API, current-state); the spellings are frozen prose.
-    The identity columns are not windowed: a person with no activity in the
-    window still has a row."""
+    the roster's (People API, current-state); the spellings are the prose as
+    written. The identity columns are not windowed: a person with no activity
+    in the window still has a row."""
     if person:
         rows = [r for r in rows if r["user_id"] == person] or [
             {"user_id": person, "display": None, "msgs": 0, "tasks": 0}]
@@ -87,12 +87,12 @@ def name_assignees(ros: roster.Roster, blocked_assignees: list[str], rows: list[
     return sieve.filter_assignees(blocked_assignees, rows)
 
 
-def own_tasks_lookup(cfg: dict | None):
+def own_tasks_lookup(cfg: dict | None, credentials=None):
     """The signed-in person's own Google Tasks list, indexed for fill_own
     (api.py holds the credentials), imported late as people_lookup is."""
     from .api import own_tasks_lookup as lookup
 
-    return lookup(cfg)
+    return lookup(cfg, credentials)
 
 
 # A task created fresh in a space carries no creation time, only `updated`,
@@ -134,14 +134,15 @@ class CacheReader:
     where = " in the cache (--live or --nocache asks the Chat API)"
 
     def __init__(self, conn, blocked: list[str], blocked_assignees: list[str] | None = None,
-                 cfg: dict | None = None, ros: roster.Roster | None = None, own=None):
+                 cfg: dict | None = None, ros: roster.Roster | None = None, own=None, credentials=None):
         self.conn = conn
         self.blocked = blocked
         self.blocked_assignees = blocked_assignees or []
         self._cfg = cfg or {}
         self.bound = config.world_as_of(self._cfg)
-        self.roster = ros or roster.Roster(lookup=people_lookup(cfg), frozen=self.bound is not None)
-        self.own = own or own_tasks_lookup(cfg)
+        self.credentials = credentials
+        self.roster = ros or roster.Roster(lookup=people_lookup(cfg, credentials))
+        self.own = own or own_tasks_lookup(cfg, credentials)
 
     # --- what the mirror teaches the roster, for this run ------------------
 
@@ -168,7 +169,8 @@ class CacheReader:
         # The mirror holds no emails; the Chat API resolves one, given a token.
         from .api import NocacheReader
         try:
-            nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees, ros=self.roster)
+            nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees, ros=self.roster,
+                                           creds=self.credentials)
         except MajordomoError as exc:
             raise MajordomoError(f"majordomo: {email}: an email resolves over the Chat API; {exc}") from None
         return nc._by_email(email)
@@ -215,7 +217,7 @@ class CacheReader:
                              bound=self.bound, **filters)
         rows = sieve.filter_assignees(self.blocked_assignees, rows)
         rows = name_assignees(self.roster, self.blocked_assignees, rows)
-        return fill_own(rows, self.own if to_user else None)
+        return fill_own(rows, self.own if to_user and to_user == config.me_user_id(self._cfg) else None)
 
     def messages(self, space: str | None = None, *, person: str | None = None,
                  thread: str | None = None, **kw) -> list[dict]:
@@ -249,18 +251,20 @@ class FreshReader:
 
     source = "live"
 
-    def __init__(self, cache: CacheReader, cfg: dict, blocked: list[str], blocked_assignees: list[str]):
+    def __init__(self, cache: CacheReader, cfg: dict, blocked: list[str], blocked_assignees: list[str],
+                 credentials=None):
         self.cache = cache
         self._cfg = cfg
         self.blocked = blocked
         self.blocked_assignees = blocked_assignees
+        self.credentials = credentials
         self._nc = None
 
     def _nocache(self):
         if self._nc is None:
             from .api import NocacheReader
             self._nc = NocacheReader.from_config(self._cfg, self.blocked, self.blocked_assignees,
-                                                 ros=self.cache.roster, own=self.cache.own)
+                                                 ros=self.cache.roster, own=self.cache.own, creds=self.credentials)
         return self._nc
 
     def resolve_space(self, who: str) -> str:
@@ -384,7 +388,7 @@ class FreshReader:
         return self._merge(base, fresh, key="name", time_key="create_time", reverse=False, limit=limit)
 
 
-def make_reader(cfg: dict, source: str | None = None):
+def make_reader(cfg: dict, source: str | None = None, *, credentials=None, cache_dir=None):
     """Pick a backend. `source` is "cache", "live", "nocache", or None (auto).
 
     - "nocache": read the Chat API directly, no cache.
@@ -396,14 +400,39 @@ def make_reader(cfg: dict, source: str | None = None):
     incomplete or the DB unreachable, "cache" raises while "live"/auto degrade
     to the direct API (the only fresh source left). The fault that fallback
     catches, an absent backend, is real and expected.
+
+    Under an `[identity.NAME]` the Chat app reads the Chat API: the mirror is
+    the personal login's, so auto is "nocache" and "cache" or "live" refuse.
+
+    `credentials`, google-auth credentials, serve every Chat, People and
+    Tasks call in place of the token file the cfg names. `cache_dir` holds the
+    name cache (roster.py), one roster every backend of this reader shares;
+    None keeps no cache on disk, so names resolve from what this reader
+    fetches. The reader's `source` names the backend that serves.
     """
+    ident = config.identity(cfg)
+    if ident:
+        if source in ("cache", "live"):
+            raise MajordomoError(
+                f"majordomo: the cache is read on your own login, not as the Chat app {ident['name']}; "
+                f"drop --as or --{source}."
+            )
+        source = "nocache"
     blocked = config.block_spaces(cfg)
     blocked_assignees = config.block_assignees(cfg)
-    if source == "nocache":
+    ros = roster.Roster(cache_dir, lookup=people_lookup(cfg, credentials),
+                        write_back=config.world_as_of(cfg) is None)
+    own = own_tasks_lookup(cfg, credentials)
+
+    def nocache():
         from .api import NocacheReader
-        return NocacheReader.from_config(cfg, blocked, blocked_assignees)
+        return NocacheReader.from_config(cfg, blocked, blocked_assignees, ros=ros, creds=credentials, own=own)
+
+    if source == "nocache":
+        return nocache()
     try:
-        cache = CacheReader(db.connect(cfg.get("db") or {}), blocked, blocked_assignees, cfg=cfg)
+        cache = CacheReader(db.connect(cfg.get("db") or {}), blocked, blocked_assignees, cfg=cfg,
+                            ros=ros, own=own, credentials=credentials)
     except Exception as exc:
         if source == "cache":
             # --cache promises to fail here rather than fall back; the failure
@@ -412,8 +441,44 @@ def make_reader(cfg: dict, source: str | None = None):
                 f"majordomo: cache unreachable with --cache ({str(exc).removeprefix('majordomo: ')}); "
                 "drop the flag to fall back to the direct API."
             ) from None
-        from .api import NocacheReader
-        return NocacheReader.from_config(cfg, blocked, blocked_assignees)
+        return nocache()
     if source == "live":
-        return FreshReader(cache, cfg, blocked, blocked_assignees)
+        return FreshReader(cache, cfg, blocked, blocked_assignees, credentials=credentials)
     return cache
+
+
+def _naive_utc(value: datetime | None) -> datetime | None:
+    """A datetime as the readers compare them: naive UTC, a naive one taken
+    as UTC already."""
+    if value is None or value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def tasks(cfg: dict, *, start: datetime | None = None, end: datetime | None = None,
+          space: str | None = None, assignee: str | None = None, to_user: str | None = None,
+          by_user: str | None = None, limit: int | None = None, source: str | None = None,
+          credentials=None, cache_dir=None) -> list[dict]:
+    """The task rows ``tasks --json`` carries, its datetimes naive UTC: one
+    ``make_reader(cfg, source, credentials=, cache_dir=)`` read. ``start`` and
+    ``end`` bound ``created_at`` (end exclusive); ``limit`` None is the
+    reader's own cap. ``to_user`` equal to ``[me].user_id`` also fills each
+    row's notes and due date from that person's Google Tasks list."""
+    reader = make_reader(cfg, source, credentials=credentials, cache_dir=cache_dir)
+    return reader.tasks(to_user=to_user, by_user=by_user, assignee=assignee, space=space,
+                        start=_naive_utc(start), end=_naive_utc(end),
+                        **({} if limit is None else {"limit": limit}))
+
+
+def messages(cfg: dict, space: str | None = None, *, thread: str | None = None, person: str | None = None,
+             start: datetime | None = None, end: datetime | None = None, limit: int | None = None,
+             source: str | None = None, credentials=None, cache_dir=None) -> list[dict]:
+    """The message rows ``messages --json`` carries, oldest first, its
+    datetimes naive UTC: one ``make_reader(cfg, source, credentials=,
+    cache_dir=)`` read. ``person`` alone reads the direct-message space with
+    that person; with ``space`` or ``thread`` it keeps that person's
+    messages. ``limit`` None is the reader's own cap, which keeps the
+    newest."""
+    reader = make_reader(cfg, source, credentials=credentials, cache_dir=cache_dir)
+    return reader.messages(space, thread=thread, person=person, start=_naive_utc(start), end=_naive_utc(end),
+                           **({} if limit is None else {"limit": limit}))

@@ -49,7 +49,7 @@ The two shapes are not mutually exclusive in time. The upstream cache is the inv
 - **It is self-sufficient without that backend.** majordomo retains its own direct Chat read and its own task decoder, so it runs where the BI platform is absent; reconstruction is reused from `coord_tasks` when present and performed by majordomo's own decoder when not. The backend accelerates, it does not gate.
 - **PM needs per-identity OAuth.** A service account cannot read this workspace's messages or DMs; each identity is read through its own OAuth, and direct-message history is already the larger half of the cache.
 - **crude is not the home** (its CRUD/object model does not fit a read-mostly flow), and **courier is the template, not the host** (its contract carries across; its maildir+mu cache does not).
-- **The sieve, identity-keyed multi-account, reporting, and the CLI/MCP front doors are majordomo's own work**, over whichever source — BI cache or direct read — serves the flow.
+- **The sieve, acting as a Chat app, reporting, and the CLI/MCP front doors are majordomo's own work**, over whichever source (BI cache or direct read) serves the flow.
 - How majordomo serves its callers — a query CLI over the store, or a serving daemon over REST in the Evolution API style — is **open**; the upstream cache is the invariant both front doors read, so the choice can be sequenced.
 
 This settles that majordomo is a reader, reporter, and gate that uses the BI platform's chat cache and task reconstruction as a fast path while keeping its own direct read and decoder for standalone use. The `DESIGN.md` question of whether to fork `gchat-cli` now applies to that standalone direct path, and still rests on the pagination check recorded there.
