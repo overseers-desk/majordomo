@@ -407,9 +407,10 @@ class Roster:
         """``who`` (a ``spaces/<id>`` or a display name) to a ``spaces/<id>``.
         ``seed()`` pours the backend's space listing in when the name is not
         yet known; a miss names ``where`` it looked. A blocked space never
-        matches by name, and a blocked id answers exactly as an id
-        ``exists(id)`` denies, so a caller cannot tell a blocked space from
-        an absent one."""
+        matches by name, and a blocked id raises the same NotFound as an id
+        ``exists(id)`` denies. Without ``exists`` an id not blocked is taken
+        as given, and the caller judges absence itself (the direct API by its
+        404)."""
         who = who.strip()
         if who.startswith("spaces/"):
             if who in (blocked or []) or (exists is not None and not exists(who)):

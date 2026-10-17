@@ -1,12 +1,13 @@
-"""The up-front consent check (api.ensure_command_scopes): both front doors
-call it, once, at the very start of a command, before any Chat or People
-call, so a decline or a timeout costs nothing already spent reading. These
-tests check the wiring:
+"""The up-front consent check (api.ensure_command_scopes, through
+frontdoor.up_front): both front doors run it, once, at the very start of a
+command, before any Chat or People call, so a decline or a timeout costs
+nothing already spent reading. These tests check the wiring:
 each CLI command calls the check with the shape flags its own behaviour
-implies, strictly before the read that would otherwise reach Google first;
-test_mcp_server.py checks each MCP tool the same way. The mechanism itself
-(one consent for the union of missing scopes, no second prompt in the same
-command, the failure reason) is tested in test_consent.py.
+implies, strictly before the read that would otherwise reach Google first,
+and shows what the check had to say before reading; test_mcp_server.py
+checks each MCP tool the same way. The mechanism itself (one consent for the
+union of missing scopes, no second prompt in the same command, the failure
+reason) is tested in test_frontdoor.py.
 """
 
 import _shim  # noqa: F401
@@ -75,6 +76,24 @@ def test_cli_spaces_asks_before_reading(stub_reader):
     result = runner.invoke(app, ["spaces"])
     assert result.exit_code == 0, result.output
     assert stub_reader == [("consent", {"api_read": False, "people": False}), ("read", "spaces")]
+
+
+def test_cli_shows_the_up_front_notes_before_reading(monkeypatch):
+    unshown: list[str] = []
+
+    def ensure_command_scopes(cfg, **flags):
+        config.note_once("majordomo: an up-front note.")
+
+    def make_reader(cfg, source):
+        unshown.extend(config.drain_notes())
+        return _stub_reader([])
+
+    monkeypatch.setattr(api, "ensure_command_scopes", ensure_command_scopes)
+    monkeypatch.setattr(readers, "make_reader", make_reader)
+    result = runner.invoke(app, ["spaces", "--json"])
+    assert result.exit_code == 0, result.output
+    assert unshown == []
+    assert "majordomo: an up-front note." in result.output
 
 
 def test_cli_spaces_nocache_asks_for_api_read(stub_reader):

@@ -14,7 +14,7 @@ from typing import List, Optional
 import typer
 from typer.core import TyperGroup
 
-from . import _claude_command, config, dates, models, readers, version
+from . import _claude_command, config, dates, frontdoor, models, readers, version
 from .errors import MajordomoError
 from .output import emit
 
@@ -32,13 +32,21 @@ _WORLD_EPILOG = (
 )
 
 
+def _flush_notes() -> None:
+    for note in config.drain_notes():
+        typer.echo(note, err=True)
+
+
 class _OneLineRefusals(TyperGroup):
     def invoke(self, ctx):
         try:
             return super().invoke(ctx)
         except MajordomoError as exc:
+            _flush_notes()
             typer.echo(str(exc), err=True)
             raise typer.Exit(1)
+        finally:
+            _flush_notes()
 
 
 app = typer.Typer(
@@ -90,14 +98,17 @@ def _root(
     _claude_command.refresh()
 
 
-def _open(ctx: typer.Context, *, people: bool = False, **shape):
-    from . import api
+def _up_front(cfg: dict, **shape) -> None:
+    frontdoor.up_front(cfg, **shape)
+    _flush_notes()
 
+
+def _open(ctx: typer.Context, *, people: bool = False, **shape):
     cfg = config.load_config(ctx.obj["identity"])
     # Up front, before the reader touches the cache or the API: everything
     # this command's shape needs, so a decline or a timeout costs nothing
     # already spent reading.
-    api.ensure_command_scopes(cfg, api_read=ctx.obj["source"] in ("live", "nocache"), people=people, **shape)
+    _up_front(cfg, api_read=ctx.obj["source"] in ("live", "nocache"), people=people, **shape)
     return cfg, readers.make_reader(cfg, ctx.obj["source"])
 
 
@@ -127,8 +138,7 @@ def login(ctx: typer.Context) -> None:
     itself, up front before the command does anything, opening the same
     consent page, when someone is there to answer.
     """
-    from . import api
-    path = api.login(config.load_config(ctx.obj["identity"]))
+    path = frontdoor.login(config.load_config(ctx.obj["identity"]))
     typer.echo(f"majordomo: token written to {path}")
 
 
@@ -159,7 +169,7 @@ def spaces(
         cfg = config.load_config(ctx.obj["identity"])
         # Up front: the membership scope and the People scope owner_display
         # needs, before the first (slow, quota-backed-off) membership read.
-        api.ensure_command_scopes(cfg, api_read=True, owner=True, people=True)
+        _up_front(cfg, api_read=True, owner=True, people=True)
         rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
         source = "nocache"
     else:
@@ -285,7 +295,7 @@ def attachments(
     from . import api
     cfg = config.load_config(ctx.obj["identity"])
     # Always the direct API and always naming senders, regardless of flags.
-    api.ensure_command_scopes(cfg, api_read=True, people=True)
+    _up_front(cfg, api_read=True, people=True)
     start, end = dates.resolve(window, since, until)
     rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
                            message=message, person=person, start=start, end=end, limit=limit,
@@ -322,7 +332,7 @@ def send(
     """
     from . import api
     cfg = config.load_config(ctx.obj["identity"])
-    api.ensure_command_scopes(cfg, send=True)
+    _up_front(cfg, send=True)
     created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
                        to=to, text=text, attachments=attach)
     if json_out:

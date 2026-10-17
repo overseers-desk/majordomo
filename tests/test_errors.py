@@ -57,13 +57,39 @@ def test_the_cli_shows_a_refusal_as_one_line_and_exits_1(cli, monkeypatch, exc):
     def refuse(**kw):
         raise exc
 
-    monkeypatch.setattr(readers, "make_reader",
-                        lambda cfg, source: types.SimpleNamespace(source="cache", spaces=refuse))
+    monkeypatch.setattr(readers, "make_reader", _spaces_reader(refuse))
     result = cli.invoke(app, ["spaces"])
     assert result.exit_code == 1
     # CliRunner reports exit 1 for an escaped exception too; SystemExit means the handler ran.
     assert isinstance(result.exception, SystemExit)
     assert result.output == f"{exc}\n"
+
+
+def _spaces_reader(spaces):
+    return lambda cfg, source: types.SimpleNamespace(source="cache", spaces=spaces)
+
+
+def test_the_notes_a_refused_command_raised_come_before_its_line(cli, monkeypatch):
+    def refuse(**kw):
+        config.note_once("majordomo: a note.")
+        raise NotFound("majordomo: spaces/X: not found.")
+
+    monkeypatch.setattr(readers, "make_reader", _spaces_reader(refuse))
+    result = cli.invoke(app, ["spaces"])
+    assert result.exit_code == 1
+    assert result.output == "majordomo: a note.\nmajordomo: spaces/X: not found.\n"
+
+
+def test_the_notes_a_command_raised_reach_stderr_by_its_end(cli, monkeypatch):
+    def answer(**kw):
+        config.note_once("majordomo: a note.")
+        return []
+
+    monkeypatch.setattr(readers, "make_reader", _spaces_reader(answer))
+    result = cli.invoke(app, ["spaces", "--json"])
+    assert result.exit_code == 0
+    assert "majordomo: a note.\n" in result.output
+    assert config.drain_notes() == []
 
 
 def test_a_real_run_prints_one_line_on_stderr_and_no_traceback(tmp_path):

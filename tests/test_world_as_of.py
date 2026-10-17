@@ -4,7 +4,10 @@ after the bound leaves any backend; set-but-unparseable (or timezone-naive) is
 a hard failure on every code path. Enforcement is tested at the seam: the
 parser, the window clamp, the two ``reports.spaces`` subqueries, the
 NocacheReader clamp and ``createTime`` post-filter, and the FreshReader skip.
-No test touches the live Chat API (fakes only, per test_nocache_reader.py).
+What the core has to say about a bound (a clamped ``--until``, a store that
+does not reach it, a skipped top-up) is a note for a front door to show; the
+core itself prints nothing. No test touches the live Chat API (fakes only,
+per test_nocache_reader.py).
 """
 
 import _shim  # noqa: F401
@@ -20,6 +23,11 @@ from majordomo.errors import MajordomoError
 # 2026-07-12T17:07:00+10:00 == 2026-07-12T07:07:00 UTC
 BOUND_RAW = "2026-07-12T17:07:00+10:00"
 BOUND_UTC = datetime(2026, 7, 12, 7, 7, 0)
+
+
+@pytest.fixture(autouse=True)
+def _no_notes_carried_in():
+    config.drain_notes()
 
 
 # --- semantics 1: unset -> unbounded, zero behavioural change ---------------
@@ -112,13 +120,16 @@ def test_late_until_is_clamped_with_a_note(monkeypatch, capsys):
     start, end = dates.resolve("all", since="2026-01-01", until="2026-12-31")
     assert start == datetime(2026, 1, 1)
     assert end == BOUND_UTC
-    assert "WORLD_AS_OF" in capsys.readouterr().err
+    assert capsys.readouterr().err == ""
+    assert config.drain_notes() == [
+        "majordomo: --until '2026-12-31' is after WORLD_AS_OF (2026-07-12T07:07:00 UTC); clamped to the bound."
+    ]
 
 
-def test_early_until_passes_untouched(monkeypatch, capsys):
+def test_early_until_passes_untouched(monkeypatch):
     monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
     assert dates.resolve("all", until="2026-02-01") == (None, datetime(2026, 2, 1))
-    assert capsys.readouterr().err == ""
+    assert config.drain_notes() == []
 
 
 # --- cache backend: enforcement inside reports (the seam, not the front door)
@@ -210,10 +221,12 @@ def test_live_topup_skipped_when_watermark_reaches_the_bound(monkeypatch, capsys
     out = _fresh(cache, nc).tasks(space="spaces/X")
     assert out == ["CACHE_ROW"]                                  # cache served as-is
     nc.tasks.assert_not_called()                                 # no API call at all
-    assert "WORLD_AS_OF" in capsys.readouterr().err              # and it says so
+    assert capsys.readouterr().err == ""                         # it says so in a note
+    notes = config.drain_notes()
+    assert len(notes) == 1 and "--live top-up skipped" in notes[0]
 
 
-def test_live_topup_survives_a_watermark_short_of_the_bound(monkeypatch, capsys):
+def test_live_topup_survives_a_watermark_short_of_the_bound(monkeypatch):
     # The legitimate case (a bound in the future or inside the sync gap): the
     # top-up runs; its fetch is end-clamped inside NocacheReader.
     monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
@@ -225,7 +238,7 @@ def test_live_topup_survives_a_watermark_short_of_the_bound(monkeypatch, capsys)
                         lambda conn, sp: datetime(2026, 7, 1))   # short of the bound
     _fresh(cache, nc).messages("spaces/X")
     nc.messages.assert_called_once()
-    assert capsys.readouterr().err == ""
+    assert config.drain_notes() == []
 
 
 def test_live_unbounded_polls_as_before(monkeypatch):
@@ -335,10 +348,12 @@ def test_cache_floor_warning(monkeypatch, capsys):
 
     monkeypatch.setattr(db, "query", fake)
     reports.messages(None, [], space="spaces/X")
-    assert "does not reach the as-of instant" in capsys.readouterr().err
+    assert capsys.readouterr().err == ""
+    notes = config.drain_notes()
+    assert len(notes) == 1 and "does not reach the as-of instant" in notes[0]
 
 
-def test_no_floor_warning_when_store_reaches_the_bound(monkeypatch, capsys):
+def test_no_floor_warning_when_store_reaches_the_bound(monkeypatch):
     monkeypatch.setenv("WORLD_AS_OF", BOUND_RAW)
 
     def fake(conn, sql, params=()):
@@ -348,7 +363,7 @@ def test_no_floor_warning_when_store_reaches_the_bound(monkeypatch, capsys):
 
     monkeypatch.setattr(db, "query", fake)
     reports.messages(None, [], space="spaces/X")
-    assert "as-of instant" not in capsys.readouterr().err
+    assert config.drain_notes() == []
 
 
 def test_edited_after_bound_is_marked_not_dropped(monkeypatch):

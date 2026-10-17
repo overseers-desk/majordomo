@@ -14,7 +14,6 @@ Every person a report shows is named through the same roster.
 
 from __future__ import annotations
 
-import sys
 from datetime import datetime, timezone
 
 from . import config, db, reports, roster, sieve
@@ -304,7 +303,7 @@ class FreshReader:
         """Under WORLD_AS_OF, drop top-up targets whose cache watermark is at or
         past the bound: the top-up fetches only records newer than the watermark,
         which the bound would exclude anyway, so the call is definitionally
-        useless. `--live` degrades to the cache read plus a stderr note. A
+        useless. `--live` degrades to the cache read plus a note. A
         watermark short of the bound (a future bound, or the sync gap) keeps its
         top-up, the one case where `--live` still adds anything; the fetch
         itself is end-clamped inside NocacheReader.
@@ -314,10 +313,9 @@ class FreshReader:
             return list(targets)
         live = [(sp, wm) for sp, wm in targets if wm is None or wm < bound]
         if len(live) < len(targets):
-            print(
+            config.note_once(
                 "majordomo: WORLD_AS_OF bound: --live top-up skipped where the "
-                "cache already reaches the bound; served cache.",
-                file=sys.stderr,
+                "cache already reaches the bound; served cache."
             )
         return live
 

@@ -33,20 +33,16 @@ def cache_dir() -> Path:
     return Path(base).expanduser() / "majordomo"
 
 
-# Notes the core raises about a run: each printed to stderr once, and held
-# until a front door whose caller reads no stderr (the MCP envelope) drains
-# them into its answer, after which the next call may raise them afresh. The
-# core owns the wording; a front door only carries it.
+# Notes the core raises about a run, each held once until a front door drains
+# them (the CLI onto stderr, the MCP server into its answer's ``notes``),
+# after which the next call may raise them afresh. The core owns the wording
+# and prints nothing; a front door only carries it.
 _pending: list[str] = []
 
 
 def note_once(message: str) -> None:
-    import sys
-
-    if message in _pending:
-        return
-    _pending.append(message)
-    print(message, file=sys.stderr)
+    if message not in _pending:
+        _pending.append(message)
 
 
 def drain_notes() -> list[str]:

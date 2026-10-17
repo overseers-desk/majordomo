@@ -3,18 +3,16 @@ attachments. Reads the Chat API directly and decodes tasks itself (decoder.py),
 so majordomo works without the BI backend. Needs the `api` extra
 (google-api-python-client, google-auth). Read records are tagged
 ``source = "nocache"``; the sieve (spaces + assignees) is applied here too.
-`login` mints the token; ``ensure_command_scopes`` is what a command calls at
-its very start, before any Chat or People call, to ask once for everything its
-shape (reading the API directly, ``--owner``, ``send``, showing people) needs
-that the saved token lacks. ``ensure_scopes`` underneath it is also the lazy
-fallback a feature reaches for itself (``people_service``, ``send``,
-``owned_spaces``): by the time it runs, the up-front check has already granted
-what it could, so it asks nothing new, and if the up-front consent was
-declined or failed it does not ask again either, within the same command.
-People are named through roster.py, which reads the People API over this
-token. A command run as an ``[identity.NAME]`` (``--as NAME``) holds a Chat
-app's service-account key instead of this token, and only sends: the app has
-no consent flow, no People API, and no file upload.
+The token is minted by Google's consent flow, which a front door runs
+(frontdoor.py). ``ensure_command_scopes`` names, from a command's shape
+(reading the API directly, ``--owner``, ``send``, showing people), every scope
+the saved token lacks, by raising ``ScopeError``; ``ensure_scopes`` is the same
+check made by a feature that reaches for a scope itself (``people_service``,
+``own_tasks``, ``send``), which then falls back or refuses. People are named
+through roster.py, which reads the People API over this token. A command run
+as an ``[identity.NAME]`` (``--as NAME``) holds a Chat app's service-account
+key instead of this token, and only sends: the app has no consent flow, no
+People API, and no file upload.
 
 A no-cache read is windowed and slow under Google's read quota, which
 is why the default path is the BI cache.
@@ -29,10 +27,8 @@ filtered to `ROLE_MANAGER`, Chat's "Owner" role in the UI; see
 
 from __future__ import annotations
 
-import errno
 import functools
 import os
-import sys
 from datetime import datetime
 
 from . import config, decoder, readers, roster, sieve
@@ -69,11 +65,6 @@ LOGIN_SCOPES = [
     TASKS_SCOPE,
     *roster.PEOPLE_SCOPES,
 ]
-# The loopback port the consent flow listens on for Google's redirect.
-CONSENT_PORT = 7276
-# How long a consent a command opened by itself waits for the person before
-# the command carries on without the new scopes.
-CONSENT_TIMEOUT = 180
 
 # What a command's shape needs, keyed by the flag ``ensure_command_scopes``
 # takes: reading the Chat API directly, --owner's membership lookup, sending,
@@ -115,118 +106,6 @@ def _media_download():
     return MediaIoBaseDownload
 
 
-def _open_quietly(url, new=0, autoraise=True):
-    """Open the consent page from a child process whose stdout and stderr are
-    discarded, so nothing a browser launcher prints reaches this process's
-    stdout: under the MCP server that stream is the protocol."""
-    import subprocess
-
-    subprocess.Popen([sys.executable, "-m", "webbrowser", "-t", url],
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=True)
-    return True
-
-
-def _consent(cfg: dict, *, open_browser: bool = True, timeout: int | None = None) -> str:
-    """Run Google's consent flow for LOGIN_SCOPES, write the token, return its
-    path. Everything the flow prints goes to stderr. With ``timeout`` set, an
-    unanswered consent fails after that many seconds rather than waiting."""
-    import contextlib
-    import webbrowser
-
-    try:
-        from google_auth_oauthlib.flow import InstalledAppFlow
-    except ImportError as exc:
-        raise MajordomoError(
-            "majordomo: the Google sign-in library is missing, so this "
-            "install is incomplete; reinstall majordomo."
-        ) from exc
-    client_file = os.path.expanduser(config.api_client_file(cfg))
-    token_file = os.path.expanduser(config.api_token_file(cfg))
-    if not os.path.exists(client_file):
-        raise MajordomoError(
-            f"majordomo: no OAuth client at {client_file}. Create a Desktop OAuth "
-            "client in Google Cloud (Chat API enabled) and save it there."
-        )
-    # include_granted_scopes returns what the account already granted this
-    # client alongside the new scopes; oauthlib would otherwise reject a token
-    # whose scopes differ from the request.
-    os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
-    import types
-
-    webbrowser.register("majordomo-quiet", None, types.SimpleNamespace(open=_open_quietly))
-    try:
-        flow = InstalledAppFlow.from_client_secrets_file(client_file, LOGIN_SCOPES)
-        with contextlib.redirect_stdout(sys.stderr):
-            creds = flow.run_local_server(
-                port=CONSENT_PORT, open_browser=open_browser, browser="majordomo-quiet",
-                timeout_seconds=timeout,
-                authorization_prompt_message="majordomo: grant access in your browser: {url}",
-                access_type="offline", prompt="consent", include_granted_scopes="true",
-            )
-    except Exception as exc:
-        # Swallow the raw exception (and its locals, and its message/args):
-        # a failed OAuth exchange carries the client secret and authorization
-        # code in them. Only the safe reason _consent_reason picks out survives.
-        raise MajordomoError(
-            f"majordomo: login failed or was not completed ({_consent_reason(exc)}). "
-            f"Check {client_file} and the Cloud project, then retry `majordomo login`."
-        ) from None
-    os.makedirs(os.path.dirname(token_file), exist_ok=True)
-    with open(token_file, "w") as fh:
-        fh.write(creds.to_json())
-    os.chmod(token_file, 0o600)
-    return token_file
-
-
-def _consent_reason(exc: Exception) -> str:
-    """A safe, one-line reason a consent attempt failed: the exception's class
-    name, plus a plain sentence for the cases majordomo can tell apart by type
-    or errno alone. Never the exception's own message, args, or anything from
-    its traceback: a failed OAuth exchange can carry the client secret and
-    the authorization code in them, and this must be safe to print (stderr)
-    and to carry in the MCP envelope's ``notes`` alike."""
-    name = type(exc).__name__
-    if name == "WSGITimeoutError":  # google_auth_oauthlib: timeout_seconds elapsed
-        return f"{name} (timed out waiting for approval)"
-    if isinstance(exc, OSError) and exc.errno == errno.EADDRINUSE:
-        return f"{name} (port {CONSENT_PORT} already in use)"
-    if name == "AccessDeniedError":  # oauthlib: Google redirected with error=access_denied
-        return f"{name} (consent declined / access_denied)"
-    return name
-
-
-def login(cfg: dict) -> str:
-    """Mint a token via the browser OAuth flow, write it, return its path."""
-    ident = config.identity(cfg)
-    if ident:
-        raise MajordomoError(
-            f"majordomo: {ident['name']} signs in with its service-account key; there is no login."
-        )
-    return _consent(cfg)
-
-
-def consent_mode() -> str | None:
-    """How a command may ask for a scope it lacks: "browser" when a browser
-    can be opened here, "url" when only a person at a terminal can take the
-    printed link, None when nobody is there to answer (cron, CI, a headless
-    server)."""
-    if os.environ.get("CI"):
-        return None
-    remote = os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY")
-    if sys.platform == "darwin" or sys.platform.startswith("win"):
-        display = not remote
-    else:
-        display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
-    if display:
-        return "browser"
-    try:
-        attended = sys.stdin.isatty() and sys.stderr.isatty()
-    except (AttributeError, ValueError):
-        attended = False
-    return "url" if attended else None
-
-
 def _missing(creds, needed: list[str]) -> list[str]:
     granted = getattr(creds, "scopes", None)
     if granted is None:
@@ -234,50 +113,23 @@ def _missing(creds, needed: list[str]) -> list[str]:
     return [s for s in needed if s not in granted]
 
 
-def ensure_scopes(cfg: dict, creds, needed: list[str], purpose: str):
-    """``creds`` if it holds ``needed``; else run the consent flow once, when
-    someone can answer it, and return the new credentials; else None.
-
-    Never under WORLD_AS_OF (a bounded run is read-only). A declined or
-    unanswered consent is not remembered *across commands*: the next command
-    that needs the scope asks again. Whoever calls this decides what None
-    means: a soft fallback for a display name, a refusal for a send.
-
-    Within one command, though, a scope this already tried and failed to get
-    is not tried again: ``cfg`` (loaded once per command, by both front doors)
-    carries the set of scopes already asked for, so a later lazy check for the
-    same scope, reached after ``ensure_command_scopes`` already tried it and
-    was declined, timed out, or found nobody to answer, falls back quietly
-    rather than opening the consent page a second time. A scope consent did
-    grant needs no such memory: the next check's ``creds`` (re-read from the
-    token file) already carries it, so nothing is missing and nothing is
-    asked.
-    """
-    missing = _missing(creds, needed)
-    if not missing:
-        return creds
-    if config.world_as_of() is not None:
-        return None
-    mode = consent_mode()
-    if mode is None:
-        return None
-    asked = cfg.setdefault("_scopes_asked", set())
-    if set(missing) <= asked:
-        return None
-    asked.update(missing)
-    config.note_once(
+def _short_of(scopes: list[str], purpose: str) -> ScopeError:
+    return ScopeError(
         "majordomo: this version of majordomo needs more Google permissions than "
-        f"your saved login grants ({purpose}); opening Google's consent page to grant them."
-        + ("" if mode == "browser" else
-           f" Open the link below in a browser on this machine (or forward port {CONSENT_PORT}).")
+        f"your saved login grants ({purpose}); run `majordomo login` to grant them.",
+        scopes=scopes, purpose=purpose,
     )
-    try:
-        _consent(cfg, open_browser=(mode == "browser"), timeout=CONSENT_TIMEOUT)
-        fresh = get_credentials(cfg)
-    except MajordomoError as exc:
-        config.note_once(str(exc))
-        return None
-    return None if _missing(fresh, needed) else fresh
+
+
+def ensure_scopes(creds, needed: list[str], purpose: str):
+    """``creds`` if it holds ``needed``; else ScopeError carrying the missing
+    scopes and ``purpose``. Whoever calls this decides what the refusal
+    means: a soft fallback for a display name, a refusal for a send. Asking
+    Google for the scopes is a front door's business (frontdoor.py)."""
+    missing = _missing(creds, needed)
+    if missing:
+        raise _short_of(missing, purpose)
+    return creds
 
 
 def scopes_for(*, api_read: bool = False, owner: bool = False, send: bool = False,
@@ -299,23 +151,21 @@ def scopes_for(*, api_read: bool = False, owner: bool = False, send: bool = Fals
 
 def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = False,
                           send: bool = False, people: bool = False, own: bool = False) -> None:
-    """Ask, once, for everything this command's shape needs, before any Chat
-    or People call. This is the core function both front doors call at the
-    very start of a command (INVARIANTS.md: the sieve and the credentials
-    live in the core). Without this, a command that both reads slowly and
-    eventually needs a new scope (``spaces --owner``, backing off through a
-    minute of membership reads before its first name lookup ever ran) could
-    spend all of that before finding out consent was needed, or declined.
+    """Every scope this command's shape needs that the saved token lacks,
+    raised as one ScopeError (``.scopes`` their union, ``.purpose`` what each
+    group is for) before any Chat or People call. Both front doors call this
+    at the very start of a command, through frontdoor.up_front, which may ask
+    Google for them: a command that both reads slowly and eventually needs a
+    new scope (``spaces --owner``, backing off through a minute of membership
+    reads before its first name lookup ran) learns of the gap before it has
+    spent any of that.
 
-    A no-op when the shape needs nothing, and when there is no saved token at
-    all: consent adds scopes to an existing token (``include_granted_scopes``)
-    rather than minting one from nothing, so an install that never ran
-    `majordomo login` gets the same "run `majordomo login`" fallback here as
-    from the lazy checks, not a surprise consent page. Otherwise this is
-    ``ensure_scopes`` under the hood, so every one of its rules apply here
-    too: no consent under WORLD_AS_OF, none when nobody can answer, a decline
-    not remembered past this command. See its docstring for how a later lazy
-    check in the same command avoids asking twice.
+    Quiet when the shape needs nothing, under WORLD_AS_OF (a bounded run asks
+    no consent), and when there is no saved token at all: consent adds scopes
+    to an existing token (``include_granted_scopes``) rather than minting one,
+    so an install that never ran `majordomo login` meets the same "run
+    `majordomo login`" fallback as the features that check for themselves,
+    not a consent page.
     """
     ident = config.identity(cfg)
     if ident:
@@ -326,7 +176,7 @@ def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = Fa
         raise MajordomoError(f"majordomo: majordomo sends as {ident['name']} but does not read as it.")
     wanted = [(scopes, purpose) for key, scopes, purpose in _SCOPE_GROUPS
               if {"api_read": api_read, "owner": owner, "send": send, "people": people, "own": own}[key]]
-    if not wanted:
+    if not wanted or config.world_as_of() is not None:
         return
     try:
         creds = get_credentials(cfg)
@@ -339,22 +189,20 @@ def ensure_command_scopes(cfg: dict, *, api_read: bool = False, owner: bool = Fa
         if miss:
             needed += miss
             purposes.append(purpose)
-    if not needed:
-        return
-    ensure_scopes(cfg, creds, needed, "; ".join(purposes))
+    if needed:
+        ensure_scopes(creds, needed, "; ".join(purposes))
 
 
 def people_service(cfg: dict):
     """A People API service over the saved token, for roster.py; None, with a
-    one-line note, when the token cannot name people and could not be made to."""
+    one-line note, when there is no usable token or it cannot name people."""
     try:
-        creds = get_credentials(cfg)
+        creds = ensure_scopes(get_credentials(cfg), roster.PEOPLE_SCOPES, "the People API, which names people")
+    except ScopeError:
+        config.note_once(roster.LOGIN_NOTE)
+        return None
     except MajordomoError:
         config.note_once(roster.NO_LOGIN_NOTE)
-        return None
-    creds = ensure_scopes(cfg, creds, roster.PEOPLE_SCOPES, "the People API, which names people")
-    if creds is None:
-        config.note_once(roster.LOGIN_NOTE)
         return None
     _, _, build = _require_google()
     return build("people", "v1", credentials=creds, cache_discovery=False)
@@ -387,18 +235,15 @@ def own_tasks(cfg: dict, service=None) -> dict | None:
     of their Google Tasks lists, indexed for readers.fill_own: ``by_thread``
     maps (space, thread) to the task made from that thread's message,
     ``by_space`` maps a space to (updated time, task) pairs for the tasks
-    created fresh there. None, with a one-line note, when the token cannot
-    read the lists and could not be made to; None too under WORLD_AS_OF, the
-    lists being current-state (and a bounded run asks no consent). ``service``
-    is injected by tests."""
+    created fresh there. None, with a one-line note, when there is no usable
+    token or it cannot read the lists; None too under WORLD_AS_OF, the lists
+    being current-state. ``service`` is injected by tests."""
     if config.world_as_of() is not None:
         return None
     if service is None:
         try:
-            creds = ensure_scopes(cfg, get_credentials(cfg), [TASKS_SCOPE], OWN_PURPOSE)
+            creds = ensure_scopes(get_credentials(cfg), [TASKS_SCOPE], OWN_PURPOSE)
         except MajordomoError:
-            creds = None
-        if creds is None:
             config.note_once(OWN_NOTE)
             return None
         _, _, build = _require_google()
@@ -584,14 +429,7 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
         if ident:
             creds = _service_account_credentials(ident)
         else:
-            creds = ensure_scopes(cfg, get_credentials(cfg), [SEND_SCOPE], "sending messages")
-            if creds is None:
-                raise ScopeError(
-                    "majordomo: this version of majordomo needs more Google permissions "
-                    "than your saved login grants (sending messages); run `majordomo login` "
-                    "to grant them.",
-                    scopes=[SEND_SCOPE], purpose="sending messages",
-                )
+            creds = ensure_scopes(get_credentials(cfg), [SEND_SCOPE], "sending messages")
             people = people_lookup(cfg)
         _, _, build = _require_google()
         service = build("chat", "v1", credentials=creds, cache_discovery=False)
@@ -600,8 +438,6 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
         space = reader.dm_space_for(to)
     elif space:
         space = reader.resolve_space(space)
-        if not sieve.allows(blocked, space):
-            raise NotFound(f"majordomo: {space}: not found.")
     reader.roster.save()
     # The space is now resolved and sieve-cleared; upload only after that, so a
     # blocked or absent target is refused before any file leaves the machine.
@@ -768,12 +604,7 @@ class NocacheReader:
             ).execute(num_retries=6)
         except Exception as exc:
             if getattr(getattr(exc, "resp", None), "status", None) == 403:
-                raise ScopeError(
-                    "majordomo: this version of majordomo needs more Google permissions "
-                    "than your saved login grants (listing space members, for --owner); "
-                    "run `majordomo login` to grant them.",
-                    scopes=[MEMBERSHIPS_SCOPE], purpose="listing space members, for --owner",
-                ) from None
+                raise _short_of([MEMBERSHIPS_SCOPE], "listing space members, for --owner") from None
             raise
         members = resp.get("memberships", [])
         return (members[0].get("member") or {}).get("name") if members else None
@@ -928,15 +759,11 @@ def owned_spaces(cfg: dict, blocked: list[str], *, minimal_messages: int = 1, ow
     owns each one. Always reads the direct API regardless of the caller's
     --cache/--live/--nocache choice, the same as `attachments`: both front
     doors call this one function rather than building a `NocacheReader`
-    themselves, so the "always direct" exception has one home.
+    themselves, so the "always direct" exception has one home. A token short
+    of the memberships scope is refused by the first member read, as a
+    ScopeError.
     """
-    creds = get_credentials(cfg)
-    if owner:
-        # A token short of the memberships scope gets the consent flow once;
-        # declined or unanswerable, the first member read refuses.
-        creds = ensure_scopes(cfg, creds, [MEMBERSHIPS_SCOPE], "listing space members, for --owner") or creds
-    return NocacheReader.from_config(cfg, blocked, creds=creds).spaces(
-        minimal_messages=minimal_messages, owner=owner)
+    return NocacheReader.from_config(cfg, blocked).spaces(minimal_messages=minimal_messages, owner=owner)
 
 
 # --- attachments ---------------------------------------------------------
