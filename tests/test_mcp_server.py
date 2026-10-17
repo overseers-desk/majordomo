@@ -38,7 +38,6 @@ def order(monkeypatch):
 
 
 def _stub_reader(calls):
-    """A duck-typed reader that only records that a read happened."""
     reader = types.SimpleNamespace(source="cache")
     for name in ("spaces", "people", "tasks", "messages"):
         # messages(space, ...) takes its space positionally; _name must stay

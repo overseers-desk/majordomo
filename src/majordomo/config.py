@@ -144,7 +144,7 @@ def identity(config: dict) -> dict | None:
 
 def load_env() -> dict:
     """The database credentials from the env file. A missing file raises, and
-    the reader seam falls back as ``db._driver`` describes."""
+    the reader seam falls back."""
     if not ENV_FILE.exists():
         raise FileNotFoundError(f"no database .env at {ENV_FILE}")
     env: dict[str, str] = {}
