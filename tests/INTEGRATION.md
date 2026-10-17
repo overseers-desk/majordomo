@@ -37,7 +37,10 @@ Exit status:
 
 - `config.toml` present and valid TOML.
 - `[me].user_id` set (without it `--to-me`/`--by-me` exit 2).
-- `.env` present (the cache DB connection).
+- The cache DB connection set: `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD` and
+  `MYSQL_DATABASE`, from `.env` or from a `[db]` table in `config.toml` (a key set
+  in both takes `[db]`'s value, as the front doors do). The DB host the preflight
+  resolves comes from the same merge.
 - `client_secret.json` present and carrying a `client_id`.
 - `token.json` present and carrying a `refresh_token`.
 

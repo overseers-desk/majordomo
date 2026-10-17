@@ -70,7 +70,7 @@ def test_send_short_of_its_scope_raises_naming_it(world, monkeypatch):
     chat = MagicMock()
     monkeypatch.setattr(api, "_require_google", lambda: (None, None, lambda *a, **k: chat))
     with pytest.raises(ScopeError, match="majordomo login") as ei:
-        api.send({}, [], space="spaces/A", text="hi")
+        api.send({}, space="spaces/A", text="hi")
     assert ei.value.scopes == [api.SEND_SCOPE]
     assert ei.value.purpose == "sending messages"
     chat.spaces().messages().create.assert_not_called()

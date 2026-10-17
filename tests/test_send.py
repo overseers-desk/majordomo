@@ -17,6 +17,11 @@ from majordomo import api, config
 from majordomo.errors import MajordomoError, NotFound, ScopeError
 
 
+def _blocking(*spaces):
+    """A cfg whose sieve blocks these spaces, the one place send reads it from."""
+    return {"sieve": {"block_spaces": list(spaces)}}
+
+
 def _chat(created=None):
     chat = MagicMock()
     chat.spaces().messages().create.return_value.execute.return_value = created or {}
@@ -49,7 +54,7 @@ def _chat_with_dm(user_to_space, created=None):
 
 def test_send_to_space_calls_create():
     chat = _chat({"name": "spaces/OK/messages/NEW"})
-    out = api.send({}, [], space="spaces/OK", text="hi", service=chat)
+    out = api.send({}, space="spaces/OK", text="hi", service=chat)
     assert out["name"] == "spaces/OK/messages/NEW"
     kwargs = _create_kwargs(chat)
     assert kwargs["parent"] == "spaces/OK"
@@ -59,7 +64,7 @@ def test_send_to_space_calls_create():
 
 def test_reply_derives_thread_from_message_name():
     chat = _chat()
-    api.send({}, [], thread="spaces/OK/messages/T.2", text="re", service=chat)
+    api.send({}, thread="spaces/OK/messages/T.2", text="re", service=chat)
     kwargs = _create_kwargs(chat)
     assert kwargs["parent"] == "spaces/OK"
     assert kwargs["body"]["thread"] == {"name": "spaces/OK/threads/T"}
@@ -68,14 +73,14 @@ def test_reply_derives_thread_from_message_name():
 
 def test_reply_accepts_thread_resource_name():
     chat = _chat()
-    api.send({}, [], thread="spaces/OK/threads/T", text="re", service=chat)
+    api.send({}, thread="spaces/OK/threads/T", text="re", service=chat)
     assert _create_kwargs(chat)["body"]["thread"] == {"name": "spaces/OK/threads/T"}
 
 
 def test_blocked_space_worded_as_not_found():
     chat = _chat()
     with pytest.raises(NotFound) as ei:
-        api.send({}, ["spaces/BLOCK"], space="spaces/BLOCK", text="hi", service=chat)
+        api.send(_blocking("spaces/BLOCK"), space="spaces/BLOCK", text="hi", service=chat)
     assert str(ei.value) == "majordomo: spaces/BLOCK: not found."
     chat.spaces().messages().create.assert_not_called()
 
@@ -83,7 +88,7 @@ def test_blocked_space_worded_as_not_found():
 def test_blocked_space_refused_for_a_thread_reply_too():
     chat = _chat()
     with pytest.raises(NotFound) as ei:
-        api.send({}, ["spaces/BLOCK"], thread="spaces/BLOCK/messages/T.1", text="hi", service=chat)
+        api.send(_blocking("spaces/BLOCK"), thread="spaces/BLOCK/messages/T.1", text="hi", service=chat)
     assert str(ei.value) == "majordomo: spaces/BLOCK: not found."
     chat.spaces().messages().create.assert_not_called()
 
@@ -94,7 +99,7 @@ def test_404_uses_the_same_wording_as_the_sieve():
     err.resp = types.SimpleNamespace(status=404)
     chat.spaces().messages().create.return_value.execute.side_effect = err
     with pytest.raises(NotFound) as ei:
-        api.send({}, [], space="spaces/GONE", text="hi", service=chat)
+        api.send({}, space="spaces/GONE", text="hi", service=chat)
     assert str(ei.value) == "majordomo: spaces/GONE: not found."
 
 
@@ -104,14 +109,14 @@ def test_non_404_api_errors_stay_loud():
     err.resp = types.SimpleNamespace(status=403)
     chat.spaces().messages().create.return_value.execute.side_effect = err
     with pytest.raises(Exception, match="403"):
-        api.send({}, [], space="spaces/OK", text="hi", service=chat)
+        api.send({}, space="spaces/OK", text="hi", service=chat)
 
 
 def test_world_as_of_refuses_send():
     chat = _chat()
     bounded = config.load_config({}, world_as_of="2026-07-12T17:07:00+10:00")
     with pytest.raises(MajordomoError) as ei:
-        api.send(bounded, [], space="spaces/OK", text="hi", service=chat)
+        api.send(bounded, space="spaces/OK", text="hi", service=chat)
     assert "WORLD_AS_OF" in str(ei.value)
     chat.spaces().messages().create.assert_not_called()
 
@@ -121,13 +126,13 @@ def test_token_without_send_scope_points_at_login(monkeypatch):
         scopes=["https://www.googleapis.com/auth/chat.spaces.readonly"])
     monkeypatch.setattr(api, "get_credentials", lambda cfg: read_only)
     with pytest.raises(ScopeError) as ei:
-        api.send({}, [], space="spaces/OK", text="hi")
+        api.send({}, space="spaces/OK", text="hi")
     assert "majordomo login" in str(ei.value)
 
 
 def test_to_email_resolves_the_dm_and_sends():
     chat = _chat_with_dm({"users/alice@example.com": "spaces/DM1"})
-    api.send({}, [], to="alice@example.com", text="hi", service=chat)
+    api.send({}, to="alice@example.com", text="hi", service=chat)
     kwargs = _create_kwargs(chat)
     assert kwargs["parent"] == "spaces/DM1"
     assert kwargs["body"] == {"text": "hi"}
@@ -135,14 +140,14 @@ def test_to_email_resolves_the_dm_and_sends():
 
 def test_to_accepts_the_users_id_form():
     chat = _chat_with_dm({"users/123": "spaces/DM2"})
-    api.send({}, [], to="users/123", text="hi", service=chat)
+    api.send({}, to="users/123", text="hi", service=chat)
     assert _create_kwargs(chat)["parent"] == "spaces/DM2"
 
 
 def test_to_without_an_existing_dm_refused_cleanly():
     chat = _chat_with_dm({})
     with pytest.raises(NotFound) as ei:
-        api.send({}, [], to="bob@example.com", text="hi", service=chat)
+        api.send({}, to="bob@example.com", text="hi", service=chat)
     assert str(ei.value) == "majordomo: no direct message space with users/bob@example.com."
     chat.spaces().messages().create.assert_not_called()
 
@@ -150,19 +155,19 @@ def test_to_without_an_existing_dm_refused_cleanly():
 def test_to_blocked_dm_answers_like_an_absent_one():
     chat = _chat_with_dm({"users/alice@example.com": "spaces/BLOCKDM"})
     with pytest.raises(NotFound) as ei:
-        api.send({}, ["spaces/BLOCKDM"], to="alice@example.com", text="hi", service=chat)
+        api.send(_blocking("spaces/BLOCKDM"), to="alice@example.com", text="hi", service=chat)
     assert str(ei.value) == "majordomo: no direct message space with users/alice@example.com."
     chat.spaces().messages().create.assert_not_called()
 
 
 def test_needs_exactly_one_target():
     with pytest.raises(MajordomoError):
-        api.send({}, [], text="hi", service=_chat())
+        api.send({}, text="hi", service=_chat())
     with pytest.raises(MajordomoError):
-        api.send({}, [], space="spaces/OK", thread="spaces/OK/threads/T",
+        api.send({}, space="spaces/OK", thread="spaces/OK/threads/T",
                  text="hi", service=_chat())
     with pytest.raises(MajordomoError):
-        api.send({}, [], space="spaces/OK", to="alice@example.com",
+        api.send({}, space="spaces/OK", to="alice@example.com",
                  text="hi", service=_chat())
 
 
@@ -187,7 +192,7 @@ def test_send_with_attachment_uploads_and_attaches(tmp_path, monkeypatch):
     f.write_bytes(b"%PDF-1.4 test")
     chat = _chat({"name": "spaces/OK/messages/NEW"})
     chat.media().upload.return_value.execute.return_value = {"attachmentDataRef": {"resourceName": "r1"}}
-    out = api.send({}, [], space="spaces/OK", text="hi", attachments=[str(f)], service=chat)
+    out = api.send({}, space="spaces/OK", text="hi", attachments=[str(f)], service=chat)
     assert out["name"] == "spaces/OK/messages/NEW"
     _, up = chat.media().upload.call_args
     assert up["parent"] == "spaces/OK"
@@ -206,7 +211,7 @@ def test_multiple_attachments_upload_each_in_order(tmp_path, monkeypatch):
         {"attachmentDataRef": {"resourceName": "ra"}},
         {"attachmentDataRef": {"resourceName": "rb"}},
     ]
-    api.send({}, [], space="spaces/OK", text="hi", attachments=[str(a), str(b)], service=chat)
+    api.send({}, space="spaces/OK", text="hi", attachments=[str(a), str(b)], service=chat)
     assert chat.media().upload.call_count == 2
     assert _create_kwargs(chat)["body"]["attachment"] == [
         {"attachmentDataRef": {"resourceName": "ra"}},
@@ -219,7 +224,7 @@ def test_attachment_only_send_omits_text(tmp_path, monkeypatch):
     f = tmp_path / "f.pdf"; f.write_bytes(b"z")
     chat = _chat({"name": "spaces/OK/messages/NEW"})
     chat.media().upload.return_value.execute.return_value = {"attachmentDataRef": {"resourceName": "r"}}
-    api.send({}, [], space="spaces/OK", attachments=[str(f)], service=chat)
+    api.send({}, space="spaces/OK", attachments=[str(f)], service=chat)
     body = _create_kwargs(chat)["body"]
     assert "text" not in body
     assert body["attachment"] == [{"attachmentDataRef": {"resourceName": "r"}}]
@@ -227,7 +232,7 @@ def test_attachment_only_send_omits_text(tmp_path, monkeypatch):
 
 def test_send_needs_text_or_attachment():
     with pytest.raises(MajordomoError) as ei:
-        api.send({}, [], space="spaces/OK", service=_chat())
+        api.send({}, space="spaces/OK", service=_chat())
     assert "text, an attachment" in str(ei.value)
 
 
@@ -236,7 +241,7 @@ def test_missing_attachment_file_fails_loud_before_upload(tmp_path, monkeypatch)
     missing = tmp_path / "nope.pdf"
     chat = _chat()
     with pytest.raises(MajordomoError) as ei:
-        api.send({}, [], space="spaces/OK", text="hi", attachments=[str(missing)], service=chat)
+        api.send({}, space="spaces/OK", text="hi", attachments=[str(missing)], service=chat)
     assert "attachment not found" in str(ei.value)
     assert str(missing) in str(ei.value)
     chat.media().upload.assert_not_called()
@@ -248,7 +253,7 @@ def test_attachment_into_blocked_space_refused_before_upload(tmp_path, monkeypat
     f = tmp_path / "f.pdf"; f.write_bytes(b"z")
     chat = _chat()
     with pytest.raises(NotFound) as ei:
-        api.send({}, ["spaces/BLOCK"], space="spaces/BLOCK", text="hi",
+        api.send(_blocking("spaces/BLOCK"), space="spaces/BLOCK", text="hi",
                  attachments=[str(f)], service=chat)
     assert str(ei.value) == "majordomo: spaces/BLOCK: not found."
     chat.media().upload.assert_not_called()
@@ -260,7 +265,7 @@ def test_attachment_to_dm_uploads_into_the_resolved_space(tmp_path, monkeypatch)
     f = tmp_path / "f.pdf"; f.write_bytes(b"z")
     chat = _chat_with_dm({"users/alice@example.com": "spaces/DM1"})
     chat.media().upload.return_value.execute.return_value = {"attachmentDataRef": {"resourceName": "r"}}
-    api.send({}, [], to="alice@example.com", attachments=[str(f)], service=chat)
+    api.send({}, to="alice@example.com", attachments=[str(f)], service=chat)
     _, up = chat.media().upload.call_args
     assert up["parent"] == "spaces/DM1"
     assert _create_kwargs(chat)["parent"] == "spaces/DM1"
@@ -274,19 +279,19 @@ def test_to_accepts_a_cached_name(tmp_path):
     ros._dirty.add(roster.PEOPLE_FILE)
     ros.save()
     chat = _chat_with_dm({"users/123": "spaces/DM2"})
-    api.send({}, [], to="alice", text="hi", service=chat, cache_dir=tmp_path)
+    api.send({}, to="alice", text="hi", service=chat, cache_dir=tmp_path)
     assert _create_kwargs(chat)["parent"] == "spaces/DM2"
 
 
 def test_to_unknown_name_is_refused():
     with pytest.raises(NotFound, match="no one seen as"):
-        api.send({}, [], to="Nobody Known", text="hi", service=_chat_with_dm({}))
+        api.send({}, to="Nobody Known", text="hi", service=_chat_with_dm({}))
 
 
 def test_space_by_display_name_sends_there():
     chat = _chat({"name": "spaces/OK/messages/NEW"})
     chat.spaces().list.return_value.execute.return_value = {"spaces": [{"name": "spaces/OK", "displayName": "Ops Room"}]}
-    api.send({}, [], space="ops room", text="hi", service=chat)
+    api.send({}, space="ops room", text="hi", service=chat)
     assert _create_kwargs(chat)["parent"] == "spaces/OK"
 
 
@@ -324,7 +329,7 @@ def test_identity_sends_as_the_app_with_its_key(tmp_path, monkeypatch):
 
     monkeypatch.setattr(api, "_require_google", lambda: (None, None, build))
     _personal_login_untouched(monkeypatch)
-    out = api.send(cfg, [], space="spaces/OK", text="hi")
+    out = api.send(cfg, space="spaces/OK", text="hi")
     assert out["name"] == "spaces/OK/messages/NEW"
     assert seen == {"path": key, "scopes": [api.BOT_SCOPE]}
     assert built["credentials"] == "app-creds"
@@ -338,7 +343,7 @@ def test_identity_refuses_attachments_before_any_upload(tmp_path, monkeypatch):
     f.write_bytes(b"%PDF-1.4 test")
     chat = _chat()
     with pytest.raises(MajordomoError) as ei:
-        api.send(cfg, [], space="spaces/OK", text="hi", attachments=[str(f)], service=chat)
+        api.send(cfg, space="spaces/OK", text="hi", attachments=[str(f)], service=chat)
     assert "bot is a Chat app" in str(ei.value)
     chat.media().upload.assert_not_called()
     chat.spaces().messages().create.assert_not_called()
@@ -348,5 +353,5 @@ def test_identity_with_a_missing_key_file_names_it(tmp_path, monkeypatch):
     _personal_login_untouched(monkeypatch)
     cfg = {"_identity": "bot", "identity": {"bot": {"service_account_file": str(tmp_path / "gone.json")}}}
     with pytest.raises(MajordomoError) as ei:
-        api.send(cfg, [], space="spaces/OK", text="hi")
+        api.send(cfg, space="spaces/OK", text="hi")
     assert "gone.json" in str(ei.value) and "[identity.bot]" in str(ei.value)

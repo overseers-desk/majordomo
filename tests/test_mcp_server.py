@@ -115,7 +115,7 @@ def test_mcp_attachments_asks_api_read_and_people_before_reading(order, monkeypa
 
 
 def test_mcp_send_asks_only_the_send_scope_before_sending(order, monkeypatch):
-    def send(cfg, blocked, **kw):
+    def send(cfg, **kw):
         order.append(("read", "send"))
         return {"name": "spaces/A/messages/1"}
 
@@ -130,7 +130,7 @@ def test_mcp_send_sends_as_the_named_identity(tmp_path, monkeypatch):
         "[me]\nuser_id = 'users/1'\n[identity.bot]\nservice_account_file = 'bot-key.json'\n")
     seen = {}
 
-    def send(cfg, blocked, **kw):
+    def send(cfg, **kw):
         seen["identity"] = config.identity(cfg)
         return {"name": "spaces/A/messages/1"}
 
@@ -161,7 +161,7 @@ def test_mcp_hands_every_read_and_send_the_xdg_name_cache(order, monkeypatch, tm
     monkeypatch.setattr(readers, "make_reader",
                         lambda cfg, source, cache_dir=None: dirs.append(cache_dir) or _stub_reader([]))
     for name in ("owned_spaces", "attachments", "send"):
-        monkeypatch.setattr(api, name, lambda cfg, blocked, cache_dir=None, **kw: dirs.append(cache_dir) or [])
+        monkeypatch.setattr(api, name, lambda cfg, *a, cache_dir=None, **kw: dirs.append(cache_dir) or [])
     _tool("tasks")()
     _tool("spaces")(owner=True)
     _tool("attachments")(space="spaces/A")

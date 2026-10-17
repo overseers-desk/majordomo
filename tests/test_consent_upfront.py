@@ -154,7 +154,7 @@ def test_cli_attachments_asks_api_read_and_people_before_reading(order, monkeypa
 
 
 def test_cli_send_asks_only_the_send_scope_before_sending(order, monkeypatch):
-    def send(cfg, blocked, **kw):
+    def send(cfg, **kw):
         order.append(("read", "send"))
         return {"name": "spaces/A/messages/1"}
 
@@ -191,7 +191,7 @@ def test_cli_as_reads_a_report_as_the_identity(bot_config, monkeypatch):
 def test_cli_as_sends_as_the_identity(bot_config, monkeypatch):
     seen = {}
 
-    def send(cfg, blocked, **kw):
+    def send(cfg, **kw):
         seen["identity"] = config.identity(cfg)
         return {"name": "spaces/A/messages/1"}
 

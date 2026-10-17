@@ -252,7 +252,7 @@ def create_server() -> MCPServer:
         """
         cfg = _config(identity)
         frontdoor.up_front(cfg, send=True)
-        return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
+        return api.send(cfg, space=space, thread=thread,
                         to=to, text=text,
                         attachments=attachments and [os.path.expanduser(p) for p in attachments],
                         cache_dir=config.cache_dir())

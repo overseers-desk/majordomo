@@ -108,7 +108,7 @@ def test_the_cli_hands_every_read_and_send_the_xdg_name_cache(monkeypatch, tmp_p
     monkeypatch.setattr(readers, "make_reader",
                         lambda cfg, source, cache_dir=None: dirs.append(cache_dir) or reader)
     for name in ("owned_spaces", "attachments", "send"):
-        monkeypatch.setattr(api, name, lambda cfg, blocked, cache_dir=None, **kw: dirs.append(cache_dir) or [])
+        monkeypatch.setattr(api, name, lambda cfg, *a, cache_dir=None, **kw: dirs.append(cache_dir) or [])
     for args in (["tasks"], ["spaces", "--owner"], ["attachments", "--space", "spaces/A"],
                  ["send", "--space", "spaces/A", "--json", "hi"]):
         result = CliRunner().invoke(app, args)

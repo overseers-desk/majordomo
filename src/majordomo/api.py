@@ -412,15 +412,16 @@ def _upload_attachment(service, space: str, path: str) -> dict:
         raise
 
 
-def send(cfg: dict, blocked: list[str], *, space: str | None = None,
+def send(cfg: dict, *, space: str | None = None,
          thread: str | None = None, to: str | None = None,
          text: str | None = None, attachments: list[str] | None = None,
          service=None, people=None, cache_dir=None) -> dict:
     """Create a message in a space, in a thread, or in a person's 1:1 DM;
     returns the created message as the API gives it. Carries text, one or more
-    file attachments, or both (at least one is required). The sieve refuses a
-    blocked space with the same wording as a space that does not exist, so
-    send cannot probe the block list. Refuses under WORLD_AS_OF: a bounded
+    file attachments, or both (at least one is required). The sieve, the
+    cfg's ``[sieve].block_spaces``, refuses a blocked space with the same
+    wording as a space that does not exist, so send cannot probe the block
+    list. Refuses under WORLD_AS_OF: a bounded
     run is a replay, and a send would act in the real present. Run as an
     ``[identity.NAME]``, it sends as that Chat app: into spaces the app is a
     member of, ``to`` reaching the app's own DM, and with no attachments. The
@@ -438,6 +439,7 @@ def send(cfg: dict, blocked: list[str], *, space: str | None = None,
         raise MajordomoError("majordomo: send needs exactly one of space / thread / to.")
     if not text and not attachments:
         raise MajordomoError("majordomo: send needs message text, an attachment, or both.")
+    blocked = config.block_spaces(cfg)
     ident = config.identity(cfg)
     if ident and attachments:
         raise MajordomoError(
