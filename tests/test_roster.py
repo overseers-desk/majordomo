@@ -141,7 +141,7 @@ def test_insufficient_scope_is_soft_and_says_how_to_grant(tmp_path, capsys):
     r = roster.Roster(tmp_path, lookup=lambda: svc)
     assert r.names(["users/1", "users/2"]) == {"users/1": None, "users/2": None}
     assert config.drain_notes() == [roster.LOGIN_NOTE]
-    assert "majordomo login" in capsys.readouterr().err
+    assert capsys.readouterr().err == ""
 
 
 def test_email_resolves_from_the_people_file(tmp_path):

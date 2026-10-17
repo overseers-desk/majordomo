@@ -21,13 +21,13 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_nocache_reads_one_space():
-    from majordomo import api, config, readers
+    from majordomo import config, frontdoor, readers
 
     cfg = config.load_config()
     # Reuse a valid token if present; otherwise mint one via the browser flow.
     token_file = os.path.expanduser(config.api_token_file(cfg))
     if not os.path.exists(token_file):
-        api.login(cfg)
+        frontdoor.login(cfg)
 
     reader = readers.make_reader(cfg, "nocache")
     rows = reader.spaces()

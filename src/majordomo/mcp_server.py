@@ -5,22 +5,25 @@ seam (`readers.make_reader`). The sieve is applied in the reader, so a tool
 cannot bypass it. Each tool takes an optional `source` ("cache" | "live" | "nocache");
 the default is the cache fast path with a direct-API fallback. Every tool asks,
 up front, for whatever Google permissions its shape needs
-(`api.ensure_command_scopes`), before it reads anything, over the same `cfg`
-its reader then uses. An answer carries ``notes`` when the core raised any
-(what the CLI prints on stderr: a permission the login lacks, for one). Needs
+(`frontdoor.up_front`), before it reads anything. An answer carries ``notes``
+when the core raised any (what the CLI prints on stderr: a permission the
+login lacks, for one); a refusal reaches the client as its one line. Needs
 the `mcp` extra; launched by `majordomo mcp` (stdio), so nothing the core runs
 may write to stdout.
 """
 
 from __future__ import annotations
 
+import functools
 import os
 from datetime import date, datetime
 from typing import List, Optional
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
-from . import api, config, dates, readers
+from . import api, config, dates, frontdoor, readers
+from .errors import MajordomoError
 
 
 def _jsonable(rows: list[dict]) -> list[dict]:
@@ -38,10 +41,6 @@ def _config(identity: Optional[str] = None) -> dict:
 
 
 def _reader(source: Optional[str], cfg: Optional[dict] = None):
-    # cfg, when given, is already loaded and already carries this tool call's
-    # up-front consent check (api.ensure_command_scopes): reusing it, rather
-    # than loading a fresh one here, is what lets a later lazy scope check
-    # (inside the reader) see that check's result instead of asking again.
     if cfg is None:
         cfg = _config()
     return cfg, readers.make_reader(cfg, source)
@@ -61,10 +60,27 @@ def _envelope(source: str, rows: list[dict]) -> dict:
     return out
 
 
+def _one_line(fn):
+    """The tool, with a core refusal raised as the SDK's ToolError: the client
+    is shown a ToolError's text, and for any other exception only "Error
+    executing tool <name>"."""
+    @functools.wraps(fn)
+    def call(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except MajordomoError as exc:
+            raise ToolError(str(exc)) from exc
+    return call
+
+
 def create_server() -> MCPServer:
     server = MCPServer("majordomo")
 
-    @server.tool()
+    def tool(fn):
+        server.add_tool(_one_line(fn))
+        return fn
+
+    @tool
     def spaces(minimal_messages: int = 1, owner: bool = False, source: Optional[str] = None) -> dict:
         """List spaces with message and task counts, and whether each belongs to a
         Google Workspace domain or a consumer/personal account (domain_owned,
@@ -79,15 +95,15 @@ def create_server() -> MCPServer:
         """
         if owner:
             cfg = _config()
-            api.ensure_command_scopes(cfg, api_read=True, owner=True, people=True)
+            frontdoor.up_front(cfg, api_read=True, owner=True, people=True)
             rows = api.owned_spaces(cfg, config.block_spaces(cfg), minimal_messages=minimal_messages, owner=True)
             return _envelope("nocache", rows)
         cfg = _config()
-        api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"))
+        frontdoor.up_front(cfg, api_read=source in ("live", "nocache"))
         _cfg, reader = _reader(source, cfg=cfg)
         return _envelope(reader.source, reader.spaces(minimal_messages=minimal_messages))
 
-    @server.tool()
+    @tool
     def people(person: Optional[str] = None, window: str = "year", since: Optional[str] = None,
                until: Optional[str] = None, source: Optional[str] = None) -> dict:
         """List participants: each one's name, the spellings they have been
@@ -97,13 +113,13 @@ def create_server() -> MCPServer:
         year, all; since/until are ISO dates.
         """
         cfg = _config()
-        api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"), people=True)
+        frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True)
         _cfg, reader = _reader(source, cfg=cfg)
         start, end = dates.resolve(window, since, until)
         rows = reader.people(person=person, start=start, end=end)
         return _envelope(reader.source, rows)
 
-    @server.tool()
+    @tool
     def tasks(
         to_me: bool = False,
         by_me: bool = False,
@@ -125,7 +141,7 @@ def create_server() -> MCPServer:
         source: cache | live | nocache.
         """
         cfg = _config()
-        api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"), people=True, own=to_me)
+        frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True, own=to_me)
         cfg, reader = _reader(source, cfg=cfg)
         me = config.require_user_id(cfg) if (to_me or by_me) else None
         start, end = dates.resolve(window, since, until)
@@ -140,7 +156,7 @@ def create_server() -> MCPServer:
         )
         return _envelope(reader.source, rows)
 
-    @server.tool()
+    @tool
     def messages(
         space: Optional[str] = None,
         thread: Optional[str] = None,
@@ -158,13 +174,13 @@ def create_server() -> MCPServer:
         oldest-first and a capped answer keeps the newest.
         """
         cfg = _config()
-        api.ensure_command_scopes(cfg, api_read=source in ("live", "nocache"), people=True)
+        frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True)
         _cfg, reader = _reader(source, cfg=cfg)
         start, end = dates.resolve(window, since, until)
         rows = reader.messages(space, person=person, thread=thread, start=start, end=end, limit=limit)
         return _envelope(reader.source, rows)
 
-    @server.tool()
+    @tool
     def attachments(
         space: Optional[str] = None,
         thread: Optional[str] = None,
@@ -193,14 +209,14 @@ def create_server() -> MCPServer:
         text and not files. The sieve refuses blocked spaces.
         """
         cfg = _config()
-        api.ensure_command_scopes(cfg, api_read=True, people=True)
+        frontdoor.up_front(cfg, api_read=True, people=True)
         start, end = dates.resolve(window, since, until)
         rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
                                message=message, person=person, start=start, end=end, limit=limit,
                                download_to=download_to)
         return _envelope("nocache", rows)
 
-    @server.tool()
+    @tool
     def send(text: Optional[str] = None, space: Optional[str] = None,
              thread: Optional[str] = None, to: Optional[str] = None,
              attachments: Optional[List[str]] = None, identity: Optional[str] = None) -> dict:
@@ -216,7 +232,7 @@ def create_server() -> MCPServer:
         spaces the app is a member of, and `to` reaches the app's own DM.
         """
         cfg = _config(identity)
-        api.ensure_command_scopes(cfg, send=True)
+        frontdoor.up_front(cfg, send=True)
         return api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
                         to=to, text=text, attachments=attachments)
 

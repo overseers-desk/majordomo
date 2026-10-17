@@ -12,7 +12,6 @@ bounds itself.
 
 from __future__ import annotations
 
-import sys
 from datetime import datetime, timedelta, timezone
 
 from . import config, db, sieve
@@ -81,11 +80,10 @@ def _floor_check(conn, *, space: str | None = None) -> None:
     rows = db.query(conn, f"SELECT MIN(create_time) AS floor FROM googlechat_messages {where}", params)
     floor = rows[0]["floor"] if rows else None
     if floor and bound < floor:
-        print(
+        config.note_once(
             f"majordomo: WORLD_AS_OF ({bound.isoformat()} UTC) predates the oldest "
             f"cached message ({floor.isoformat()}); the store does not reach the "
-            "as-of instant, so the answer may be thin.",
-            file=sys.stderr,
+            "as-of instant, so the answer may be thin."
         )
 
 

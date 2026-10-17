@@ -1,7 +1,7 @@
 """The MCP front door: each tool asks for the Google permissions its shape
-needs (api.ensure_command_scopes) before the read that would otherwise reach
-Google first, and a core refusal leaves the tool as the MajordomoError the
-core raised."""
+needs (api.ensure_command_scopes, through frontdoor.up_front) before the read
+that would otherwise reach Google first, and a core refusal reaches the
+client as its one line."""
 
 import pytest
 
@@ -9,10 +9,12 @@ pytest.importorskip("mcp")
 
 import _shim  # noqa: E402,F401
 
+import asyncio  # noqa: E402
 import types  # noqa: E402
 
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError  # noqa: E402
+
 from majordomo import api, config, readers  # noqa: E402
-from majordomo.errors import MajordomoError  # noqa: E402
 from majordomo.mcp_server import create_server  # noqa: E402
 
 
@@ -138,10 +140,15 @@ def test_mcp_send_sends_as_the_named_identity(tmp_path, monkeypatch):
     assert seen["identity"]["name"] == "bot"
 
 
-def test_a_refusal_leaves_the_tool_as_the_core_raised_it(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "CONFIG_TOML", tmp_path / "absent.toml")
-    with pytest.raises(MajordomoError, match="no config at"):
-        _tool("spaces")()
+def test_a_refusal_reaches_the_client_as_its_one_line(tmp_path, monkeypatch):
+    # The SDK shows the client a ToolError's text; anything else it reports
+    # only as "Error executing tool spaces", a crash.
+    absent = tmp_path / "absent.toml"
+    monkeypatch.setattr(config, "CONFIG_TOML", absent)
+    with pytest.raises(ToolError) as ei:
+        asyncio.run(create_server().call_tool("spaces", {}))
+    assert not isinstance(ei.value, UnexpectedToolError)
+    assert str(ei.value) == f"Error executing tool spaces: majordomo: no config at {absent}"
 
 
 if __name__ == "__main__":

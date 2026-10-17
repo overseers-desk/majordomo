@@ -1,5 +1,5 @@
 """The login path must never leak credentials: Typer must not dump locals on a
-crash, and ``api.login`` must turn an OAuth failure into a clean ``MajordomoError``
+crash, and ``frontdoor.login`` must turn an OAuth failure into a clean ``MajordomoError``
 (no raw exception, no locals). Offline — the OAuth flow is monkeypatched to fail.
 """
 
@@ -11,7 +11,7 @@ import types
 
 import pytest
 
-from majordomo import api
+from majordomo import api, frontdoor
 from majordomo.cli import app
 from majordomo.errors import MajordomoError
 
@@ -43,7 +43,7 @@ def test_login_failure_is_a_clean_refusal(monkeypatch):
     with tempfile.TemporaryDirectory() as td:
         cfg = {"api": {"client_file": client_path, "token_file": f"{td}/token.json"}}
         with pytest.raises(MajordomoError) as ei:
-            api.login(cfg)
+            frontdoor.login(cfg)
     msg = str(ei.value)
     assert "login failed" in msg
     assert "CLIENT_SECRET_PLACEHOLDER" not in msg
