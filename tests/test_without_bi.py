@@ -42,3 +42,26 @@ def test_driver_absence_is_an_ordinary_exception(monkeypatch):
         assert "majordomo[bi]" in str(exc)
     else:
         raise AssertionError("a missing driver raised nothing")
+
+
+def _no_env_file(monkeypatch, tmp_path):
+    from majordomo import config
+    monkeypatch.setattr(config, "ENV_FILE", tmp_path / "absent-env")   # never created
+    monkeypatch.setattr(db, "_driver", lambda: (object(), object()))   # driver present
+
+
+def test_missing_env_file_falls_back_to_google(monkeypatch, tmp_path):
+    """The driver is installed but the database credentials file is absent: the
+    same unavailable cache as an absent driver, so the same fallback."""
+    _no_env_file(monkeypatch, tmp_path)
+    monkeypatch.setattr(api.NocacheReader, "from_config",
+                        staticmethod(lambda cfg, blocked, blocked_assignees=None: "GOOGLE"))
+    assert readers.make_reader({"sieve": {}}, None) == "GOOGLE"
+
+
+def test_forced_cache_with_missing_env_file_exits_with_one_line(monkeypatch, tmp_path):
+    _no_env_file(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit) as ei:
+        readers.make_reader({"sieve": {}}, "cache")
+    msg = str(ei.value)
+    assert "no database .env at" in msg and "--cache" in msg and "\n" not in msg
