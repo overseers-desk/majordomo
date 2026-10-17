@@ -33,7 +33,37 @@ TEST_SPACE="${MAJORDOMO_TEST_SPACE:-spaces/AAQAGiUqUAU}"
 TEST_DM="${MAJORDOMO_TEST_DM:-spaces/jP4cXEAAAAE}"
 DM_FRESH_DAYS="${MAJORDOMO_DM_FRESH_DAYS:-1}"   # the subject DMs daily; staler than this is a broken pipeline
 
-DBHOST=$(grep -E '^MYSQL_HOST' "$CFGDIR/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "'"'")
+# db_setting [-q] KEY...: print each cache DB setting as the front doors merge
+# them, the .env beside config.toml overlaid by config.toml's own [db] (its keys
+# win), so either file can be their home; exit 1 naming any unset. -q prints no
+# value (a password stays off the screen and out of $ERRF).
+db_setting() {
+  python3 - "$CFGDIR" "$@" <<'PY'
+import pathlib, sys, tomllib
+cfgdir, keys = pathlib.Path(sys.argv[1]), sys.argv[2:]
+quiet = keys[:1] == ["-q"]
+keys = keys[quiet:]
+settings = {}
+env = cfgdir / ".env"
+if env.is_file():
+    for line in env.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            key, _, value = line.partition("=")
+            settings[key.strip()] = value.strip().strip('"').strip("'")
+try:
+    settings.update(tomllib.loads((cfgdir / "config.toml").read_text()).get("db") or {})
+except (OSError, tomllib.TOMLDecodeError):
+    pass
+missing = [k for k in keys if not settings.get(k)]
+if missing:
+    sys.exit(f"unset in .env and [db]: {' '.join(missing)}")
+if not quiet:
+    print(*(settings[k] for k in keys), sep="\n")
+PY
+}
+
+DBHOST=$(db_setting MYSQL_HOST 2>/dev/null)
 
 PASS=0 FAIL=0
 ERRF="$(mktemp)"
@@ -162,7 +192,8 @@ check "config.toml present and valid TOML" \
   python3 -c "import tomllib; tomllib.load(open('$CFGDIR/config.toml','rb'))"
 check "[me].user_id set (needed by --to-me/--by-me)" \
   python3 -c "import tomllib,sys; d=tomllib.load(open('$CFGDIR/config.toml','rb')); sys.exit(0 if (d.get('me') or {}).get('user_id') else 1)"
-check ".env present (cache DB connection)" test -f "$CFGDIR/.env"
+check "cache DB connection set (.env or [db] in config.toml)" \
+  db_setting -q MYSQL_HOST MYSQL_USER MYSQL_PASSWORD MYSQL_DATABASE
 check "client_secret.json present with client_id" \
   python3 -c "import json,sys; d=json.load(open('$CFGDIR/client_secret.json')); sys.exit(0 if d.get('installed',{}).get('client_id') else 1)"
 check "token.json present with refresh_token" \

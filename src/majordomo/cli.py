@@ -341,7 +341,7 @@ def send(
     from . import api
     cfg = frontdoor.load(ctx.obj["identity"])
     _up_front(cfg, send=True)
-    created = api.send(cfg, config.block_spaces(cfg), space=space, thread=thread,
+    created = api.send(cfg, space=space, thread=thread,
                        to=to, text=text, attachments=attach and [os.path.expanduser(p) for p in attach],
                        cache_dir=config.cache_dir())
     if json_out:

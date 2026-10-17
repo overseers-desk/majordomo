@@ -1,6 +1,7 @@
 """majordomo as a library: the names it exports, and ``tasks``/``messages``
 reading with only what they are handed (a config dict, credentials, a
-directory for the name cache) over a fake Chat API. A guard fails every test
+directory for the name cache) over a fake Chat API, and ``send`` taking its
+sieve from the config alone. A guard fails every test
 here that reads the home directory or the host's environment, so these run
 without the test shim and with no environment set up."""
 
@@ -308,3 +309,16 @@ def test_an_identity_reads_the_chat_api_and_refuses_the_cache(google):
         with pytest.raises(majordomo.MajordomoError, match="your own login") as ei:
             majordomo.tasks(cfg, source=source, credentials=CHAT_ONLY)
         assert not isinstance(ei.value, (majordomo.NotFound, majordomo.ScopeError))
+
+
+# --- sending ----------------------------------------------------------------------
+
+def test_send_refuses_a_space_the_cfg_s_sieve_blocks_and_takes_no_other_list(google):
+    for target in ({"space": "spaces/BLOCK"}, {"thread": "spaces/BLOCK/messages/B.1"}):
+        with pytest.raises(majordomo.NotFound, match="spaces/BLOCK: not found"):
+            majordomo.send(_cfg(), text="hi", **target)
+    with pytest.raises(TypeError):
+        majordomo.send(_cfg(), [], space="spaces/BLOCK", text="hi")
+    with pytest.raises(TypeError):
+        majordomo.send(_cfg(), blocked=[], space="spaces/BLOCK", text="hi")
+    assert google["built"] == []

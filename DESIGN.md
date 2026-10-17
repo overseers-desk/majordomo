@@ -124,7 +124,7 @@ The core prints nothing. A line it has for the person (a soft fallback, a clampe
 
 ## The sieve
 
-The sieve is an allow-list and block-list of spaces. Its purpose is to keep certain conversations out of the agent's view: a user who chats with the tool through MCP should not have private spaces returned by `list_spaces` or scanned by `read_messages`. The lists live in the human-authored TOML, are loaded at the start of every call, and are applied inside the core before any space identifier or message reaches the caller.
+The sieve is an allow-list and block-list of spaces. Its purpose is to keep certain conversations out of the agent's view: a user who chats with the tool through MCP should not have private spaces returned by `list_spaces` or scanned by `read_messages`. The lists live in the human-authored TOML, are loaded at the start of every call, and are applied inside the core before any space identifier or message reaches the caller. `make_reader` (behind `tasks` and `messages`) and `send` take the lists from the configuration they are handed, with no list passed beside it, so a program importing majordomo cannot hand them one that blocks less.
 
 Placing it in the core, not in a wrapper, means any front door (and any future front door) inherits it for free; a future automation that talks to the core directly cannot work around a wrapper-only gate.
 
