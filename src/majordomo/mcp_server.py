@@ -149,8 +149,9 @@ def create_server() -> MCPServer:
         source: cache | live | nocache. identity names an [identity.NAME] in
         config.toml, a Chat app: the read then goes over the Chat API as that
         app (source cache or live refuses), seeing only the public messages of
-        the spaces it is a member of; people show as users/<id> unless already
-        named, and to_me rows carry no notes or due dates.
+        the spaces it is a member of; people are named from the name cache,
+        else from the names the Chat API gives the app, and to_me rows carry no
+        notes or due dates.
         """
         cfg = _config(identity)
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True, own=to_me)
@@ -188,8 +189,8 @@ def create_server() -> MCPServer:
         [identity.NAME] in config.toml, a Chat app: the read then goes over
         the Chat API as that app (source cache or live refuses), seeing only
         the public messages of the spaces it is a member of, person alone
-        reading the app's DM with them; people show as users/<id> unless
-        already named.
+        reading the app's DM with them; people are named from the name cache,
+        else from the names the Chat API gives the app.
         """
         cfg = _config(identity)
         frontdoor.up_front(cfg, api_read=source in ("live", "nocache"), people=True)
