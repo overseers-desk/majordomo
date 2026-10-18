@@ -1,3 +1,13 @@
+majordomo (0.4.1) unstable; urgency=medium
+
+  * Reading as a Chat app (--as NAME, or identity= in a library call) names
+    people: message and file senders, mentioned people and task assignees
+    carry the display name the Chat API gives an app caller, where the name
+    cache holds none. The app still has no People API and no Google Tasks
+    list, so a person neither names shows as users/<id>.
+
+ -- Weiwu Zhang <a@colourful.land>  Sun, 18 Oct 2026 10:19:19 +1000
+
 majordomo (0.4.0) unstable; urgency=medium
 
   * majordomo imports as a Python library. load_config takes a dict in
