@@ -626,7 +626,10 @@ class NocacheReader:
                         scopes=[APP_MESSAGES_SCOPE], purpose="reading messages as a Chat app",
                     ) from None
                 raise
-            out.extend(resp.get("messages", []))
+            page = resp.get("messages", [])
+            for m in page:
+                _observe(self.roster, m)
+            out.extend(page)
             token = resp.get("nextPageToken")
             if not token:
                 break
@@ -828,6 +831,16 @@ def owned_spaces(cfg: dict, blocked: list[str], *, minimal_messages: int = 1, ow
 UPLOADED = "UPLOADED_CONTENT"
 
 
+def _observe(ros: roster.Roster, msg: dict) -> None:
+    """Hand the roster the names the Chat API put on this message's users: the
+    sender's and each mention's ``displayName``, which it fills for an app caller."""
+    sender = msg.get("sender") or {}
+    ros.observe(sender.get("name"), sender.get("displayName"))
+    for a in msg.get("annotations") or []:
+        user = ((a.get("userMention") or {}).get("user") or {}) if isinstance(a, dict) else {}
+        ros.observe(user.get("name"), user.get("displayName"))
+
+
 def _attachment_rows(msg: dict, space: str, space_display: str | None) -> list[dict]:
     """One row per file hanging off a message, in the order Chat lists them."""
     rows = []
@@ -965,6 +978,7 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
             if getattr(getattr(exc, "resp", None), "status", None) == 404:
                 raise NotFound(f"majordomo: {message}: not found.") from None
             raise
+        _observe(reader.roster, msg)
         created = _parse_dt(msg.get("createTime"))
         if not (bound is not None and created is not None and created >= bound):
             rows = _attachment_rows(msg, scope_space, reader._space_display(scope_space))

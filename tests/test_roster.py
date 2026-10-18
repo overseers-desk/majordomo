@@ -193,6 +193,27 @@ def test_email_resolves_from_the_people_file(tmp_path):
     assert r.resolve_person("new@example.com", by_email=lambda e: "users/5") == "users/5"
 
 
+# --- the names the Chat API carries --------------------------------------------
+
+def test_an_observed_chat_name_serves_after_people_and_is_never_stored(tmp_path):
+    r, _ = _roster(tmp_path, {"people/1": _person("1", ("Ada Quill", "PROFILE"))})
+    r.observe("users/1", "A. Quill")
+    r.observe("users/2", "  Bo   Reed ")
+    r.observe("users/2", "Bo R.")
+    r.observe(None, "Nobody")
+    r.observe("users/4", "  ")
+    assert r.names(["users/1", "users/2", "users/3", "users/4"]) == {
+        "users/1": "Ada Quill", "users/2": "Bo Reed", "users/3": None, "users/4": None}
+    assert set(json.loads((tmp_path / "people.json").read_text())) == {"people/1"}
+
+
+def test_a_roster_without_a_lookup_or_directory_still_observes(monkeypatch):
+    monkeypatch.setattr(roster, "_write", lambda path, data: pytest.fail(f"wrote {path}"))
+    r = roster.Roster()
+    r.observe("users/1", "Ada Quill")
+    assert r.names(["users/1"]) == {"users/1": "Ada Quill"}
+
+
 # --- mentions ------------------------------------------------------------------
 
 ANN = [{"type": "USER_MENTION", "startIndex": 0, "length": 8,

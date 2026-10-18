@@ -24,6 +24,10 @@ Spellings a caller may type that the API does not hold (the ``@name`` a task
 or a mention was written with) are derived from the mirror on the cache path
 and held for the run only; they are never stored.
 
+The ``displayName`` the Chat API puts on a ``User`` (filled for an app caller,
+which has no People API) is held for the run too, and names a person People
+does not; it is never stored either.
+
 Under WORLD_AS_OF the files are read and nothing is written back
 (``write_back=False``). People API names are current-state and served like
 space names (WORLD_AS_OF.design.md §3 rule 1).
@@ -210,6 +214,8 @@ class Roster:
         # what the mirror carries, for this run's name matching only.
         self._spellings: dict[str, dict[str, datetime | None]] = {}
         self._space_names: dict[str, list[str]] = {}
+        # users/<id> -> the displayName the Chat API put on the user this run.
+        self._chat_names: dict[str, str] = {}
 
     # --- the files --------------------------------------------------------
 
@@ -287,7 +293,8 @@ class Roster:
 
     def names(self, users) -> dict[str, str | None]:
         """The one resolver: each ``users/<id>`` to its display name, from the
-        file, else the People API (then written back), else None."""
+        file, else the People API (then written back), else the name the Chat
+        API put on the user this run, else None."""
         users = [u for u in users if u]
         self.ensure(users)
         self.save()
@@ -299,7 +306,7 @@ class Roster:
 
     def name_of(self, user: str) -> str | None:
         found = names_in(self.person(user))
-        return found[0] if found else None
+        return found[0] if found else self._chat_names.get(user)
 
     def email_of(self, user: str) -> str | None:
         found = emails_in(self.person(user))
@@ -313,6 +320,13 @@ class Roster:
         return None
 
     # --- this run's spellings ------------------------------------------------
+
+    def observe(self, user: str | None, display: str | None) -> None:
+        """Hold the ``displayName`` the Chat API put on ``user`` this run, the
+        first spelling seen."""
+        display = " ".join((display or "").split())
+        if user and display:
+            self._chat_names.setdefault(user, display)
 
     def learn(self, user: str | None, spelling: str | None, seen: datetime | None = None) -> None:
         spelling = " ".join((spelling or "").split())
