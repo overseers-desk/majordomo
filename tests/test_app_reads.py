@@ -2,7 +2,8 @@
 the app's key, asked for ``chat.bot`` and ``chat.app.messages.readonly``,
 serves spaces, tasks and messages over the Chat API under the sieve, never the
 cache, the mirror being a person's view of Chat, not the app's, and the personal
-login is never touched. People are named from the name cache alone,
+login is never touched. People are named from the name cache, else from the
+``displayName`` the Chat API puts on its ``User`` objects for an app caller,
 with no People call and no note; what serves only a person's login refuses
 naming the app."""
 
@@ -26,10 +27,17 @@ SPACES = [
 MSGS = {
     "spaces/OK": [
         {"name": "spaces/OK/messages/T.1", "createTime": "2026-06-01T08:00:00Z", "text": "ship the thing",
-         "sender": {"name": "users/9", "type": "HUMAN"}},
+         "sender": {"name": "users/9", "type": "HUMAN", "displayName": "N. Pike"}},
         {"name": "spaces/OK/messages/T.2", "createTime": "2026-06-01T08:05:00Z",
-         "text": "Created a task for @Alice (via Tasks)", "sender": {"name": "users/9", "type": "HUMAN"},
-         "annotations": [{"type": "USER_MENTION", "userMention": {"user": {"name": "users/1"}}}]},
+         "text": "Created a task for @Alice (via Tasks)",
+         "sender": {"name": "users/9", "type": "HUMAN", "displayName": "N. Pike"},
+         "annotations": [{"type": "USER_MENTION",
+                          "userMention": {"user": {"name": "users/1", "displayName": "Alice Example"}}}]},
+        # Tasks' own text names the assignee; a hand-typed one may carry no "@".
+        {"name": "spaces/OK/messages/U.1", "createTime": "2026-06-01T08:10:00Z",
+         "text": "Created a task for Cal Dunn (via Tasks)", "sender": {"name": "users/8", "type": "HUMAN"},
+         "annotations": [{"type": "USER_MENTION",
+                          "userMention": {"user": {"name": "users/3", "displayName": "Cal Dunn"}}}]},
     ],
     "spaces/BLOCK": [
         {"name": "spaces/BLOCK/messages/B.1", "createTime": "2026-06-01T09:00:00Z",
@@ -95,10 +103,11 @@ def test_the_app_reads_tasks_and_messages_under_the_sieve(google):
     reader = readers.make_reader(_bot(), "nocache")
     assert reader.source == "nocache"
     tasks = reader.tasks()
-    assert [(t["space_name"], t["assignee_user_name"]) for t in tasks] == [("spaces/OK", "users/1")]
+    assert [(t["space_name"], t["assignee_user_name"], t["assignee"]) for t in tasks] == [
+        ("spaces/OK", "users/3", "Cal Dunn"), ("spaces/OK", "users/1", "Alice Example")]
     msgs = reader.messages("spaces/OK")
-    assert [m["name"] for m in msgs] == ["spaces/OK/messages/T.1", "spaces/OK/messages/T.2"]
-    assert [m["sender_display"] for m in msgs] == [None, None]
+    assert [m["name"].rsplit("/", 1)[1] for m in msgs] == ["T.1", "T.2", "U.1"]
+    assert [m["sender_display"] for m in msgs] == ["N. Pike", "N. Pike", None]
     with pytest.raises(NotFound):
         reader.messages("spaces/BLOCK")
     assert google["scopes"] == [api.APP_READ_SCOPES]
@@ -112,14 +121,15 @@ def test_to_me_rows_carry_no_notes_and_reach_no_task_list(google):
     assert config.drain_notes() == []
 
 
-def test_the_name_cache_still_names_people(google, tmp_path):
+def test_the_name_cache_wins_over_the_chat_name(google, tmp_path):
     (tmp_path / "majordomo").mkdir()
     (tmp_path / "majordomo" / "people.json").write_text(json.dumps({"people/9": {
         "fetched_at": "2026-06-01T00:00:00Z",
         "person": {"resourceName": "people/9", "names": [
             {"displayName": "Nine Pike", "metadata": {"source": {"type": "PROFILE"}}}]}}}))
     msgs = readers.make_reader(_bot(), "nocache", cache_dir=tmp_path / "majordomo").messages("spaces/OK")
-    assert {m["sender_display"] for m in msgs} == {"Nine Pike"}
+    assert [m["sender_display"] for m in msgs] == ["Nine Pike", "Nine Pike", None]
+    assert set(json.loads((tmp_path / "majordomo" / "people.json").read_text())) == {"people/9"}
 
 
 def test_the_app_reads_the_chat_api_and_refuses_the_cache(google, monkeypatch):

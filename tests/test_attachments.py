@@ -76,6 +76,12 @@ def test_message_scope_lists_its_files():
     chat.spaces().messages().list.assert_not_called()
 
 
+def test_a_sender_the_chat_api_names_is_named_without_people():
+    chat = _chat({**_msg(_att("a.mp4")), "sender": {"name": "users/sam", "type": "HUMAN", "displayName": "Sam Ode"}})
+    (row,) = api.attachments({}, [], message=MSG, service=chat)
+    assert (row["sender_name"], row["sender_display"]) == ("users/sam", "Sam Ode")
+
+
 def test_message_without_files_reports_nothing():
     chat = _chat({"name": MSG, "createTime": "2026-06-24T00:00:00Z"})
     assert api.attachments({}, [], message=MSG, service=chat) == []
