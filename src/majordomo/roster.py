@@ -14,19 +14,17 @@ signed-in user's own naming.
 Two files in the directory a roster is handed (the front doors hand it
 ``config.cache_dir()``): ``people.json`` and ``spaces.json``, each one JSON
 object keyed by resource name (``people/<id>``, ``spaces/<id>``) whose value is
-``{"fetched_at": <ISO time>, "person"|"space": <the API object as returned>}``.
-Everything there is refetchable, so it is a cache, and it keeps the API's own
-form rather than a private schema. A file is rewritten whole (a temp file,
+``{"fetched_at": <ISO time>, "person"|"space": <the API object as returned>}``;
+a person the People API has not named may instead hold ``{"user": <the Chat
+API User as returned>}``, whose ``displayName`` the Chat API fills for an app
+caller, which has no People API. Everything there is refetchable, so it is a
+cache, and it keeps the API's own form rather than a private schema. A file is rewritten whole (a temp file,
 then a rename) when it changed. A roster handed no directory reads and writes
 no file: what it fetches serves its own run alone.
 
 Spellings a caller may type that the API does not hold (the ``@name`` a task
 or a mention was written with) are derived from the mirror on the cache path
 and held for the run only; they are never stored.
-
-The ``displayName`` the Chat API puts on a ``User`` (filled for an app caller,
-which has no People API) is held for the run too, and names a person People
-does not; it is never stored either.
 
 Under WORLD_AS_OF the files are read and nothing is written back
 (``write_back=False``). People API names are current-state and served like
@@ -144,6 +142,13 @@ def names_in(person: dict | None) -> list[str]:
     return out
 
 
+def _entry_names(entry: dict | None) -> list[str]:
+    """A ``people.json`` entry's names: the People API's, else the Chat API's."""
+    found = names_in((entry or {}).get("person"))
+    chat = _name_text((entry or {}).get("user") or {})
+    return found or ([chat] if chat else [])
+
+
 def emails_in(person: dict | None) -> list[str]:
     return [e["value"] for e in (person or {}).get("emailAddresses") or [] if e.get("value")]
 
@@ -214,8 +219,6 @@ class Roster:
         # what the mirror carries, for this run's name matching only.
         self._spellings: dict[str, dict[str, datetime | None]] = {}
         self._space_names: dict[str, list[str]] = {}
-        # users/<id> -> the displayName the Chat API put on the user this run.
-        self._chat_names: dict[str, str] = {}
 
     # --- the files --------------------------------------------------------
 
@@ -293,8 +296,7 @@ class Roster:
 
     def names(self, users) -> dict[str, str | None]:
         """The one resolver: each ``users/<id>`` to its display name, from the
-        file, else the People API (then written back), else the name the Chat
-        API put on the user this run, else None."""
+        file, else the People API (then written back), else None."""
         users = [u for u in users if u]
         self.ensure(users)
         self.save()
@@ -305,8 +307,9 @@ class Roster:
         return (self.people.get(k) or {}).get("person") if k else None
 
     def name_of(self, user: str) -> str | None:
-        found = names_in(self.person(user))
-        return found[0] if found else self._chat_names.get(user)
+        k = person_key(user)
+        found = _entry_names(self.people.get(k)) if k else []
+        return found[0] if found else None
 
     def email_of(self, user: str) -> str | None:
         found = emails_in(self.person(user))
@@ -319,14 +322,18 @@ class Roster:
                 return "users/" + key[len("people/"):]
         return None
 
-    # --- this run's spellings ------------------------------------------------
+    def observe(self, user: dict | None) -> None:
+        """Store a Chat API ``User`` whose ``displayName`` names a person the
+        People API has not."""
+        k = person_key((user or {}).get("name"))
+        entry = self.people.get(k) or {} if k else None
+        if entry is None or names_in(entry.get("person")) or not _name_text(user):
+            return
+        if _name_text(entry.get("user") or {}) != _name_text(user):
+            self.people[k] = {**entry, "user": user}
+            self._dirty.add(PEOPLE_FILE)
 
-    def observe(self, user: str | None, display: str | None) -> None:
-        """Hold the ``displayName`` the Chat API put on ``user`` this run, the
-        first spelling seen."""
-        display = " ".join((display or "").split())
-        if user and display:
-            self._chat_names.setdefault(user, display)
+    # --- this run's spellings ------------------------------------------------
 
     def learn(self, user: str | None, spelling: str | None, seen: datetime | None = None) -> None:
         spelling = " ".join((spelling or "").split())
@@ -359,7 +366,7 @@ class Roster:
     def _people_names(self) -> dict[str, list[str]]:
         out: dict[str, list[str]] = {}
         for key, entry in self.people.items():
-            found = names_in(entry.get("person"))
+            found = _entry_names(entry)
             if found:
                 out["users/" + key[len("people/"):]] = list(found)
         for user in self._spellings:

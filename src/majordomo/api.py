@@ -832,13 +832,11 @@ UPLOADED = "UPLOADED_CONTENT"
 
 
 def _observe(ros: roster.Roster, msg: dict) -> None:
-    """Hand the roster the names the Chat API put on this message's users: the
-    sender's and each mention's ``displayName``, which it fills for an app caller."""
-    sender = msg.get("sender") or {}
-    ros.observe(sender.get("name"), sender.get("displayName"))
+    """Hand the roster this message's users as the Chat API gave them: the
+    sender and each mention, whose ``displayName`` it fills for an app caller."""
+    ros.observe(msg.get("sender"))
     for a in msg.get("annotations") or []:
-        user = ((a.get("userMention") or {}).get("user") or {}) if isinstance(a, dict) else {}
-        ros.observe(user.get("name"), user.get("displayName"))
+        ros.observe(((a.get("userMention") or {}).get("user")) if isinstance(a, dict) else None)
 
 
 def _attachment_rows(msg: dict, space: str, space_display: str | None) -> list[dict]:

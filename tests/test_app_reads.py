@@ -129,7 +129,19 @@ def test_the_name_cache_wins_over_the_chat_name(google, tmp_path):
             {"displayName": "Nine Pike", "metadata": {"source": {"type": "PROFILE"}}}]}}}))
     msgs = readers.make_reader(_bot(), "nocache", cache_dir=tmp_path / "majordomo").messages("spaces/OK")
     assert [m["sender_display"] for m in msgs] == ["Nine Pike", "Nine Pike", None]
-    assert set(json.loads((tmp_path / "majordomo" / "people.json").read_text())) == {"people/9"}
+    stored = json.loads((tmp_path / "majordomo" / "people.json").read_text())
+    assert sorted(stored) == ["people/1", "people/3", "people/9"]
+    assert set(stored["people/9"]) == {"fetched_at", "person"}
+    assert stored["people/3"]["user"]["displayName"] == "Cal Dunn"
+
+
+def test_a_later_reader_finds_a_person_by_the_name_chat_gave(google, tmp_path):
+    cache = tmp_path / "majordomo"
+    with pytest.raises(NotFound):
+        readers.make_reader(_bot(), "nocache", cache_dir=cache).messages("spaces/OK", person="N. Pike")
+    readers.make_reader(_bot(), "nocache", cache_dir=cache).messages("spaces/OK")
+    msgs = readers.make_reader(_bot(), "nocache", cache_dir=cache).messages("spaces/OK", person="N. Pike")
+    assert [m["name"].rsplit("/", 1)[1] for m in msgs] == ["T.1", "T.2"]
 
 
 def test_the_app_reads_the_chat_api_and_refuses_the_cache(google, monkeypatch):

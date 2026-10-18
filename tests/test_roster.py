@@ -195,22 +195,46 @@ def test_email_resolves_from_the_people_file(tmp_path):
 
 # --- the names the Chat API carries --------------------------------------------
 
-def test_an_observed_chat_name_serves_after_people_and_is_never_stored(tmp_path):
-    r, _ = _roster(tmp_path, {"people/1": _person("1", ("Ada Quill", "PROFILE"))})
-    r.observe("users/1", "A. Quill")
-    r.observe("users/2", "  Bo   Reed ")
-    r.observe("users/2", "Bo R.")
-    r.observe(None, "Nobody")
-    r.observe("users/4", "  ")
-    assert r.names(["users/1", "users/2", "users/3", "users/4"]) == {
-        "users/1": "Ada Quill", "users/2": "Bo Reed", "users/3": None, "users/4": None}
-    assert set(json.loads((tmp_path / "people.json").read_text())) == {"people/1"}
+def _user(uid, display):
+    """A Chat API User as an app caller receives it."""
+    return {"name": f"users/{uid}", "type": "HUMAN", "displayName": display}
+
+
+def test_a_chat_name_is_stored_as_the_api_gave_it_and_served_where_people_names_nobody(tmp_path):
+    r = roster.Roster(tmp_path)
+    r.observe(_user("2", "  Bo   Reed "))
+    r.observe(None)
+    r.observe(_user("4", "  "))
+    r.observe({"name": "users/app", "displayName": "A Bot"})
+    assert r.names(["users/2", "users/4"]) == {"users/2": "Bo Reed", "users/4": None}
+    assert json.loads((tmp_path / "people.json").read_text()) == {"people/2": {"user": _user("2", "  Bo   Reed ")}}
+    again, svc = _roster(tmp_path)
+    assert again.names(["users/2"]) == {"users/2": "Bo Reed"}
+    assert svc.calls[0]["resourceNames"] == ["people/2"]
+
+
+def test_people_is_still_asked_and_its_name_wins_and_keeps_out_the_chat_name(tmp_path):
+    first = roster.Roster(tmp_path)
+    first.observe(_user("2", "Bo R."))
+    first.save()
+    r, _ = _roster(tmp_path, {"people/2": _person("2", ("Bo Reed", "PROFILE"))})
+    assert r.names(["users/2"]) == {"users/2": "Bo Reed"}
+    r.observe(_user("2", "Bo R."))
+    r.save()
+    assert set(json.loads((tmp_path / "people.json").read_text())["people/2"]) == {"fetched_at", "person"}
+
+
+def test_a_typed_name_resolves_through_a_stored_chat_name(tmp_path):
+    r = roster.Roster(tmp_path)
+    r.observe(_user("2", "Bo Reed"))
+    r.save()
+    assert roster.Roster(tmp_path).resolve_person("bo reed") == "users/2"
 
 
 def test_a_roster_without_a_lookup_or_directory_still_observes(monkeypatch):
     monkeypatch.setattr(roster, "_write", lambda path, data: pytest.fail(f"wrote {path}"))
     r = roster.Roster()
-    r.observe("users/1", "Ada Quill")
+    r.observe(_user("1", "Ada Quill"))
     assert r.names(["users/1"]) == {"users/1": "Ada Quill"}
 
 
@@ -322,7 +346,9 @@ def test_a_bounded_roster_reads_the_files_and_writes_nothing_back(tmp_path):
     stored.names(["users/2"])
     before = (tmp_path / "people.json").read_text()
     r, _ = _roster(tmp_path, {"people/1": _person("1", ("Ada Quill", "PROFILE"))}, write_back=False)
-    assert r.names(["users/1", "users/2"]) == {"users/1": "Ada Quill", "users/2": "Bo Vance"}
+    r.observe(_user("3", "Cy Dale"))
+    assert r.names(["users/1", "users/2", "users/3"]) == {
+        "users/1": "Ada Quill", "users/2": "Bo Vance", "users/3": "Cy Dale"}
     r.remember_space({"name": "spaces/A", "displayName": "Kitchen Ops"})
     r.save()
     assert sorted(x.name for x in tmp_path.iterdir()) == ["people.json"]
