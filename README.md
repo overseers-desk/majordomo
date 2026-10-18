@@ -131,7 +131,7 @@ A Chat app's service-account key, named as `[identity.NAME]` in `config.toml`, l
 
 - `send` posts as the app: text only, into spaces it is a member of, and `--to` reaches the app's own DM with that person.
 - `spaces`, `tasks` and `messages` read over the Chat API as the app, under the sieve: only the spaces it is a member of and their public messages, `--person` alone reading the app's DM with that person. The cache mirrors a person's view of Chat, not the app's, so `--as` reads the API without a source flag, and `--cache` and `--live` refuse under it.
-- Senders show as `users/<id>` unless a run on your own login has already named them, while task assignees keep the @-spelling of the message that assigned them; `tasks --to-me` comes without notes or due dates. The app has no People API and no Google Tasks list.
+- People are named from the names the Chat API itself gives an app caller, or from the name cache where a run on your own login has already named them; `tasks --to-me` comes without notes or due dates. The app has no People API and no Google Tasks list.
 - Reading messages as the app needs the `chat.app.messages.readonly` scope, which a Google Workspace administrator approves for the app once, as [Google's Chat app authentication page](https://developers.google.com/workspace/chat/authenticate-authorize-chat-app) describes. Until then, and in a space the app is not a member of, the read fails saying so. Sending needs no approval.
 - `people`, `spaces --owner`, `attachments` and `login` refuse under `--as`.
 
