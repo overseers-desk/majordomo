@@ -33,7 +33,7 @@ MSGS = {
          "sender": {"name": "users/9", "type": "HUMAN", "displayName": "N. Pike"},
          "annotations": [{"type": "USER_MENTION",
                           "userMention": {"user": {"name": "users/1", "displayName": "Alice Example"}}}]},
-        # Tasks' own text names the assignee; a hand-typed one may carry no "@".
+        # No "@" in the text: the assignee is named from the mention alone.
         {"name": "spaces/OK/messages/U.1", "createTime": "2026-06-01T08:10:00Z",
          "text": "Created a task for Cal Dunn (via Tasks)", "sender": {"name": "users/8", "type": "HUMAN"},
          "annotations": [{"type": "USER_MENTION",

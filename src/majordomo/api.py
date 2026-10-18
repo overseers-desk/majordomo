@@ -210,7 +210,7 @@ def people_service(cfg: dict, credentials=None):
 def people_lookup(cfg: dict | None, credentials=None):
     """The roster's lazy People lookup for a config. None without one, and
     None as a Chat app, which has no People API: its people are named from
-    the name cache alone, with no note, there being no login to fix."""
+    the name cache, else from the names the Chat API gives it, with no note, there being no login to fix."""
     if cfg is None or config.identity(cfg):
         return None
     return lambda: people_service(cfg, credentials)
