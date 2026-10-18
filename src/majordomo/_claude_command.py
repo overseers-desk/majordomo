@@ -44,7 +44,7 @@ A read uses the server-side cache by default and falls back to reading the Chat 
 
 ## Naming a person or a space
 
-Wherever a command takes a person (`--person`, `--assignee`, `--to`), the value is one of: `users/<id>`; an email address; or a name. A name is matched, case-insensitively, against people's current names (from the Google People API) and, on the cache path, the spellings seen in task assignments and @-mentions, whole name first and then as a substring, and it must match exactly one person: a name matching several fails and lists them with their ids, and a name never seen fails and says so. Give the id or the email then. An email resolves through the People API's answers or the Chat API, and needs `majordomo login`.
+Wherever a command takes a person (`--person`, `--assignee`, `--to`), the value is one of: `users/<id>`; an email address; or a name. A name is matched, case-insensitively, against people's current names (from the Google People API, else the name Google Chat gave) and, on the cache path, the spellings seen in task assignments and @-mentions, whole name first and then as a substring, and it must match exactly one person: a name matching several fails and lists them with their ids, and a name never seen fails and says so. Give the id or the email then. An email resolves through the People API's answers or the Chat API, and needs `majordomo login`.
 
 Wherever a command takes a space (`--space`), the value is `spaces/<id>` or the space's display name, matched the same way.
 
