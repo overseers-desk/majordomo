@@ -15,11 +15,11 @@ Two files in the directory a roster is handed (the front doors hand it
 ``config.cache_dir()``): ``people.json`` and ``spaces.json``, each one JSON
 object keyed by resource name (``people/<id>``, ``spaces/<id>``) whose value is
 ``{"fetched_at": <ISO time>, "person"|"space": <the API object as returned>}``;
-a person the People API has not named may instead hold ``{"user": <the Chat
-API User as returned>}``, whose ``displayName`` the Chat API fills for an app
-caller, which has no People API. Everything there is refetchable, so it is a
-cache, and it keeps the API's own form rather than a private schema. A file is rewritten whole (a temp file,
-then a rename) when it changed. A roster handed no directory reads and writes
+an entry for a person the People API has not named also holds ``"user"``, the
+Chat API ``User`` as returned, whose ``displayName`` the Chat API fills for an
+app caller, which has no People API. Everything there is refetchable, so it is
+a cache, and it keeps the API's own form rather than a private schema. A file
+is rewritten whole (a temp file, then a rename) when it changed. A roster handed no directory reads and writes
 no file: what it fetches serves its own run alone.
 
 Spellings a caller may type that the API does not hold (the ``@name`` a task
