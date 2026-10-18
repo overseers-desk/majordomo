@@ -77,9 +77,9 @@ def test_message_scope_lists_its_files():
 
 
 def test_a_sender_the_chat_api_names_is_named_without_people():
-    chat = _chat({**_msg(_att("a.mp4")), "sender": {"name": "users/sam", "type": "HUMAN", "displayName": "Sam Ode"}})
+    chat = _chat({**_msg(_att("a.mp4")), "sender": {"name": "users/104", "type": "HUMAN", "displayName": "Sam Ode"}})
     (row,) = api.attachments({}, [], message=MSG, service=chat)
-    assert (row["sender_name"], row["sender_display"]) == ("users/sam", "Sam Ode")
+    assert (row["sender_name"], row["sender_display"]) == ("users/104", "Sam Ode")
 
 
 def test_message_without_files_reports_nothing():
