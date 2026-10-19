@@ -1,3 +1,19 @@
+majordomo (0.4.2) unstable; urgency=medium
+
+  * Sign-in prints no secret. Under the MCP server, the consent flow's log
+    of Google's redirect, which carries the authorization code, is held
+    back; the token file is created readable by its owner only; and a failed
+    token refresh or People API lookup names the error's class, not its
+    text, which can carry Google's response body.
+  * The names the Chat API gives an app caller are kept in the name cache:
+    people.json holds the Chat User as returned for a person People has not
+    named, a later run names them before reading their messages, and a typed
+    name finds them.
+  * The command document installed for agents tells them to leave the
+    config, token and client secret files unread.
+
+ -- Weiwu Zhang <a@colourful.land>  Mon, 19 Oct 2026 14:48:28 +1000
+
 majordomo (0.4.1) unstable; urgency=medium
 
   * Reading as a Chat app (--as NAME, or identity= in a library call) names
