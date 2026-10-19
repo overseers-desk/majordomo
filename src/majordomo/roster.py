@@ -272,7 +272,10 @@ class Roster:
                 if status in (401, 403) and ("SCOPE" in body.upper() or "insufficient" in body.lower()):
                     config.note_once(LOGIN_NOTE)
                 else:
-                    config.note_once(f"majordomo: the People API lookup failed ({exc}); "
+                    # The class and status only: the error's text can carry
+                    # the API's whole response body.
+                    reason = type(exc).__name__ + (f", HTTP {status}" if status else "")
+                    config.note_once(f"majordomo: the People API lookup failed ({reason}); "
                                      "people show as users/<id>.")
                 return
             stamp = _stamp(_now())

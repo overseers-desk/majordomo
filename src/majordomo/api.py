@@ -324,10 +324,12 @@ def get_credentials(cfg: dict):
             try:
                 creds.refresh(Request())
             except Exception as exc:
+                # The class name only: a refresh error's text can carry
+                # Google's whole response body.
                 raise MajordomoError(
-                    f"majordomo: OAuth token refresh failed — {exc}. "
+                    f"majordomo: OAuth token refresh failed ({type(exc).__name__}). "
                     f"Re-run `majordomo login` (the OAuth client may be revoked)."
-                )
+                ) from None
             with open(token_file, "w") as fh:
                 fh.write(creds.to_json())
         else:

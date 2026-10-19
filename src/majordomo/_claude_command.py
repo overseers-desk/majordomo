@@ -38,7 +38,7 @@ allowed-tools: Bash
 
 # majordomo
 
-majordomo reports Google Chat task activity, and sends messages, over the `majordomo <command>` CLI. It reconstructs each task made through Chat's "Create a task for @Person (via Tasks)" from the chat messages, and reports who holds which tasks across spaces over a date range. Configuration lives in `~/.config/majordomo/` (`config.toml` for the subject and the privacy sieve, `.env` for the cache database). Add `--json` to any command for a `{"source", "count", "rows": [...]}` envelope; the `source` field tags each answer as `cache` or `live`.
+majordomo reports Google Chat task activity, and sends messages, over the `majordomo <command>` CLI. It reconstructs each task made through Chat's "Create a task for @Person (via Tasks)" from the chat messages, and reports who holds which tasks across spaces over a date range. Configuration lives in `~/.config/majordomo/` (`config.toml` for the subject and the privacy sieve, `.env` for the cache database). Leave those files, the OAuth token and the client secret unread: a missing or malformed one makes the command fail and say so, and reading one puts its secrets into the transcript. Add `--json` to any command for a `{"source", "count", "rows": [...]}` envelope; the `source` field tags each answer as `cache` or `live`.
 
 A read uses the server-side cache by default and falls back to reading the Chat API directly when the cache is unreachable. `--cache` or `--nocache` before the command forces one source; `--nocache` needs a prior `majordomo login`, and `--cache` needs the cache driver (`majordomo[bi]`).
 
