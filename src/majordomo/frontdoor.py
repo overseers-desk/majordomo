@@ -14,6 +14,7 @@ module.
 from __future__ import annotations
 
 import errno
+import logging
 import os
 import sys
 
@@ -100,6 +101,11 @@ def grant(cfg: dict, *, open_browser: bool = True, timeout: int | None = None) -
     # whose scopes differ from the request.
     os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
     webbrowser.register("majordomo-quiet", None, types.SimpleNamespace(open=_open_quietly))
+    # The flow logs Google's redirect, authorization code included, at INFO,
+    # and the MCP server shows INFO on stderr.
+    flow_log = logging.getLogger("google_auth_oauthlib.flow")
+    flow_level = flow_log.level
+    flow_log.setLevel(logging.WARNING)
     try:
         flow = InstalledAppFlow.from_client_secrets_file(client_file, api.LOGIN_SCOPES)
         with contextlib.redirect_stdout(sys.stderr):
@@ -117,8 +123,12 @@ def grant(cfg: dict, *, open_browser: bool = True, timeout: int | None = None) -
             f"majordomo: login failed or was not completed ({_consent_reason(exc)}). "
             f"Check {client_file} and the Cloud project, then retry `majordomo login`."
         ) from None
+    finally:
+        flow_log.setLevel(flow_level)
     os.makedirs(os.path.dirname(token_file), exist_ok=True)
-    with open(token_file, "w") as fh:
+    # Created 0600 so the token is never readable by others, even briefly;
+    # the chmod narrows a token file that existed before with wider modes.
+    with os.fdopen(os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as fh:
         fh.write(creds.to_json())
     os.chmod(token_file, 0o600)
     return token_file

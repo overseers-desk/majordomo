@@ -89,6 +89,59 @@ def test_get_credentials_uses_client_secret_json(monkeypatch, tmp_path):
     assert captured["client_id"] == "id_from_client_file"
 
 
+def _fake_flow_module(monkeypatch, run_local_server):
+    flow_obj = types.SimpleNamespace(
+        from_client_secrets_file=lambda *_a, **_k: types.SimpleNamespace(run_local_server=run_local_server)
+    )
+    fake_flow = types.ModuleType("google_auth_oauthlib.flow")
+    fake_flow.InstalledAppFlow = flow_obj
+    fake_pkg = types.ModuleType("google_auth_oauthlib")
+    fake_pkg.flow = fake_flow
+    monkeypatch.setitem(sys.modules, "google_auth_oauthlib", fake_pkg)
+    monkeypatch.setitem(sys.modules, "google_auth_oauthlib.flow", fake_flow)
+
+
+def _creds():
+    return types.SimpleNamespace(to_json=lambda: '{"refresh_token": "rt"}')
+
+
+def test_consent_redirect_is_not_logged(monkeypatch, tmp_path, caplog):
+    # google_auth_oauthlib logs the browser's redirect, authorization code and
+    # all, at INFO; the MCP server's root logger shows INFO on stderr.
+    import logging
+
+    def run_local_server(**_k):
+        logging.getLogger("google_auth_oauthlib.flow").info("GET /?state=s&code=AUTH_CODE_PLACEHOLDER")
+        return _creds()
+
+    _fake_flow_module(monkeypatch, run_local_server)
+    client_file = tmp_path / "client_secret.json"
+    client_file.write_text("{}")
+    cfg = {"api": {"client_file": str(client_file), "token_file": str(tmp_path / "token.json")}}
+    with caplog.at_level(logging.INFO):
+        frontdoor.grant(cfg, open_browser=False)
+    assert "AUTH_CODE_PLACEHOLDER" not in caplog.text
+    assert logging.getLogger("google_auth_oauthlib.flow").level == logging.NOTSET
+
+
+def test_token_is_created_private(monkeypatch, tmp_path):
+    # Created 0600, not written world-readable and narrowed afterwards.
+    import os
+
+    _fake_flow_module(monkeypatch, lambda **_k: _creds())
+    monkeypatch.setattr(os, "chmod", lambda *_a, **_k: None)
+    old_umask = os.umask(0)
+    try:
+        client_file = tmp_path / "client_secret.json"
+        client_file.write_text("{}")
+        token_file = tmp_path / "token.json"
+        cfg = {"api": {"client_file": str(client_file), "token_file": str(token_file)}}
+        frontdoor.grant(cfg, open_browser=False)
+    finally:
+        os.umask(old_umask)
+    assert token_file.stat().st_mode & 0o777 == 0o600
+
+
 if __name__ == "__main__":  # standalone runner
     test_typer_hides_locals()
     print("ok   test_typer_hides_locals")
