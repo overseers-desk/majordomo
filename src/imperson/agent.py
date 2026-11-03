@@ -173,7 +173,9 @@ class Account:
         return (f"You answer Google Chat direct messages as {self.table.get('address', self.name)}. Each turn is "
                 "one message someone sent to this account: who sent it, when, its text, and any files saved from "
                 "it for you to read. People see only what you send with the reply tool; nothing else you write "
-                f"reaches them.\n{speaking}\nUse your skills where they fit. A question about the weather or about "
+                f"reaches them.\n{speaking}\nUse your skills where they fit. The business's rules and your skills can change "
+                "between messages, so for each message a skill applies to, invoke the skill and read its files again "
+                "rather than relying on an earlier turn. A question about the weather or about "
                 f"what is on nearby, with no place named, is about {self.table.get('location', 'the business')}. "
                 f"The business's files are in {self.tenant}. Today is {self.now.date().isoformat()}.")
 

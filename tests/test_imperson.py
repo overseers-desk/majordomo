@@ -87,6 +87,7 @@ def test_every_message_reaches_its_session_and_is_answered(tmp_path):
     assert [(s["to"], s["text"]) for s in chat.sent] == [(ANN, "re: Hi"), (ANN, "re: Will it rain tomorrow?"),
                                                          (BO, "re: Here is my receipt")]
     assert "Answer every message." in talk.turns[0]["system"]
+    assert "read its files again" in talk.turns[0]["system"]
 
 
 def test_one_session_per_conversation_resumed_on_the_next_run(tmp_path):
