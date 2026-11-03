@@ -333,3 +333,36 @@ def test_a_skill_with_a_policy_brings_the_general_tools_named_for_it(tmp_path):
     acct.run()
     assert set(talk.turns[0]["tools"]) == {"reply", "spend_balance", "spend_find_match", "spend_record", "spend_order",
                                            "spend_report"}
+
+
+def test_an_account_naming_a_tenant_with_no_table_stops_and_names_the_missing_table(tmp_path):
+    with pytest.raises(SystemExit) as stop:
+        account(tmp_path, [], Talk(), tenant="elsewhere")
+    assert "[tenant.elsewhere]" in str(stop.value)
+
+
+def test_main_reads_the_tenant_tables_and_builds_each_account_with_its_tenant(tmp_path, monkeypatch):
+    config = tmp_path / "imperson.toml"
+    config.write_text('claude_token = "claude-placeholder"\n\n'
+                      '[tenant.business]\nrepo = "example/business"\ngithub_token = "gh-placeholder"\n\n'
+                      '[tenant.business.db]\nhost = "db.example"\nname = "books"\n\n'
+                      '[account.admin]\ntenant = "business"\n')
+    cache = tmp_path / "cache"
+    built = []
+
+    class Stand:
+        def __init__(self, name, table, *, tenants, claude_token):
+            built.append((name, table, tenants, claude_token))
+
+        def run(self):
+            return []
+
+    monkeypatch.setattr(imperson, "Account", Stand)
+    monkeypatch.setattr(imperson, "CACHE", cache)
+    imperson.main(["--config", str(config)])
+    [(name, table, tenants, claude_token)] = built
+    assert (name, table["tenant"], claude_token) == ("admin", "business", "claude-placeholder")
+    business = tenants["business"]
+    assert (business.repo, business.token, business.db) == ("example/business", "gh-placeholder",
+                                                            {"host": "db.example", "name": "books"})
+    assert business.files == cache / "tenant" / "business"
