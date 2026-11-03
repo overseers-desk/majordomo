@@ -32,7 +32,7 @@ The sieve's two block lists (`block_spaces` and `block_assignees`) live in the h
 
 All capabilities are reachable through both front doors:
 
-- List spaces the account belongs to, whether each belongs to a Google Workspace domain or a consumer/personal account, and (on request) who owns it.
+- List spaces the account belongs to, whether each belongs to a Google Workspace domain or a consumer/personal account, when each was last active (the Chat API's `lastActiveTime`, or the newest mirrored message on the cache path), and (on request) who owns it.
 - Read messages and spaces over a date range — from the BI platform's cache as the fast path, or a direct Chat read paginated to completeness when that backend is absent.
 - Report task activity (creation, assignment, and other lifecycle signals): from the BI platform's `coord_tasks` reconstruction when present, from majordomo's own message decoder when standalone.
 - Report tasks by assignee, by space, and by date range.

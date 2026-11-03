@@ -108,13 +108,14 @@ def spaces(conn, blocked: list[str], *, minimal_messages: int = 1,
         f"""
         SELECT s.name AS space_name, s.display_name AS space_display, s.space_type,
                (SELECT COUNT(*) FROM googlechat_messages m WHERE m.space_name = s.name{msg_bound}) AS messages,
-               (SELECT COUNT(*) FROM coord_tasks t WHERE t.space_name = s.name{task_bound}) AS tasks
+               (SELECT COUNT(*) FROM coord_tasks t WHERE t.space_name = s.name{task_bound}) AS tasks,
+               (SELECT MAX(m.create_time) FROM googlechat_messages m WHERE m.space_name = s.name{msg_bound}) AS last_active
           FROM googlechat_spaces s
          WHERE {clause}
            AND (SELECT COUNT(*) FROM googlechat_messages m WHERE m.space_name = s.name{msg_bound}) >= %s
          ORDER BY (s.display_name IS NULL), s.display_name, s.name
         """,
-        ([bound, bound] if bound else []) + params + ([bound] if bound else []) + [minimal_messages],
+        ([bound, bound, bound] if bound else []) + params + ([bound] if bound else []) + [minimal_messages],
     )
     return sieve.filter_rows(blocked, rows)
 

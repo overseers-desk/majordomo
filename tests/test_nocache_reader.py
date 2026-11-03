@@ -4,6 +4,7 @@
 
 import _shim  # noqa: F401
 
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -252,6 +253,16 @@ def test_spaces_reports_domain_fields_free_of_extra_calls():
     assert rows["spaces/CONSUMER"]["external_user_allowed"] is False
     # owner is not resolved unless asked for
     assert "owner_user_id" not in rows["spaces/DOMAIN"]
+
+
+def test_spaces_report_last_active_and_hide_it_past_the_bound():
+    spaces = [{"name": "spaces/DM", "spaceType": "DIRECT_MESSAGE", "lastActiveTime": "2026-11-03T01:02:03Z"},
+              {"name": "spaces/QUIET", "spaceType": "SPACE"}]
+    rows = {r["space_name"]: r for r in api.NocacheReader(service=_fake_chat(spaces, {}), blocked=[]).spaces()}
+    assert rows["spaces/DM"]["last_active"] == datetime(2026, 11, 3, 1, 2, 3)
+    assert rows["spaces/QUIET"]["last_active"] is None
+    bounded = api.NocacheReader(service=_fake_chat(spaces, {}), blocked=[], bound=datetime(2026, 11, 3, 1, 2, 3))
+    assert bounded.spaces()[0]["last_active"] is None
 
 
 def _chat_with_members(spaces, members_by_space):

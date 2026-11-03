@@ -672,6 +672,10 @@ class NocacheReader:
                      if (ct := _parse_dt(s.get("createTime"))) is None or ct < self.bound]
         rows = []
         for s in found:
+            # lastActiveTime is current state; a replay shows none at or past its bound.
+            last = _parse_dt(s.get("lastActiveTime"))
+            if self.bound is not None and last is not None and last >= self.bound:
+                last = None
             # `customer` (a Workspace domain id) comes back free on the same
             # call; its absence is the consumer/personal-account case. A
             # DIRECT_MESSAGE space never carries it either way, so domain_owned
@@ -682,6 +686,7 @@ class NocacheReader:
                 "space_type": s.get("spaceType"), "messages": None, "tasks": None,
                 "customer": customer, "domain_owned": customer is not None,
                 "external_user_allowed": bool(s.get("externalUserAllowed")),
+                "last_active": last,
             })
         rows = sieve.filter_rows(self.blocked, rows)
         if owner:
