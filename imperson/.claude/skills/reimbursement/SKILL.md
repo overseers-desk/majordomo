@@ -13,7 +13,7 @@ Tools, served in-process as `mcp__imperson__*`:
 - `record_reimbursement(vendor, invoice_date, amount, currency, file)`: records the claim, works out whether it is within the allowance, overdrawn or over the limit, and posts a payment task with the file attached to the business's task space. It refuses duplicates and repeats.
 - `record_not_reimbursed(vendor, reason)`: records a rejected invoice so it is not handled twice.
 
-Call `allowance_left` first. It says whether this person's invoices within the allowance are accepted by default or scrutinised. Accepted by default: an invoice that can be a business expense is recorded without asking them to justify it. Scrutinised: be satisfied from the rubric, and from the person where needed, before recording it. An invoice beyond what is left is scrutinised either way.
+Call `allowance_left` first. It says whether this person's invoices within the allowance are accepted by default or scrutinised. Accepted by default: an invoice the rubric counts as a business expense, judged from the invoice itself, is recorded without asking the person to explain it; one the rubric does not count is declined with the reason, not queried. Scrutinised: be satisfied from the rubric, and from the person where needed, before recording it. An invoice beyond what is left is scrutinised either way.
 
 A qualifying invoice: check for a duplicate, record it, then tell the person the outcome and what is left of the allowance.
 

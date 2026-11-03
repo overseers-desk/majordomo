@@ -137,7 +137,8 @@ def tools(turn) -> list:
     async def allowance_left(args):
         allowance, spent, left = standing()
         policy = tenant.within_allowance.get(person, tenant.within_allowance.get(turn.sender, "scrutinise"))
-        within = ("accepted by default: record it when it can be a business expense, without asking them to justify it"
+        within = ("accepted by default: record it when the invoice itself shows a business expense under the rubric, without asking them to "
+                  "explain it, and decline it when it does not"
                   if policy == "accept" else "scrutinised: be satisfied it is a business expense before recording it")
         return reply(f"{person}: weekly allowance {money(allowance)}, spent this week {money(spent)}, "
                      f"left {money(left)}. The week started {since.date().isoformat()}. "
