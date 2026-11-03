@@ -161,7 +161,7 @@ def test_what_serves_only_a_person_refuses_naming_the_app(google):
         "cache people": cache.people,
         "live people": lambda: readers.FreshReader(cache, cfg, [], []).people(),
         "owner": lambda: api.owned_spaces(cfg, [], owner=True),
-        "attachments": lambda: api.attachments(cfg, [], space="spaces/OK"),
+        "attachments": lambda: api.attachments(cfg, space="spaces/OK"),
         "login": lambda: frontdoor.login(cfg),
     }
     for what, call in refusals.items():

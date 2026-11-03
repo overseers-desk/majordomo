@@ -62,5 +62,5 @@ def test_api_messages_cap_keeps_the_newest():
 
 def test_attachments_cap_keeps_the_newest():
     chat = _chat([_msg(n, attachment=True) for n in (1, 2, 3, 4, 5)])
-    rows = api.attachments({}, [], space=SPACE, limit=2, service=chat)
+    rows = api.attachments({}, space=SPACE, limit=2, service=chat)
     assert [r["content_name"] for r in rows] == ["f4.png", "f5.png"]

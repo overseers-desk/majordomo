@@ -12,7 +12,7 @@ As a library it reads only what it is handed: ``load_config`` takes a dict
 from importlib.metadata import PackageNotFoundError, version as _dist_version
 
 from . import dates
-from .api import send
+from .api import attachments, send
 from .config import drain_notes, load_config
 from .errors import MajordomoError, NotFound, ScopeError
 from .readers import make_reader, messages, tasks
@@ -23,6 +23,7 @@ __all__ = [
     "tasks",
     "messages",
     "send",
+    "attachments",
     "drain_notes",
     "MajordomoError",
     "ScopeError",

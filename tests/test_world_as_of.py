@@ -394,7 +394,7 @@ def test_the_cli_bounds_every_report_by_the_environment_s_bound(args, monkeypatc
     reader = types.SimpleNamespace(source="cache", spaces=report, people=report, tasks=report, messages=report)
     monkeypatch.setattr(readers, "make_reader", lambda cfg, source, **kw: reader)
     monkeypatch.setattr(api, "owned_spaces", lambda cfg, blocked, **kw: [])
-    monkeypatch.setattr(api, "attachments", lambda cfg, blocked, **kw: report(**kw))
+    monkeypatch.setattr(api, "attachments", lambda cfg, **kw: report(**kw))
     result = CliRunner().invoke(app, args + ["--json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["world_as_of"] == BOUND_RAW

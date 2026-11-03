@@ -66,7 +66,7 @@ def _fake_download(monkeypatch, payload=b"BYTES"):
 
 def test_message_scope_lists_its_files():
     chat = _chat(_msg(_att("a.mp4"), _att("b.mp4", name="…/A2", resource="res-2")))
-    rows = api.attachments({}, [], message=MSG, service=chat)
+    rows = api.attachments({}, message=MSG, service=chat)
     assert [r["content_name"] for r in rows] == ["a.mp4", "b.mp4"]
     assert [r["resource_name"] for r in rows] == ["res-1", "res-2"]
     assert rows[0]["sender_name"] == "users/sam"
@@ -78,13 +78,13 @@ def test_message_scope_lists_its_files():
 
 def test_a_sender_the_chat_api_names_is_named_without_people():
     chat = _chat({**_msg(_att("a.mp4")), "sender": {"name": "users/104", "type": "HUMAN", "displayName": "Sam Ode"}})
-    (row,) = api.attachments({}, [], message=MSG, service=chat)
+    (row,) = api.attachments({}, message=MSG, service=chat)
     assert (row["sender_name"], row["sender_display"]) == ("users/104", "Sam Ode")
 
 
 def test_message_without_files_reports_nothing():
     chat = _chat({"name": MSG, "createTime": "2026-06-24T00:00:00Z"})
-    assert api.attachments({}, [], message=MSG, service=chat) == []
+    assert api.attachments({}, message=MSG, service=chat) == []
 
 
 def test_space_scope_flattens_files_across_messages():
@@ -94,7 +94,7 @@ def test_space_scope_flattens_files_across_messages():
         _msg(_att("two.mp4"), name="spaces/OK/messages/C.1"),
     ]
     chat = _chat(listed=listed)
-    rows = api.attachments({}, [], space=SPACE, service=chat)
+    rows = api.attachments({}, space=SPACE, service=chat)
     assert [r["content_name"] for r in rows] == ["one.jpeg", "two.mp4"]
     assert rows[0]["space_display"] == "Marketing"
     # The list response already carries the files; no per-message fetch.
@@ -104,13 +104,13 @@ def test_space_scope_flattens_files_across_messages():
 def test_thread_scope_keeps_only_that_thread():
     listed = [_msg(_att("keep.mp4"), name="spaces/OK/messages/T.1"),
               _msg(_att("drop.mp4"), name="spaces/OK/messages/OTHER.1")]
-    rows = api.attachments({}, [], thread="spaces/OK/messages/T.1", service=_chat(listed=listed))
+    rows = api.attachments({}, thread="spaces/OK/messages/T.1", service=_chat(listed=listed))
     assert [r["content_name"] for r in rows] == ["keep.mp4"]
 
 
 def test_limit_caps_rows():
     chat = _chat(_msg(_att("a"), _att("b"), _att("c")))
-    assert len(api.attachments({}, [], message=MSG, limit=2, service=chat)) == 2
+    assert len(api.attachments({}, message=MSG, limit=2, service=chat)) == 2
 
 
 # --- download ------------------------------------------------------------
@@ -118,7 +118,7 @@ def test_limit_caps_rows():
 def test_download_writes_the_file_and_reports_the_path(tmp_path, monkeypatch):
     _fake_download(monkeypatch, b"VIDEO")
     chat = _chat(_msg(_att("clip.mp4")))
-    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    rows = api.attachments({}, message=MSG, download_to=str(tmp_path), service=chat)
     written = tmp_path / "clip.mp4"
     assert written.read_bytes() == b"VIDEO"
     assert rows[0]["path"] == str(written)
@@ -128,7 +128,7 @@ def test_download_writes_the_file_and_reports_the_path(tmp_path, monkeypatch):
 
 def test_listing_without_download_writes_nothing(tmp_path):
     chat = _chat(_msg(_att("clip.mp4")))
-    rows = api.attachments({}, [], message=MSG, service=chat)
+    rows = api.attachments({}, message=MSG, service=chat)
     assert "path" not in rows[0]
     assert list(tmp_path.iterdir()) == []
     chat.media().download_media.assert_not_called()
@@ -138,7 +138,7 @@ def test_download_keeps_an_existing_file_and_writes_beside_it(tmp_path, monkeypa
     _fake_download(monkeypatch)
     (tmp_path / "clip.mp4").write_bytes(b"MINE")
     chat = _chat(_msg(_att("clip.mp4")))
-    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    rows = api.attachments({}, message=MSG, download_to=str(tmp_path), service=chat)
     assert (tmp_path / "clip.mp4").read_bytes() == b"MINE"
     assert rows[0]["path"] == str(tmp_path / "clip-2.mp4")
     assert (tmp_path / "clip-2.mp4").read_bytes() == b"BYTES"
@@ -148,7 +148,7 @@ def test_attachments_sharing_a_name_are_all_written(tmp_path, monkeypatch):
     _fake_download(monkeypatch)
     chat = _chat(_msg(*(_att("untitled", content_type="image/webp", resource=f"r{i}") for i in range(3)),
                       _att("shot.png", content_type="image/png", resource="r3")))
-    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    rows = api.attachments({}, message=MSG, download_to=str(tmp_path), service=chat)
     assert [r["path"] for r in rows] == [str(tmp_path / n) for n in
                                          ("untitled.webp", "untitled-2.webp", "untitled-3.webp", "shot.png")]
     assert all((tmp_path / n).exists() for n in
@@ -166,7 +166,7 @@ def test_a_failed_write_is_reported_and_the_rest_still_download(tmp_path, monkey
 
     monkeypatch.setattr("builtins.open", failing_open)
     chat = _chat(_msg(_att("bad.mp4", resource="r0"), _att("clip.mp4", resource="r1")))
-    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    rows = api.attachments({}, message=MSG, download_to=str(tmp_path), service=chat)
     assert "No space left" in rows[0]["error"]
     assert rows[1]["path"] == str(tmp_path / "clip.mp4")
 
@@ -174,7 +174,7 @@ def test_a_failed_write_is_reported_and_the_rest_still_download(tmp_path, monkey
 def test_a_drive_backed_file_is_reported_and_the_rest_still_download(tmp_path, monkeypatch):
     _fake_download(monkeypatch)
     chat = _chat(_msg(_att("doc.pdf", source="DRIVE_FILE", resource=None), _att("clip.mp4")))
-    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    rows = api.attachments({}, message=MSG, download_to=str(tmp_path), service=chat)
     assert "Drive" in rows[0]["error"] and "doc.pdf" in rows[0]["error"]
     assert "path" not in rows[0]
     assert rows[1]["path"] == str(tmp_path / "clip.mp4")
@@ -182,7 +182,7 @@ def test_a_drive_backed_file_is_reported_and_the_rest_still_download(tmp_path, m
 
 def test_drive_backed_file_still_lists():
     chat = _chat(_msg(_att("doc.pdf", source="DRIVE_FILE", resource=None)))
-    rows = api.attachments({}, [], message=MSG, service=chat)
+    rows = api.attachments({}, message=MSG, service=chat)
     assert rows[0]["source"] == "DRIVE_FILE"
     assert rows[0]["resource_name"] is None
 
@@ -190,7 +190,7 @@ def test_drive_backed_file_still_lists():
 def test_a_traversing_filename_cannot_escape_the_directory(tmp_path, monkeypatch):
     _fake_download(monkeypatch)
     chat = _chat(_msg(_att("../escaped.mp4")))
-    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    rows = api.attachments({}, message=MSG, download_to=str(tmp_path), service=chat)
     assert rows[0]["path"] == str(tmp_path / "escaped.mp4")
     assert (tmp_path / "escaped.mp4").exists()
     assert not (tmp_path.parent / "escaped.mp4").exists()
@@ -199,7 +199,7 @@ def test_a_traversing_filename_cannot_escape_the_directory(tmp_path, monkeypatch
 def test_an_all_path_filename_is_reported_not_invented(tmp_path, monkeypatch):
     _fake_download(monkeypatch)
     chat = _chat(_msg(_att("../")))
-    rows = api.attachments({}, [], message=MSG, download_to=str(tmp_path), service=chat)
+    rows = api.attachments({}, message=MSG, download_to=str(tmp_path), service=chat)
     assert "no usable filename" in rows[0]["error"]
     assert list(tmp_path.iterdir()) == []
 
@@ -207,7 +207,7 @@ def test_an_all_path_filename_is_reported_not_invented(tmp_path, monkeypatch):
 def test_missing_destination_directory_fails_before_any_call(tmp_path):
     chat = _chat(_msg(_att("clip.mp4")))
     with pytest.raises(MajordomoError) as ei:
-        api.attachments({}, [], message=MSG, download_to=str(tmp_path / "nope"), service=chat)
+        api.attachments({}, message=MSG, download_to=str(tmp_path / "nope"), service=chat)
     assert "no such directory" in str(ei.value)
     chat.spaces().messages().get.assert_not_called()
 
@@ -217,7 +217,7 @@ def test_missing_destination_directory_fails_before_any_call(tmp_path):
 def test_blocked_space_worded_as_not_found():
     chat = _chat()
     with pytest.raises(NotFound) as ei:
-        api.attachments({}, [SPACE], space=SPACE, service=chat)
+        api.attachments({"sieve": {"block_spaces": [SPACE]}}, space=SPACE, service=chat)
     assert str(ei.value) == f"majordomo: {SPACE}: not found."
     chat.spaces().messages().list.assert_not_called()
 
@@ -225,7 +225,7 @@ def test_blocked_space_worded_as_not_found():
 def test_blocked_space_refused_through_a_message_name_too():
     chat = _chat()
     with pytest.raises(NotFound) as ei:
-        api.attachments({}, [SPACE], message=MSG, service=chat)
+        api.attachments({"sieve": {"block_spaces": [SPACE]}}, message=MSG, service=chat)
     assert str(ei.value) == f"majordomo: {SPACE}: not found."
     chat.spaces().messages().get.assert_not_called()
 
@@ -236,7 +236,7 @@ def test_absent_message_uses_the_same_wording():
     err.resp = types.SimpleNamespace(status=404)
     chat.spaces().messages().get.return_value.execute.side_effect = err
     with pytest.raises(NotFound) as ei:
-        api.attachments({}, [], message=MSG, service=chat)
+        api.attachments({}, message=MSG, service=chat)
     assert str(ei.value) == f"majordomo: {MSG}: not found."
 
 
@@ -246,14 +246,14 @@ def test_non_404_api_errors_stay_loud():
     err.resp = types.SimpleNamespace(status=403)
     chat.spaces().messages().get.return_value.execute.side_effect = err
     with pytest.raises(Exception, match="403"):
-        api.attachments({}, [], message=MSG, service=chat)
+        api.attachments({}, message=MSG, service=chat)
 
 
 def test_needs_exactly_one_scope():
     with pytest.raises(MajordomoError):
-        api.attachments({}, [], service=_chat())
+        api.attachments({}, service=_chat())
     with pytest.raises(MajordomoError):
-        api.attachments({}, [], space=SPACE, message=MSG, service=_chat())
+        api.attachments({}, space=SPACE, message=MSG, service=_chat())
 
 
 # --- the replay bound ----------------------------------------------------
@@ -264,12 +264,12 @@ def _bounded(raw):
 
 def test_world_as_of_hides_a_file_posted_after_the_bound():
     chat = _chat(_msg(_att("later.mp4")))  # posted 2026-06-24, past the bound
-    assert api.attachments(_bounded("2026-06-01T00:00:00+00:00"), [], message=MSG, service=chat) == []
+    assert api.attachments(_bounded("2026-06-01T00:00:00+00:00"), message=MSG, service=chat) == []
 
 
 def test_world_as_of_keeps_a_file_posted_before_the_bound():
     chat = _chat(_msg(_att("earlier.mp4")))
-    rows = api.attachments(_bounded("2026-07-01T00:00:00+00:00"), [], message=MSG, service=chat)
+    rows = api.attachments(_bounded("2026-07-01T00:00:00+00:00"), message=MSG, service=chat)
     assert [r["content_name"] for r in rows] == ["earlier.mp4"]
 
 
@@ -278,7 +278,7 @@ def test_download_is_not_refused_under_a_bound(tmp_path, monkeypatch):
     the bound is legitimately part of the replay."""
     _fake_download(monkeypatch, b"OLD")
     chat = _chat(_msg(_att("clip.mp4")))
-    rows = api.attachments(_bounded("2026-07-01T00:00:00+00:00"), [], message=MSG,
+    rows = api.attachments(_bounded("2026-07-01T00:00:00+00:00"), message=MSG,
                            download_to=str(tmp_path), service=chat)
     assert (tmp_path / "clip.mp4").read_bytes() == b"OLD"
     assert rows[0]["path"] == str(tmp_path / "clip.mp4")
@@ -305,7 +305,7 @@ def test_person_alone_lists_the_dm_files():
               dict(_msg(_att("b.png", content_type="image/png"), name="spaces/DM1/messages/M.2"),
                    sender={"name": "users/me", "type": "HUMAN"})]
     chat = _with_dm(_chat(listed=listed), {"users/sam": "spaces/DM1"})
-    rows = api.attachments({}, [], person="users/sam", service=chat)
+    rows = api.attachments({}, person="users/sam", service=chat)
     assert [r["content_name"] for r in rows] == ["a.png", "b.png"]  # both sides of the DM
     assert all(r["space_name"] == "spaces/DM1" for r in rows)
 
@@ -313,17 +313,17 @@ def test_person_alone_lists_the_dm_files():
 def test_person_with_space_keeps_their_files_only():
     listed = [_msg(_att("a.png")), dict(_msg(_att("b.png"), name="spaces/OK/messages/T.2"),
                                         sender={"name": "users/other", "type": "HUMAN"})]
-    rows = api.attachments({}, [], space="spaces/OK", person="users/sam", service=_chat(listed=listed))
+    rows = api.attachments({}, space="spaces/OK", person="users/sam", service=_chat(listed=listed))
     assert [r["content_name"] for r in rows] == ["a.png"]
 
 
 def test_space_by_display_name():
-    rows = api.attachments({}, [], space="marketing", service=_chat(listed=[_msg(_att())]))
+    rows = api.attachments({}, space="marketing", service=_chat(listed=[_msg(_att())]))
     assert rows and rows[0]["space_name"] == SPACE
 
 
 def test_person_pairs_only_with_space():
     with pytest.raises(MajordomoError):
-        api.attachments({}, [], person="users/sam", thread="spaces/OK/messages/T", service=_chat())
+        api.attachments({}, person="users/sam", thread="spaces/OK/messages/T", service=_chat())
     with pytest.raises(MajordomoError):
-        api.attachments({}, [], service=_chat())
+        api.attachments({}, service=_chat())

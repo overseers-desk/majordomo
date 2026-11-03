@@ -104,7 +104,7 @@ def test_mcp_messages_asks_for_people_scope_before_reading(order, monkeypatch):
 
 
 def test_mcp_attachments_asks_api_read_and_people_before_reading(order, monkeypatch):
-    def attachments(cfg, blocked, **kw):
+    def attachments(cfg, **kw):
         order.append(("read", "attachments"))
         return []
 

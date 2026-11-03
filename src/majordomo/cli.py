@@ -304,7 +304,7 @@ def attachments(
     # Always the direct API and always naming senders, regardless of flags.
     _up_front(cfg, api_read=True, people=True)
     start, end = dates.resolve(window, since, until, cfg=cfg)
-    rows = api.attachments(cfg, config.block_spaces(cfg), space=space, thread=thread,
+    rows = api.attachments(cfg, space=space, thread=thread,
                            message=message, person=person, start=start, end=end, limit=limit,
                            download_to=download and os.path.expanduser(download),
                            cache_dir=config.cache_dir())

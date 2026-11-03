@@ -925,7 +925,7 @@ def _fetch(service, row: dict, dest_dir: str) -> str:
             n += 1
 
 
-def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
+def attachments(cfg: dict, *, space: str | None = None,
                 thread: str | None = None, message: str | None = None,
                 person: str | None = None,
                 start: datetime | None = None, end: datetime | None = None,
@@ -946,6 +946,7 @@ def attachments(cfg: dict, blocked: list[str], *, space: str | None = None,
     ``cache_dir``.
     """
     readers.person_only(config.identity(cfg), "reading attachments")
+    blocked = config.block_spaces(cfg)
     given = sorted(n for n, v in (("space", space), ("thread", thread), ("message", message), ("person", person)) if v)
     if not (len(given) == 1 or given == ["person", "space"]):
         raise MajordomoError("majordomo: attachments needs one of space / thread / message / person "

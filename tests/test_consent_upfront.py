@@ -143,7 +143,7 @@ def test_cli_messages_needs_a_target_but_still_asks_first(stub_reader):
 
 
 def test_cli_attachments_asks_api_read_and_people_before_reading(order, monkeypatch):
-    def attachments(cfg, blocked, **kw):
+    def attachments(cfg, **kw):
         order.append(("read", "attachments"))
         return []
 
