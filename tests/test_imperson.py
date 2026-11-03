@@ -139,13 +139,17 @@ def test_no_config_toml_is_ever_opened(tmp_path, monkeypatch):
     assert acct.cfg["api"]["token_file"].endswith("token.json")
 
 
-def test_a_skills_link_left_by_a_moved_checkout_is_replaced(tmp_path):
+def test_the_session_sees_imperson_s_skills_and_the_business_s_own(tmp_path):
     acct, _ = account(tmp_path, [], Talk())
-    link = acct.state / "workspace" / ".claude" / "skills"
-    link.parent.mkdir(parents=True)
-    link.symlink_to(tmp_path / "gone")
+    own = acct.tenant / ".imperson" / "skills" / "reimbursement"
+    own.mkdir(parents=True)
+    (own / "SKILL.md").write_text("---\nname: reimbursement\n---\n")
+    folder = acct.state / "workspace" / ".claude" / "skills"
+    folder.parent.mkdir(parents=True)
+    folder.symlink_to(tmp_path / "gone")                      # a link an older layout left
     acct.workspace()
-    assert link.readlink() == imperson.HERE / "skills"
+    links = {p.name: p.readlink() for p in folder.iterdir()}
+    assert links["reimbursement"] == own and links["weather"] == imperson.HERE / "skills" / "weather"
 
 
 def test_a_resumed_conversation_is_told_which_rule_files_changed(tmp_path):

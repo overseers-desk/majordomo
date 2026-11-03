@@ -186,14 +186,21 @@ class Account:
                 f"The business's files are in {self.tenant}. Today is {self.now.date().isoformat()}.")
 
     def workspace(self) -> Path:
-        """The session's working folder: it holds the skills and nothing that would load another project's instructions."""
+        """The session's working folder: it links imperson's skills and the business's own, in the business's
+        `.imperson/skills/`, which takes a name's place when both have it, and holds nothing else."""
         ws = self.state / "workspace"
-        link, skills = ws / ".claude" / "skills", HERE / "skills"
-        if link.is_symlink() and link.readlink() != skills:  # left by a checkout that has moved
-            link.unlink()
-        if not link.is_symlink():
-            link.parent.mkdir(parents=True, exist_ok=True)
-            link.symlink_to(skills)
+        folder = ws / ".claude" / "skills"
+        if folder.is_symlink():
+            folder.unlink()
+        folder.mkdir(parents=True, exist_ok=True)
+        skills = {p.name: p for root in (HERE / "skills", self.tenant / ".imperson" / "skills") if root.is_dir()
+                  for p in sorted(root.iterdir()) if p.is_dir()}
+        for link in folder.iterdir():
+            if link.is_symlink() and skills.get(link.name) != link.readlink():
+                link.unlink()
+        for name, source in skills.items():
+            if not (folder / name).is_symlink():
+                (folder / name).symlink_to(source)
         return ws
 
     def rules(self) -> dict[str, str]:

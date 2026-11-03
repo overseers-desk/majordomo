@@ -1,10 +1,11 @@
 # imperson
 
-imperson answers Google Chat direct messages as an account. It signs in to Chat as that account, through majordomo and the account's own login. Each conversation has its own Claude Agent SDK session, resumed every time the person writes again, so the agent remembers what was said. Its abilities are skills. Claude picks one from what the person writes:
+imperson answers Google Chat direct messages as an account. It signs in to Chat as that account, through majordomo and the account's own login. Each conversation has its own Claude Agent SDK session, resumed every time the person writes again, so the agent remembers what was said. Its abilities are skills, which Claude picks from what the person writes. imperson carries two:
 
-- **reimbursement**: someone sends an invoice or receipt and is paid back within a weekly allowance. A payment task goes to the space the business names for it.
 - **weather**: someone asks about the weather.
 - **events**: someone asks what is on nearby.
+
+A business adds its own in its repository's `.imperson/skills/<name>/SKILL.md`, and one of the same name takes the place of imperson's. A business's process, such as how it reimburses staff, is its own, so its skill lives there. The reimbursement skill is one such skill. It works with functions imperson provides for that process: reading the allowance, finding an earlier claim of the same invoice, recording a reimbursement with its payment task, and recording an invoice that is not justifiable.
 
 An account either answers every message, or answers only when a rule written by its owner says to. In the second case the agent still reads every message, so it keeps the conversation's context.
 
