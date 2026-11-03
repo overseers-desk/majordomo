@@ -138,6 +138,15 @@ def test_no_config_toml_is_ever_opened(tmp_path, monkeypatch):
     assert acct.cfg["api"]["token_file"].endswith("token.json")
 
 
+def test_a_skills_link_left_by_a_moved_checkout_is_replaced(tmp_path):
+    acct, _ = account(tmp_path, [], Talk())
+    link = acct.state / "workspace" / ".claude" / "skills"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(tmp_path / "gone")
+    acct.workspace()
+    assert link.readlink() == imperson.HERE / "skills"
+
+
 def test_own_messages_are_not_handed_to_the_session(tmp_path):
     talk = Talk()
     acct, chat = account(tmp_path, [("spaces/D1", "spaces/D1/messages/1", ME, "sent earlier", False)], talk)

@@ -180,10 +180,12 @@ class Account:
     def workspace(self) -> Path:
         """The session's working folder: it holds the skills and nothing that would load another project's instructions."""
         ws = self.state / "workspace"
-        link = ws / ".claude" / "skills"
-        if not link.exists():
+        link, skills = ws / ".claude" / "skills", HERE / "skills"
+        if link.is_symlink() and link.readlink() != skills:  # left by a checkout that has moved
+            link.unlink()
+        if not link.is_symlink():
             link.parent.mkdir(parents=True, exist_ok=True)
-            link.symlink_to(HERE / "skills")
+            link.symlink_to(skills)
         return ws
 
     def handle(self, space: str, row: dict, files: list[Path]) -> None:
