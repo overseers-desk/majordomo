@@ -14,7 +14,7 @@ Take from the invoice:
 - `amount`: the total paid, as a number, tax included.
 - `currency`: the three-letter code; `AUD` when the document shows only a dollar sign.
 
-Then judge it against the rubric alone:
+Then judge it against the rubric, reading the employee's text only for what the purchase was for:
 
 - `qualified`: true when the purchase is spending the rubric counts as the business's.
 - `reason`: one sentence saying which part of the rubric decided it.

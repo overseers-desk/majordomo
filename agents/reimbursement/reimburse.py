@@ -1,6 +1,6 @@
 """Answer the invoices employees send to a Google Chat direct message.
 
-One run reads the signed-in account's direct messages that moved since the
+One run reads the signed-in account's direct messages active since the
 last run, takes each new message carrying an image or a PDF from a person the
 tenant's team.yaml names, has Claude judge it against the tenant's rubric,
 checks it against the ledger for a duplicate and against the week's allowance,
