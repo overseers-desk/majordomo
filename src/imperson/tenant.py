@@ -93,6 +93,8 @@ def refresh(repo: str, token: str, cache: Path, *, branch: str | None = None,
         elif found["type"] == "tree":
             wanted.update({f"{path}/{e['path']}": e["sha"] for e in tree(found["sha"], recursive=True)
                            if e["type"] == "blob"})
+
+    def fetch() -> None:
         for p, sha in wanted.items():
             if p not in changed and (state["blobs"].get(p) != sha or not (cache / p).exists()):
                 (cache / p).parent.mkdir(parents=True, exist_ok=True)
@@ -101,10 +103,12 @@ def refresh(repo: str, token: str, cache: Path, *, branch: str | None = None,
 
     want(OVERVIEW)
     want(FOLDER)
+    fetch()   # the policies, read next for the files they name
     for policy in sorted((cache / FOLDER).glob("*/policy.yaml")):
         team = (yaml.safe_load(policy.read_text()) or {}).get("team")
         if team:
             want(team)
+    fetch()
     for path in sorted(set(state["blobs"]) - set(wanted)):
         (cache / path).unlink(missing_ok=True)
         changed.append(path)

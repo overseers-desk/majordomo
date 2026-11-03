@@ -106,8 +106,9 @@ def tools(turn, skill: str) -> list:
 
     me = terms_of(turn.sender)
     person, limit, group = me["name"], me["limit"], me["group"]
-    authority = policy.get("authority") or []
-    empowered = turn.sender in authority or names.get(turn.sender) in authority
+    authority = [str(a).strip() for a in policy.get("authority") or []]
+    called = {n.lower() for n in (names.get(turn.sender), named.get(turn.sender)) if n}   # whole names, never a first name
+    empowered = turn.sender in authority or any(a.lower() in called for a in authority)
     outcomes = policy["outcomes"]
     alike = policy["same_claim"]
     books = turn.books
@@ -146,8 +147,9 @@ def tools(turn, skill: str) -> list:
             ("outcome", r["outcome"]), *((k, r["fields"][k]) for k in fields if k in r["fields"])]) + ")"
 
     def saved(u: dict) -> str | None:
-        """The upload's file: the copy the run saved from its message, else one written out of the books."""
-        if here.get(u["id"]):
+        """The upload's file: the copy the run saved from its message, which the books may not have kept, else one
+        written out of the books."""
+        if here.get(u["id"]) and Path(here[u["id"]]).exists():
             return str(here[u["id"]])
         if u["sha256"] is None:
             return None

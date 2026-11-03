@@ -3,14 +3,17 @@
 import _shim  # noqa: F401
 
 import asyncio
+import contextlib
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+import pytest
 import yaml
 
 from imperson import ledger
+from imperson.books import Books
 
 ANN, BO, SAM = "users/ANN", "users/BO", "users/SAM"
 NOW = datetime(2026, 11, 4, 2, 0, tzinfo=timezone.utc)      # Wednesday 12:00 in Brisbane
@@ -190,6 +193,23 @@ def test_the_same_photo_sent_twice_is_one_file_and_two_uploads(tmp_path, books):
     assert books.content(second["id"]) == b"jpg"
 
 
+def test_the_same_photo_from_another_conversation_is_kept_once_and_never_named(tmp_path, books):
+    root = tenant(tmp_path, WEEKLY)
+    elsewhere = photo(turn_for(books, root, tmp_path, sender=BO, message="spaces/E/messages/1"))
+    first = photo(turn_for(books, root, tmp_path, message="spaces/D/messages/2"))
+    assert first["file_id"] == elsewhere["file_id"] and first["identical_to"] is None
+    assert photo(turn_for(books, root, tmp_path, message="spaces/D/messages/3"))["identical_to"]["id"] == first["id"]
+    assert photo(turn_for(books, root, tmp_path, message="spaces/e/messages/4"))["identical_to"] is None   # another space
+
+
+def test_two_attachment_names_differing_only_in_case_are_two_uploads(books):
+    first, second = (books.add_upload(attachment=f"spaces/D/messages/1/attachments/{n}", account="admin",
+                                      message="spaces/D/messages/1", sender=ANN, name="invoice.jpg",
+                                      media_type="image/jpeg", received_at=NOW, content=c, error=None)
+                     for n, c in (("Ab", b"one"), ("aB", b"two")))
+    assert first["id"] != second["id"] and books.content(second["id"]) == b"two"
+
+
 def test_a_file_that_could_not_be_fetched_is_filled_in_when_it_is(tmp_path, books):
     t = turn_for(books, tenant(tmp_path, WEEKLY), tmp_path)
     failed = photo(t, None, error="majordomo: invoice.jpg: HTTP 500")
@@ -229,6 +249,14 @@ def test_orders_and_questions_about_others_from_someone_without_authority_are_re
         assert error and text.startswith("Bo (users/BO) has no authority under the spend policy")
     assert call(bo, "balance", person="Ann")[1]
     assert books.orders("spend") == [] and books.claims("spend")[0]["outcome"] == "refused" and bo.posted == []
+
+
+def test_authority_is_held_by_a_whole_name_from_the_team_file_or_the_policy_and_never_by_a_first_name(tmp_path, books):
+    people = {**WEEKLY["people"], "users/PAT": {"group": "by-approval", "name": "Pat Example"}}
+    root = tenant(tmp_path, {**WEEKLY, "people": people, "authority": ["ann", "PAT EXAMPLE", "Sam"]})
+    for sender in (ANN, "users/PAT", SAM):
+        call(turn_for(books, root, tmp_path, sender=sender), "order", kind="set_left", person="Sam Example", words="reset")
+    assert [o["given_by"] for o in books.orders("spend")] == [ANN, "users/PAT"]
 
 
 def test_a_name_that_fits_more_than_one_person_names_none(tmp_path, books):
@@ -319,6 +347,36 @@ def test_a_file_named_like_another_in_its_message_is_posted_as_its_own(tmp_path,
     later = turn_for(books, root, tmp_path, sender=BO, message="spaces/E/messages/2")
     claim(later, uploads=[2])
     assert Path(later.posted[0][2][0]).read_bytes() == b"two"
+
+
+def test_a_file_the_books_could_not_keep_is_posted_from_this_message_s_copy_and_not_once_it_is_gone(tmp_path, books,
+                                                                                                    monkeypatch):
+    monkeypatch.setattr(books, "packet", 4096)
+    t = turn_for(books, tenant(tmp_path, WEEKLY), tmp_path)
+    photo(t, b"x" * 5000)
+    claim(t, amount=10)
+    copy = t.uploads[0]["path"]
+    copy.unlink()
+    claim(t, vendor="Officeworks", amount=5)
+    assert [files for _, _, files in t.posted] == [[str(copy)], []]
+
+
+def test_a_connection_that_dies_mid_query_raises_the_error_that_killed_it_not_the_failed_rollback(monkeypatch):
+    import pymysql
+
+    lost = pymysql.err.OperationalError(2013, "Lost connection to MySQL server during query")
+
+    class Dead:
+        def cursor(self):
+            return contextlib.nullcontext(SimpleNamespace(execute=lambda *a: (_ for _ in ()).throw(lost)))
+
+        def rollback(self):
+            raise pymysql.err.InterfaceError(0, "")
+    books = Books({}, "imperson_pytest_")
+    monkeypatch.setattr(books, "_connect", Dead)
+    with pytest.raises(pymysql.err.OperationalError) as raised:
+        books.claims("spend")
+    assert raised.value is lost
 
 
 def test_a_file_larger_than_the_server_takes_is_an_upload_without_its_file(tmp_path, books, monkeypatch):

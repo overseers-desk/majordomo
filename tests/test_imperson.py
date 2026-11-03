@@ -122,12 +122,30 @@ def test_each_file_reaches_the_conversation_as_an_upload_in_the_books(tmp_path, 
     assert len(chat.sent) == 3
 
 
-def test_a_file_too_large_for_the_books_reaches_the_conversation_as_one_not_fetched(tmp_path, books, monkeypatch):
+def test_a_file_too_large_for_the_books_reaches_the_conversation_by_its_path_and_goes_out_with_its_task(tmp_path, books,
+                                                                                                          monkeypatch):
+    import yaml
+    from test_imperson_ledger import WEEKLY
     monkeypatch.setattr(books, "packet", 0)
-    talk = Talk()
-    account(tmp_path, [("spaces/D1", "spaces/D1/messages/1", ANN, "receipt", True)], talk)[0].run()
-    assert talk.turns[0]["prompt"].splitlines()[2].startswith("A file in this message could not be fetched: invoice.jpg "
-                                                              "(the file of 3 bytes, sent as ")
+    tenant = tmp_path / "tenant"
+    (tenant / ".imperson" / "spend").mkdir(parents=True)
+    (tenant / "team.yaml").write_text(f"people:\n  Ann: {ANN}\n")
+    (tenant / ".imperson" / "spend" / "policy.yaml").write_text(yaml.safe_dump(WEEKLY))
+    prompts = []
+
+    def talk(prompt, *, tools, **kw):
+        prompts.append(prompt)
+        (record,) = [t for t in tools if t.name == "spend_record"]
+        asyncio.run(record.handler({"claim": {"vendor": "Bunnings", "invoice_date": "2026-11-03", "amount": 10},
+                                    "scope": "in", "uploads": [1]}))
+        return "s"
+    acct, chat = account(tmp_path, [("spaces/D1", "spaces/D1/messages/1", ANN, "receipt", True)], talk, skills=["spend"])
+    acct.run()
+    saved = acct.state / "work" / "spaces_D1_messages_1" / "invoice.jpg"
+    line = prompts[0].splitlines()[2]
+    assert line.startswith(f"File saved from this message: {saved} (upload 1, image/jpeg; not kept in the books: the "
+                           "file of 3 bytes, sent as ") and line.endswith("exceeds the server's limit of 0)")
+    assert chat.sent == [{"to": None, "space": "spaces/T", "text": "Pay Ann 10.00, 90.00 left.", "attachments": [str(saved)]}]
 
 
 def test_a_message_whose_files_cannot_reach_the_books_waits_for_the_next_run(tmp_path, books, monkeypatch):
@@ -234,6 +252,22 @@ def test_a_resumed_conversation_is_told_which_rule_files_changed(tmp_path):
     account(tmp_path, posts, talk, chat=chat, now=later)[0].run()
     assert "changed since this conversation last read them" not in talk.turns[0]["prompt"]
     assert str(rubric) in talk.turns[1]["prompt"].split("\n\n")[0]
+
+
+def test_a_resumed_conversation_is_told_the_overview_changed_and_not_the_cache_s_own_record(tmp_path):
+    posts = [("spaces/D1", "spaces/D1/messages/1", ANN, "Hi", False)]
+    talk = Talk()
+    acct, chat = account(tmp_path, posts, talk)
+    overview, record = acct.tenant.files / "business-overview.md", acct.tenant.files / "tenant.json"
+    overview.write_text("A riding school.")
+    record.write_text('{"commit": "c1"}')
+    acct.run()
+    overview.write_text("A riding school with a cafe.")
+    record.write_text('{"commit": "c2"}')
+    posts.append(("spaces/D1", "spaces/D1/messages/2", ANN, "Open on Sunday?", False))
+    chat.last_active = later = NOW + timedelta(minutes=5)
+    account(tmp_path, posts, talk, chat=chat, now=later)[0].run()
+    assert talk.turns[1]["prompt"].split("\n\n")[0].splitlines()[1:] == [str(overview)]
 
 
 def test_claude_code_runs_in_the_account_s_own_configuration_folder(tmp_path):

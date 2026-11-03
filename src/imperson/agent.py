@@ -153,7 +153,8 @@ def _line(u: dict) -> str:
     if u["path"] is None:
         return f"A file in this message could not be fetched: {u['name']} ({u['error']}) (upload {u['id']})"
     same = u.get("identical_to")
-    also = (f"; the same file as upload {same['id']}, received {same['received_at'].isoformat()} in message "
+    also = (f"; not kept in the books: {u['error']}" if not u["kept"] else
+            f"; the same file as upload {same['id']}, received {same['received_at'].isoformat()} in message "
             f"{same['message']}" if same else "")
     return f"File saved from this message: {u['path']} (upload {u['id']}, {u['media_type']}{also})"
 
@@ -243,10 +244,11 @@ class Account:
         return ws
 
     def rules(self) -> dict[str, str]:
-        """A digest of each file the skills work from, to tell a conversation what changed."""
-        roots = [HERE / "skills" / s for s in self.skills] + [self.tenant.files / ".imperson"]
+        """A digest of each file the skills work from, imperson's own and every one of the business's in the cache,
+        to tell a conversation what changed."""
+        roots = [HERE / "skills" / s for s in self.skills] + [self.tenant.files]
         return {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for root in roots if root.is_dir()
-                for p in sorted(root.rglob("*")) if p.is_file()}
+                for p in sorted(root.rglob("*")) if p.is_file() and p != self.tenant.files / tenant.STATE}
 
     def upload(self, row: dict, a: dict) -> dict:
         """One file of a message, written to the books; what the conversation is told of it."""
@@ -256,8 +258,8 @@ class Account:
                                   media_type=a.get("content_type"),
                                   received_at=dates.utc(row.get("create_time")) or self.now,
                                   content=Path(path).read_bytes() if path else None, error=None if path else a.get("error"))
-        return {"id": u["id"], "path": path if u["file_id"] is not None else None, "name": u["name"],
-                "media_type": u["media_type"], "error": a.get("error") or u["error"], "identical_to": u["identical_to"]}
+        return {"id": u["id"], "path": path, "name": u["name"], "media_type": u["media_type"],
+                "kept": u["file_id"] is not None, "error": a.get("error") or u["error"], "identical_to": u["identical_to"]}
 
     def handle(self, space: str, row: dict, uploads: list[dict]) -> None:
         sender = row["sender_name"]

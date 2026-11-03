@@ -19,12 +19,15 @@ TABLES = """
 CREATE TABLE IF NOT EXISTS {p}schema (version INT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS {p}files (id INT AUTO_INCREMENT PRIMARY KEY, sha256 CHAR(64) NOT NULL UNIQUE,
   media_type VARCHAR(127) NOT NULL, size INT NOT NULL, content LONGBLOB NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-CREATE TABLE IF NOT EXISTS {p}uploads (id INT AUTO_INCREMENT PRIMARY KEY, attachment VARCHAR(255) NOT NULL UNIQUE,
-  file_id INT NULL, error VARCHAR(255) NULL, account VARCHAR(64) NOT NULL, message VARCHAR(128) NOT NULL,
-  sender VARCHAR(64) NOT NULL, name VARCHAR(255) NOT NULL, media_type VARCHAR(127) NULL, received_at DATETIME NOT NULL,
-  INDEX (message), FOREIGN KEY (file_id) REFERENCES {p}files(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS {p}uploads (id INT AUTO_INCREMENT PRIMARY KEY,
+  attachment VARCHAR(255) COLLATE utf8mb4_bin NOT NULL UNIQUE, file_id INT NULL, error VARCHAR(255) NULL,
+  account VARCHAR(64) NOT NULL, message VARCHAR(128) COLLATE utf8mb4_bin NOT NULL,
+  sender VARCHAR(64) COLLATE utf8mb4_bin NOT NULL, name VARCHAR(255) NOT NULL, media_type VARCHAR(127) NULL,
+  received_at DATETIME NOT NULL, INDEX (message),
+  FOREIGN KEY (file_id) REFERENCES {p}files(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS {p}claims (id INT AUTO_INCREMENT PRIMARY KEY, skill VARCHAR(64) NOT NULL,
-  account VARCHAR(64) NOT NULL, person VARCHAR(64) NOT NULL, message VARCHAR(128) NOT NULL, handled_at DATETIME NOT NULL,
+  account VARCHAR(64) NOT NULL, person VARCHAR(64) COLLATE utf8mb4_bin NOT NULL,
+  message VARCHAR(128) COLLATE utf8mb4_bin NOT NULL, handled_at DATETIME NOT NULL,
   scope VARCHAR(32) NOT NULL, outcome VARCHAR(32) NOT NULL, duplicate_of INT NULL, amount DECIMAL(12,2) NOT NULL,
   fields JSON NOT NULL, INDEX (skill, person, handled_at), INDEX (skill, message),
   FOREIGN KEY (duplicate_of) REFERENCES {p}claims(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -32,8 +35,9 @@ CREATE TABLE IF NOT EXISTS {p}claim_uploads (claim_id INT NOT NULL, upload_id IN
   PRIMARY KEY (claim_id, upload_id), FOREIGN KEY (claim_id) REFERENCES {p}claims(id),
   FOREIGN KEY (upload_id) REFERENCES {p}uploads(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS {p}orders (id INT AUTO_INCREMENT PRIMARY KEY, skill VARCHAR(64) NOT NULL,
-  account VARCHAR(64) NOT NULL, given_by VARCHAR(64) NOT NULL, message VARCHAR(128) NOT NULL, given_at DATETIME NOT NULL,
-  kind VARCHAR(32) NOT NULL, person VARCHAR(64) NULL, claim_id INT NULL, amount DECIMAL(12,2) NULL,
+  account VARCHAR(64) NOT NULL, given_by VARCHAR(64) COLLATE utf8mb4_bin NOT NULL,
+  message VARCHAR(128) COLLATE utf8mb4_bin NOT NULL, given_at DATETIME NOT NULL, kind VARCHAR(32) NOT NULL,
+  person VARCHAR(64) COLLATE utf8mb4_bin NULL, claim_id INT NULL, amount DECIMAL(12,2) NULL,
   delta DECIMAL(12,2) NULL, words TEXT NOT NULL, INDEX (skill, person, given_at),
   FOREIGN KEY (claim_id) REFERENCES {p}claims(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
@@ -86,7 +90,10 @@ class Books:
                 yield cur
             conn.commit()
         except BaseException:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:   # a dead connection took its transaction with it; the error that killed it is the one to raise
+                pass
             raise
 
     def _q(self, sql: str, values=()) -> list[dict]:
@@ -117,7 +124,8 @@ class Books:
                    media_type: str | None, received_at: datetime, content: bytes | None, error: str | None) -> dict:
         """The upload's row, written once per attachment; a later arrival with content fills in a file the first
         could not fetch. A file larger than the server takes in one statement is kept as an upload without its file,
-        as one not fetched is. ``identical_to`` is the earliest other upload of the same file, or None."""
+        as one not fetched is. ``identical_to`` is the earliest other upload of the same file in the same space, or
+        None: one person is never told what another sent."""
         with self._tx() as cur:
             file_id = None
             if content is not None:
@@ -141,7 +149,8 @@ class Books:
             cur.execute(f"SELECT * FROM {self.p}uploads WHERE attachment = %s", (attachment,))
             row = cur.fetchone()
             cur.execute(f"SELECT id, message, received_at FROM {self.p}uploads WHERE file_id = %s AND id <> %s "
-                        "ORDER BY received_at, id LIMIT 1", (row["file_id"], row["id"]))   # a NULL file matches none
+                        "AND SUBSTRING_INDEX(message, '/messages/', 1) = %s ORDER BY received_at, id LIMIT 1",
+                        (row["file_id"], row["id"], message.split("/messages/")[0]))   # a NULL file matches none
             same = cur.fetchone()
         return {**_read(row), "identical_to": _read(same) if same else None}
 
