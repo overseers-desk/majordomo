@@ -1,3 +1,11 @@
+majordomo (0.5.1) unstable; urgency=medium
+
+  * No change to the program. Released from the repository's rewritten
+    history, whose commits carry the maintainer's no-reply address; the
+    tags of earlier releases now name the rewritten commits.
+
+ -- Weiwu Zhang <a@colourful.land>  Tue, 03 Nov 2026 15:44:34 +1000
+
 majordomo (0.5.0) unstable; urgency=medium
 
   * Space rows carry last_active: the Chat API's lastActiveTime, or the
