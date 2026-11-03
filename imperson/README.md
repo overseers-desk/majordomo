@@ -22,21 +22,18 @@ Claude Code must be signed in for the user who runs it (`claude` once, then `/lo
 
 ## Each account's Chat login
 
-imperson calls majordomo as a library and hands it the path of a majordomo `config.toml`. majordomo looks for `client_secret.json` and `token.json` in the same folder, so each account keeps its own folder.
+Each account has a folder holding its `token.json` and `client_secret.json`, named by `keys` in `imperson.toml`. imperson asks Google whose token it is, so the account knows its own messages and does not answer them.
 
-For example, `~/.config/majordomo/admin/config.toml`:
-
-```toml
-[me]
-user_id = "users/123456789012345678901"   # the account's own Chat id, so its own messages are not answered
-```
-
-Copy the OAuth client file into that folder. Then sign in once as the account, with `HOME` pointed at a scratch folder so your own login is untouched:
+To make the token, sign in once as the account. Point `HOME` at a scratch folder, so your own login is untouched. `majordomo login` will not start without a `config.toml` in its folder, so give it an empty one there:
 
 ```bash
-mkdir -p /tmp/login/.config/majordomo && cp client_secret.json /tmp/login/.config/majordomo/
+mkdir -p /tmp/login/.config/majordomo ~/.config/majordomo/admin
+cp ~/.config/majordomo/client_secret.json ~/.config/majordomo/admin/
+cp ~/.config/majordomo/admin/client_secret.json /tmp/login/.config/majordomo/
+touch /tmp/login/.config/majordomo/config.toml
 HOME=/tmp/login majordomo login        # choose the account in the browser
 mv /tmp/login/.config/majordomo/token.json ~/.config/majordomo/admin/
+rm -r /tmp/login
 ```
 
 ## Configuration: `~/.config/majordomo/imperson.toml`
@@ -46,7 +43,7 @@ The file has one table per account:
 ```toml
 [account.admin]
 address = "admin@example.com"
-majordomo_config = "~/.config/majordomo/admin/config.toml"
+keys = "~/.config/majordomo/admin"          # its token.json and client_secret.json
 tenant = "~/code/business"                 # the business's repository: its people, timezone and skill files
 location = "Springfield"            # where "nearby" and "the weather" mean when no place is named
 skills = ["reimbursement", "weather", "events"]
@@ -55,7 +52,7 @@ test_correspondent = "users/…"
 
 [account.owner]
 address = "owner@example.com"
-majordomo_config = "~/.config/majordomo/config.toml"
+keys = "~/.config/majordomo"                # the same login your own majordomo uses
 tenant = "~/code/business"
 location = "Springfield"
 skills = ["weather", "events"]

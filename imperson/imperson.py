@@ -118,8 +118,19 @@ def _git(args: list[str]) -> None:
     subprocess.run(["git", *args], check=True)
 
 
+def whoami(cfg: dict) -> str:
+    """The Chat id of the person whose token this is: People's ``people/<id>`` is Chat's ``users/<id>``."""
+    from majordomo import api
+
+    people = api.people_service(cfg)
+    if people is None:
+        raise SystemExit("the token cannot reach the People API, so the account cannot tell its own messages")
+    me = people.people().get(resourceName="people/me", personFields="metadata").execute()["resourceName"]
+    return me.replace("people/", "users/", 1)
+
+
 class Account:
-    def __init__(self, name: str, table: dict, *, chat=majordomo, talk=converse, git=_git,
+    def __init__(self, name: str, table: dict, *, chat=majordomo, talk=converse, git=_git, me=whoami,
                  now: datetime | None = None, state_root: Path = STATE):
         self.name, self.table, self.chat, self.talk, self.git = name, table, chat, talk, git
         self.send = table.get("send", "off")
@@ -128,10 +139,10 @@ class Account:
         self.test_to = table.get("test_correspondent")
         if self.send == "test" and not self.test_to:
             raise SystemExit(f"[account.{name}] send = \"test\" needs test_correspondent")
-        self.cfg = chat.load_config(str(Path(table["majordomo_config"]).expanduser()))
-        self.me = (self.cfg.get("me") or {}).get("user_id")
-        if not self.me:
-            raise SystemExit(f"[account.{name}] its majordomo configuration names no [me] user_id")
+        keys = Path(table["keys"]).expanduser()
+        self.cfg = chat.load_config({"api": {"token_file": str(keys / "token.json"),
+                                             "client_file": str(keys / "client_secret.json")}})
+        self.me = me(self.cfg)
         self.tenant = Path(table["tenant"]).expanduser()
         self.skills = list(table.get("skills", []))
         self.state = state_root.expanduser() / name

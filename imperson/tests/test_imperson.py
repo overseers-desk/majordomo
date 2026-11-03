@@ -20,8 +20,8 @@ class FakeChat:
         self.sent = []
         self.last_active = NOW
 
-    def load_config(self, path):
-        return {"me": {"user_id": ME}}
+    def load_config(self, settings):
+        return settings
 
     def make_reader(self, cfg, source, **kw):
         spaces, last = sorted({p[0] for p in self.posts}), self.last_active
@@ -69,8 +69,8 @@ def account(tmp_path, posts, talk, *, chat=None, **table):
     chat = chat or FakeChat(posts)
     tenant = tmp_path / "tenant"
     tenant.mkdir(exist_ok=True)
-    conf = {"majordomo_config": "unused", "tenant": str(tenant), "send": "live", "skills": ["weather"], **table}
-    return imperson.Account("admin", conf, chat=chat, talk=talk, git=lambda a: None, now=NOW,
+    conf = {"keys": str(tmp_path / "keys"), "tenant": str(tenant), "send": "live", "skills": ["weather"], **table}
+    return imperson.Account("admin", conf, chat=chat, talk=talk, git=lambda a: None, me=lambda cfg: ME, now=NOW,
                             state_root=tmp_path / "state"), chat
 
 
@@ -95,7 +95,7 @@ def test_one_session_per_conversation_resumed_on_the_next_run(tmp_path):
     acct.run()
     posts.append(("spaces/D1", "spaces/D1/messages/2", ANN, "And Saturday?", False))
     chat.last_active = later = NOW + timedelta(minutes=5)
-    imperson.Account("admin", acct.table, chat=chat, talk=talk, git=lambda a: None, now=later,
+    imperson.Account("admin", acct.table, chat=chat, talk=talk, git=lambda a: None, me=lambda cfg: ME, now=later,
                      state_root=tmp_path / "state").run()
     assert [t["session"] for t in talk.turns] == [None, "session-1"]
     assert len(talk.turns) == 2
@@ -110,6 +110,13 @@ def test_the_rule_lets_the_session_stay_silent(tmp_path):
     assert len(talk.turns) == 2
     assert [s["text"] for s in chat.sent] == ["Markets on Saturday."]
     assert "Speak only when asked about events." in talk.turns[0]["system"]
+
+
+def test_the_account_is_the_token_s_own_person_and_names_only_its_key_folder(tmp_path):
+    acct, _ = account(tmp_path, [], Talk())
+    assert acct.me == ME
+    assert acct.cfg == {"api": {"token_file": str(tmp_path / "keys" / "token.json"),
+                                "client_file": str(tmp_path / "keys" / "client_secret.json")}}
 
 
 def test_own_messages_are_not_handed_to_the_session(tmp_path):
@@ -131,7 +138,7 @@ def test_a_failed_turn_is_tried_again_and_nothing_is_handled_twice(tmp_path):
         return "s"
     acct, chat = account(tmp_path, posts, flaky)
     acct.run()
-    imperson.Account("admin", acct.table, chat=chat, talk=flaky, git=lambda a: None, now=NOW,
+    imperson.Account("admin", acct.table, chat=chat, talk=flaky, git=lambda a: None, me=lambda cfg: ME, now=NOW,
                      state_root=tmp_path / "state").run()
     assert calls == ["Hi", "still there?", "still there?"]
 
