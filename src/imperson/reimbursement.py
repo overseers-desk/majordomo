@@ -56,20 +56,22 @@ class Tenant:
 
 
 class Ledger:
-    """One line per invoice message handled, in a tab-separated file."""
+    """One line per invoice handled, in a tab-separated file; a message may carry several invoices."""
 
     def __init__(self, path: Path, others: tuple[Path, ...] = ()):
         self.path = path
         self.rows = [r for p in (path, *others) if p.exists()
                      for r in csv.DictReader(p.open(newline=""), delimiter="\t")]
 
-    def has(self, message: str) -> bool:
-        return any(r["message"] == message for r in self.rows)
+    def has(self, message: str, vendor: str, invoice_date: str, amount: float) -> bool:
+        return any(r["message"] == message and r["vendor"].strip().lower() == vendor.strip().lower()
+                   and r["invoice_date"] == invoice_date and float(r["amount"]) == amount for r in self.rows)
 
-    def duplicate_of(self, invoice_date: str, vendor: str, amount: float) -> dict | None:
-        """An earlier paid line with the same invoice date, and the same vendor or amount."""
+    def duplicate_of(self, invoice_date: str, vendor: str, amount: float, message: str) -> dict | None:
+        """A line from another message with the same invoice date, and the same vendor or amount; the invoices
+        of one message are distinct even when they share a shop and a day."""
         for r in self.rows:
-            if r["outcome"] != "rejected" and r["invoice_date"] == invoice_date and (
+            if r["outcome"] != "rejected" and r["message"] != message and r["invoice_date"] == invoice_date and (
                     r["vendor"].strip().lower() == vendor.strip().lower() or float(r["amount"]) == amount):
                 return r
         return None
@@ -151,7 +153,7 @@ def tools(turn) -> list:
                                             "vendor": {"type": "string"}, "amount": {"type": "number"}},
            "required": ["invoice_date", "vendor", "amount"]})
     async def find_duplicate(args):
-        earlier = ledger.duplicate_of(args["invoice_date"], args["vendor"], float(args["amount"]))
+        earlier = ledger.duplicate_of(args["invoice_date"], args["vendor"], float(args["amount"]), turn.message)
         if not earlier:
             return reply("No earlier reimbursed invoice duplicates this one.")
         return reply(f"Duplicate of an earlier line: {earlier['employee']}, {earlier['vendor']}, "
@@ -159,21 +161,21 @@ def tools(turn) -> list:
                      f"handled {earlier['handled_at']}.")
 
     @tool("record_reimbursement",
-          "Record a qualifying invoice from this message: works out whether it is within the allowance, overdrawn "
-          "or over the limit, writes the ledger and posts a payment task, with the invoice attached, to the business's task space. Call it once, after "
+          "Record one qualifying invoice from this message, calling it once for each when the message holds several: works out whether it is within the allowance, overdrawn "
+          "or over the limit, writes the ledger and posts a payment task, with the invoice attached, to the business's task space. Call it after "
           "judging the invoice qualifies. It returns the outcome and the allowance left, for you to tell the person.",
           {"type": "object", "properties": {"vendor": {"type": "string"}, "invoice_date": {"type": "string", "description": "YYYY-MM-DD"},
                                             "amount": {"type": "number"}, "currency": {"type": "string"},
                                             "file": {"type": "string", "description": "Path of the invoice, one of this message's files"}},
            "required": ["vendor", "invoice_date", "amount", "currency", "file"]})
     async def record_reimbursement(args):
-        if ledger.has(turn.message):
-            return reply("This message is already recorded; it is not recorded twice.", True)
+        vendor, invoice_date, amount = args["vendor"], args["invoice_date"], float(args["amount"])
+        if ledger.has(turn.message, vendor, invoice_date, amount):
+            return reply("This invoice of this message is already recorded; it is not recorded twice.", True)
         file = Path(args["file"]).resolve()
         if file not in [Path(f).resolve() for f in turn.files]:
             return reply("That file is not one saved from this message.", True)
-        vendor, invoice_date, amount = args["vendor"], args["invoice_date"], float(args["amount"])
-        earlier = ledger.duplicate_of(invoice_date, vendor, amount)
+        earlier = ledger.duplicate_of(invoice_date, vendor, amount, turn.message)
         if earlier:
             return reply(f"Refused: a duplicate of an earlier line: {earlier['employee']}, {earlier['vendor']}, "
                          f"{earlier['invoice_date']}, {money(float(earlier['amount']))}.", True)
@@ -193,14 +195,17 @@ def tools(turn) -> list:
                      + (" The payment task asks the task space to decide." if outcome == "over-limit" else ""))
 
     @tool("record_not_reimbursed",
-          "Record that this message's file is not reimbursed (not an invoice, or it does not qualify), so the message "
-          "is not handled twice. Posts nothing. Call it when you decline to reimburse.",
-          {"type": "object", "properties": {"vendor": {"type": ["string", "null"]}, "reason": {"type": "string"}},
+          "Record that one invoice of this message is not reimbursed because it does not qualify, so it is not handled "
+          "twice; call it once for each declined invoice when the message holds several. Posts nothing.",
+          {"type": "object", "properties": {"vendor": {"type": ["string", "null"]},
+                                            "invoice_date": {"type": ["string", "null"], "description": "YYYY-MM-DD"},
+                                            "amount": {"type": ["number", "null"]}, "reason": {"type": "string"}},
            "required": ["reason"]})
     async def record_not_reimbursed(args):
-        if ledger.has(turn.message):
-            return reply("This message is already recorded.", True)
-        record(row_for(args.get("vendor") or "", "", 0, "rejected"))
+        vendor, invoice_date, amount = args.get("vendor") or "", args.get("invoice_date") or "", float(args.get("amount") or 0)
+        if ledger.has(turn.message, vendor, invoice_date, amount):
+            return reply("This invoice of this message is already recorded.", True)
+        record(row_for(vendor, invoice_date, amount, "rejected"))
         return reply("Recorded as not reimbursed.")
 
     return [allowance_left, find_duplicate, record_reimbursement, record_not_reimbursed]

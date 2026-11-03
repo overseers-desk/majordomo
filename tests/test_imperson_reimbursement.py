@@ -108,13 +108,32 @@ def test_a_duplicate_is_refused_naming_the_earlier_line(tenant, tmp_path):
     assert len(ledger_lines(live_ledger(tenant))) == 1
 
 
-def test_the_same_message_is_refused_twice(tenant, tmp_path):
+def test_the_same_invoice_of_a_message_is_refused_twice(tenant, tmp_path):
     turn = make_turn(tenant, tmp_path)
     invoice(turn)
-    again = invoice(turn, vendor="Officeworks", date="2026-11-04")
+    again = invoice(turn)
     assert again["is_error"] and "already recorded" in text(again)
-    assert call(turn, "record_not_reimbursed", reason="x")["is_error"]
-    assert len(turn.posted) == 1 and len(ledger_lines(live_ledger(tenant))) == 1
+    call(turn, "record_not_reimbursed", vendor="Cafe", invoice_date="2026-11-03", amount=12, reason="a meal")
+    assert call(turn, "record_not_reimbursed", vendor="Cafe", invoice_date="2026-11-03", amount=12, reason="x")["is_error"]
+    assert len(turn.posted) == 1 and len(ledger_lines(live_ledger(tenant))) == 2
+
+
+def test_one_photo_with_several_invoices_records_each_against_what_is_left(tenant, tmp_path):
+    turn = make_turn(tenant, tmp_path)
+    first = invoice(turn, vendor="Bunnings", amount=60)
+    second = invoice(turn, vendor="Bunnings", amount=50)          # same shop, same day, another receipt
+    declined = call(turn, "record_not_reimbursed", vendor="Pure Brew", invoice_date="2026-11-03", amount=18,
+                    reason="prepared food")
+    assert "Outcome: within" in text(first) and "Outcome: overdrawn" in text(second)
+    assert not declined.get("is_error")
+    assert [r["outcome"] for r in ledger_lines(live_ledger(tenant))] == ["within", "overdrawn", "rejected"]
+    assert len(turn.posted) == 2
+
+
+def test_an_invoice_sent_again_in_another_message_is_a_duplicate(tenant, tmp_path):
+    invoice(make_turn(tenant, tmp_path))
+    again = invoice(make_turn(tenant, tmp_path, message="spaces/D1/messages/2"))
+    assert again["is_error"] and "duplicate" in text(again)
 
 
 def test_a_file_from_another_message_is_refused(tenant, tmp_path):
@@ -174,6 +193,4 @@ def test_record_not_reimbursed_records_and_posts_nothing(tenant, tmp_path):
     (row,) = ledger_lines(live_ledger(tenant))
     assert row["outcome"] == "rejected" and row["message"] == turn.message and row["employee"] == "Ann"
     assert len(turn.gits) == 2
-    again = make_turn(tenant, tmp_path)
-    assert call(again, "record_reimbursement", vendor="V", invoice_date="2026-11-03", amount=1,
-                currency="AUD", file=str(again.files[0]))["is_error"]
+    assert call(make_turn(tenant, tmp_path), "record_not_reimbursed", vendor=None, reason="again")["is_error"]
