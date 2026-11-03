@@ -105,11 +105,11 @@ def tools(turn) -> list:
     live = tenant.folder / "ledger.tsv"
     test = turn.state / "reimbursement-ledger-test.tsv"
     ledger = Ledger(live, (test,)) if turn.send == "live" else Ledger(test, (live,))
-    person = tenant.people.get(turn.sender)
+    person = tenant.people.get(turn.sender) or turn.sender   # the team's name for them, else their Chat id
     since = tenant.week_start(turn.now)
 
     def standing() -> tuple[float, float, float]:
-        allowance = tenant.allowances.get(person, 0.0)
+        allowance = tenant.allowances.get(person, tenant.allowances.get(turn.sender, 0.0))
         spent = ledger.spent(person, since)
         return allowance, spent, allowance - spent
 
@@ -123,7 +123,7 @@ def tools(turn) -> list:
         turn.git(["-C", str(tenant.root), "commit", "-q", "-m", msg, "--", str(live)])
 
     def row_for(vendor: str, invoice_date: str, amount: float, outcome: str) -> dict:
-        return {"handled_at": turn.now.isoformat(timespec="seconds"), "employee": person or turn.sender,
+        return {"handled_at": turn.now.isoformat(timespec="seconds"), "employee": person,
                 "vendor": vendor, "invoice_date": invoice_date, "amount": amount,
                 "message": turn.message, "outcome": outcome}
 
@@ -132,8 +132,6 @@ def tools(turn) -> list:
           "with the week's start date and the overdraft limit. Call it when the person asks what they can claim, "
           "or before telling them how an invoice sits against their allowance.", {"type": "object", "properties": {}})
     async def allowance_left(args):
-        if person is None:
-            return reply("This person is not in the team, so they have no reimbursement allowance.")
         allowance, spent, left = standing()
         return reply(f"{person}: weekly allowance {money(allowance)}, spent this week {money(spent)}, "
                      f"left {money(left)}. The week started {since.date().isoformat()}. "
@@ -175,7 +173,7 @@ def tools(turn) -> list:
         left = standing()[2] - amount
         outcome = "within" if left >= 0 else "overdrawn" if left >= -tenant.overdraft_limit else "over-limit"
         record(row_for(vendor, invoice_date, amount, outcome))
-        name = person or turn.sender
+        name = person
         head = f"Reimburse {name}: {vendor}, {invoice_date}, {money(amount)} {args['currency']}"
         if outcome == "within":
             task = f"{head}. Within the week's allowance."
