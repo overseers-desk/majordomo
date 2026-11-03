@@ -78,7 +78,7 @@ Speak only when someone asks about the weather or what is on, and say nothing ot
 These sit in the tenant repository:
 
 - `.imperson/skills/reimbursement/SKILL.md` is the process, in prose.
-- `.imperson/reimbursement/rubric.md` says, in its Justifiable and Not justifiable sections, which expenses are justifiable as business expenses for this business.
+- `.imperson/reimbursement/rubric.md` lists, in its In, Circumstantial and Out sections, the kinds of item this business could buy. The agent places each item in one of these scopes. It does not judge who used the item or what it was for.
 - `.imperson/reimbursement/policy.yaml` is what the general tools apply. Its keys:
   - `task_space`, where tasks are posted, and `timezone`.
   - `team`, a file mapping names to Chat ids, which `people` then uses.
@@ -86,12 +86,13 @@ These sit in the tenant repository:
   - `ledger`: the ledger's file name in this folder.
   - `claim.fields`, the claim's fields and their kinds (`text`, `date`, `number`), and `claim.amount`, the field summed against a limit.
   - `same_claim`: the fields that must all be equal (`all`), and those of which one must be (`any`), for two claims from different messages to count as the same.
-  - `people`: per name or Chat id, a `limit` for the period, or `requires`, the fields such a person gives with each claim. `default` covers anyone not listed.
+  - `people`: per name or Chat id, a `group` and, for a group with one, a `limit` for the period. `default` covers anyone not listed.
+  - `scopes`: for each scope the agent may name, what it means for each group. It is `record`, or `refuse`, or `{record: true, requires: [fields]}`, which records only once the person has given those fields. A person reads those fields; the agent passes them on unjudged.
   - `outcomes`, checked in order:
-    - Each has a `name`, the group it is `for` (`limit` or `no-limit`), and an optional `min_left`, which the amount left after the claim must reach.
+    - Each has a `name`, the group it is `for`, and an optional `min_left`, which the amount left after the claim must reach.
     - `spent: true` counts the outcome against the limit.
-    - `named: true` lets the agent choose the outcome itself. `match: false` keeps the outcome out of `same_claim`.
-    - `task` is the wording posted with the file, filled from the claim's fields and `{person}`, `{left}` and `{over}`. A `null` task posts nothing.
+    - `refused: true` marks the outcome recorded when a scope is refused. Such lines are left out of `same_claim`.
+    - `task` is the wording posted with the file, filled from the claim's fields and `{person}`, `{scope}`, `{left}` and `{over}`. A `null` task posts nothing.
 - The ledger is written by the tools, one line per claim. In live mode each line is committed in the tenant clone. It is not pushed.
 
 ## Running

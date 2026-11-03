@@ -1,7 +1,8 @@
 """General tools over a tenant's ledger policy: balance, find_match and record.
 
-A skill's policy is `<tenant>/.imperson/<skill>/policy.yaml`. It names the people and their limits, the
-period, the claim's fields, what makes two claims the same, the outcomes and the task each posts. These
+A skill's policy is `<tenant>/.imperson/<skill>/policy.yaml`. It names the people, their groups and limits,
+the period, the claim's fields, what makes two claims the same, what each scope means for each group, the
+outcomes and the task each posts. These
 tools apply it; they hold no policy of their own, and Claude passes only a claim's fields, never a figure
 the policy sets.
 """
@@ -18,7 +19,7 @@ from claude_agent_sdk import tool
 
 from majordomo import dates
 
-BOOK = ["handled_at", "person", "message", "outcome"]   # the columns every ledger carries before the claim's
+BOOK = ["handled_at", "person", "message", "scope", "outcome"]   # the columns every ledger carries before the claim's
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
@@ -49,8 +50,8 @@ def tools(turn, skill: str) -> list:
     person = names.get(turn.sender, turn.sender)
     people = policy["people"]
     terms = people.get(person) or people.get(turn.sender) or people["default"]
-    limit = terms.get("limit")
-    group = "limit" if limit is not None else "no-limit"
+    limit, group = terms.get("limit"), terms["group"]
+    scopes = policy["scopes"]
     since = period_start(policy["period"], turn.now, ZoneInfo(policy["timezone"]))
     outcomes = policy["outcomes"]
     live = folder / policy["ledger"]
@@ -69,7 +70,7 @@ def tools(turn, skill: str) -> list:
         return str(a.get(key) or "").strip().lower() == str(b.get(key) or "").strip().lower()
 
     def matches(claim: dict) -> list[dict]:
-        rule, quiet = policy["same_claim"], {o["name"] for o in outcomes if o.get("match") is False}
+        rule, quiet = policy["same_claim"], {o["name"] for o in outcomes if o.get("refused")}
         return [r for r in rows() if r["message"] != turn.message and r["outcome"] not in quiet
                 and all(same(r, claim, k) for k in rule.get("all", []))
                 and (not rule.get("any") or any(same(r, claim, k) for k in rule["any"]))]
@@ -94,14 +95,25 @@ def tools(turn, skill: str) -> list:
 
     schema = {"type": "object", "properties": {k: {"type": "number" if t == "number" else "string"} for k, t in fields.items()}}
 
-    @tool(f"{skill}_balance", "The writer's limit for this period under the business's policy, what they have used and "
-          "what is left; or, for a person with no limit, the fields they are expected to give with each claim.",
+    def rule(scope: str):
+        return scopes[scope][group]
+
+    def describe(scope: str) -> str:
+        r = rule(scope)
+        if r == "refuse":
+            return f"{scope}: refused"
+        needs = r.get("requires", []) if isinstance(r, dict) else []
+        return f"{scope}: recorded" + (f", with {', '.join(needs)}" if needs else "")
+
+    @tool(f"{skill}_balance", "The writer's group under the business's policy, what each scope means for it, and, for a "
+          "group with a limit, what they have used this period and what is left.",
           {"type": "object", "properties": {}})
     async def balance(args):
+        head = f"{person} is in the group {group}. " + "; ".join(describe(s) for s in scopes) + "."
         if limit is None:
-            return answer(f"{person} has no limit. Each claim needs: {', '.join(terms.get('requires', [])) or 'nothing more'}.")
+            return answer(head)
         used = spent()
-        return answer(f"{person}: limit {money(limit)} this period (from {since.date().isoformat()}), "
+        return answer(f"{head} Limit {money(limit)} this period (from {since.date().isoformat()}), "
                       f"used {money(used)}, left {money(limit - used)}.")
 
     @tool(f"{skill}_find_match", "Earlier claims from other messages that the business's policy counts as the same claim.",
@@ -112,13 +124,16 @@ def tools(turn, skill: str) -> list:
             return answer("No earlier claim matches.")
         return answer("Matches: " + "; ".join(", ".join(f"{k} {r.get(k)}" for k in columns) for r in found))
 
-    @tool(f"{skill}_record", "Record one claim from this message, once for each claim when it holds several, and post "
-          "the task the business's policy sets for its outcome. The policy chooses the outcome; pass `outcome` only to "
-          "name one the policy lets you name: " + ", ".join(o["name"] for o in outcomes if o.get("named")) + ".",
-          {"type": "object", "properties": {"claim": schema, "file": {"type": "string", "description": "One of this message's files"},
-                                            "outcome": {"type": "string"}}, "required": ["claim"]})
+    @tool(f"{skill}_record", "Record one claim from this message, once for each claim when it holds several, with the "
+          "scope its item falls in under the business's rubric. The policy decides from the scope and the writer's group "
+          "whether it is recorded, refused, or needs a field from them, chooses the outcome and posts its task.",
+          {"type": "object", "properties": {"claim": schema, "scope": {"type": "string", "enum": list(scopes)},
+                                            "file": {"type": "string", "description": "One of this message's files"}},
+           "required": ["claim", "scope"]})
     async def record(args):
-        claim = args["claim"]
+        claim, scope = args["claim"], args["scope"]
+        if scope not in scopes:
+            return answer(f"The policy has no scope {scope!r}; it has {', '.join(scopes)}.", True)
         if any(r["message"] == turn.message and all(same(r, claim, k) for k in fields) for r in rows()):
             return answer("This claim of this message is already recorded.", True)
         file = args.get("file")
@@ -129,25 +144,26 @@ def tools(turn, skill: str) -> list:
             return answer("Refused: the policy counts it as the same claim as " + ", ".join(
                 f"{k} {earlier[0].get(k)}" for k in columns) + ".", True)
         projected = (limit - spent() - float(claim.get(summed) or 0)) if limit is not None else None
-        if args.get("outcome"):
-            chosen = next((o for o in outcomes if o["name"] == args["outcome"] and o.get("named")), None)
+        if rule(scope) == "refuse":
+            chosen = next((o for o in outcomes if o.get("refused")), None)
             if chosen is None:
-                return answer(f"The policy does not let you name the outcome {args['outcome']!r}.", True)
+                return answer("The policy refuses this scope for this group but names no outcome to record it as.", True)
         else:
-            missing = [k for k in terms.get("requires", []) if not claim.get(k)]
+            missing = [k for k in (rule(scope).get("requires", []) if isinstance(rule(scope), dict) else []) if not claim.get(k)]
             if missing:
-                return answer(f"{person} must give {', '.join(missing)} with this claim: ask them.", True)
-            chosen = next((o for o in outcomes if not o.get("named") and o.get("for", group) == group
+                return answer(f"For {scope} items {person} must give {', '.join(missing)}: ask them, and pass it on as they say it.", True)
+            chosen = next((o for o in outcomes if not o.get("refused") and o.get("for", group) == group
                            and (o.get("min_left") is None or (projected is not None and projected >= o["min_left"]))), None)
             if chosen is None:
                 return answer("No outcome in the policy fits this claim.", True)
         left = None if limit is None else projected if chosen.get("spent") else limit - spent()
         write({"handled_at": turn.now.isoformat(timespec="seconds"), "person": person, "message": turn.message,
-               "outcome": chosen["name"], **{k: claim.get(k, "") for k in fields}})
+               "scope": scope, "outcome": chosen["name"], **{k: claim.get(k, "") for k in fields}})
         if chosen.get("task"):
             values = {**{k: claim.get(k, "") for k in fields}, "person": person,
                       "left": money(left) if left is not None else "", "over": money(-projected) if projected is not None and projected < 0 else ""}
             values[summed] = money(float(claim.get(summed) or 0))
+            values["scope"] = scope
             turn.post(policy["task_space"], chosen["task"].format_map(values), [file] if file else [])
         return answer(f"Recorded as {chosen['name']}." + (f" Left this period: {money(left)}." if left is not None else ""))
 

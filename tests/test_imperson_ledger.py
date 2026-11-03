@@ -18,20 +18,24 @@ MONDAY = datetime(2026, 11, 2, 0, 0, tzinfo=timezone.utc)   # Monday 10:00 in Br
 WEEKLY = {
     "task_space": "spaces/T", "timezone": "Australia/Brisbane", "team": "team.yaml",
     "period": {"every": "week", "starts": "Monday"}, "ledger": "ledger.tsv",
-    "claim": {"fields": {"vendor": "text", "invoice_date": "date", "amount": "number", "reason": "text"},
+    "claim": {"fields": {"vendor": "text", "invoice_date": "date", "amount": "number", "circumstance": "text"},
               "amount": "amount"},
     "same_claim": {"all": ["invoice_date"], "any": ["vendor", "amount"]},
-    "people": {"Ann": {"limit": 100}, "default": {"requires": ["reason"]}},
+    "people": {"Ann": {"group": "allowance", "limit": 100}, "default": {"group": "by-approval"}},
+    "scopes": {"in": {"allowance": "record", "by-approval": "record"},
+               "circumstantial": {"allowance": "refuse", "by-approval": {"record": True, "requires": ["circumstance"]}},
+               "out": {"allowance": "refuse", "by-approval": "refuse"}},
     "outcomes": [
-        {"name": "within", "for": "limit", "min_left": 0, "spent": True, "task": "Pay {person} {amount}, {left} left."},
-        {"name": "overdrawn", "for": "limit", "min_left": -20, "spent": True, "task": "Pay {person} {amount}, over by {over}."},
-        {"name": "over-limit", "for": "limit", "task": "Decide on {person} {amount}, over by {over}."},
-        {"name": "reason-given", "for": "no-limit", "task": "Pay {person} {amount}: {reason}"},
-        {"name": "not-justifiable", "named": True, "match": False, "task": None},
+        {"name": "within", "for": "allowance", "min_left": 0, "spent": True, "task": "Pay {person} {amount}, {left} left."},
+        {"name": "overdrawn", "for": "allowance", "min_left": -20, "spent": True, "task": "Pay {person} {amount}, over by {over}."},
+        {"name": "over-limit", "for": "allowance", "task": "Decide on {person} {amount}, over by {over}."},
+        {"name": "for-approval", "for": "by-approval", "task": "Approve {person} {amount} ({scope}): {circumstance}"},
+        {"name": "refused", "refused": True, "task": None},
     ],
 }
-MONTHLY = {**WEEKLY, "period": {"every": "month"}, "people": {"default": {"requires": ["reason"]}},
-           "outcomes": [{"name": "claimed", "spent": True, "task": "Claim from {person}: {reason}"}]}
+MONTHLY = {**WEEKLY, "period": {"every": "month"}, "people": {"default": {"group": "everyone"}},
+           "scopes": {"any": {"everyone": {"record": True, "requires": ["circumstance"]}}},
+           "outcomes": [{"name": "claimed", "spent": True, "task": "Claim from {person}: {circumstance}"}]}
 
 
 def tenant(tmp_path, policy):
@@ -60,9 +64,9 @@ def call(t, name, **args):
     return result["content"][0]["text"], bool(result.get("is_error"))
 
 
-def claim(t, vendor="Bunnings", date="2026-11-03", amount=40.0, **extra):
+def claim(t, vendor="Bunnings", date="2026-11-03", amount=40.0, scope="in", **extra):
     return call(t, "record", claim={"vendor": vendor, "invoice_date": date, "amount": amount, **extra},
-                file=str(t.files[0]))
+                scope=scope, file=str(t.files[0]))
 
 
 def lines(path):
@@ -93,23 +97,20 @@ def test_balance_counts_only_spent_outcomes_in_this_period(tmp_path):
     assert "used 0.00, left 100.00" in call(t, "balance")[0]
 
 
-def test_a_person_with_no_limit_gives_the_required_field(tmp_path):
+def test_the_scope_table_decides_for_each_group(tmp_path):
     root = tenant(tmp_path, WEEKLY)
-    t = turn_for(root, tmp_path, sender=STRANGER)
-    assert "Each claim needs: reason" in call(t, "balance")[0]
-    text, error = claim(t)
-    assert error and "must give reason" in text and t.posted == []
-    assert claim(t, reason="cleaning supplies")[0] == "Recorded as reason-given."
-    assert t.posted[0][1] == "Pay users/X 40.00: cleaning supplies"
-
-
-def test_a_named_outcome_records_and_posts_nothing(tmp_path):
-    root = tenant(tmp_path, WEEKLY)
-    t = turn_for(root, tmp_path)
-    text, error = call(t, "record", claim={"vendor": "Cafe", "invoice_date": "2026-11-03", "amount": 12},
-                       outcome="not-justifiable")
-    assert not error and t.posted == [] and lines(live(root))[0]["outcome"] == "not-justifiable"
-    assert call(t, "record", claim={"vendor": "X", "invoice_date": "2026-11-03", "amount": 1}, outcome="within")[1]
+    ann = turn_for(root, tmp_path)
+    assert "group allowance" in call(ann, "balance")[0] and "circumstantial: refused" in call(ann, "balance")[0]
+    assert claim(ann, vendor="Cafe", scope="circumstantial")[0] == "Recorded as refused. Left this period: 100.00."
+    bo = turn_for(root, tmp_path, sender=BO, message="spaces/D/messages/2")
+    assert "circumstantial: recorded, with circumstance" in call(bo, "balance")[0]
+    text, error = claim(bo, vendor="Pizza", scope="circumstantial")
+    assert error and "must give circumstance" in text and bo.posted == []
+    assert claim(bo, vendor="Pizza", scope="circumstantial", circumstance="team lunch")[0] == "Recorded as for-approval."
+    assert claim(bo, vendor="Paper", amount=8, scope="in")[0] == "Recorded as for-approval."
+    assert claim(bo, vendor="Yacht", amount=9, scope="out")[0] == "Recorded as refused."
+    assert [t for _, t, _ in bo.posted] == ["Approve Bo 40.00 (circumstantial): team lunch", "Approve Bo 8.00 (in): "]
+    assert [r["scope"] for r in lines(live(root))] == ["circumstantial", "circumstantial", "in", "out"]
 
 
 def test_same_claim_rules(tmp_path):
@@ -127,7 +128,8 @@ def test_same_claim_rules(tmp_path):
 def test_a_file_must_be_from_the_message(tmp_path):
     root = tenant(tmp_path, WEEKLY)
     t = turn_for(root, tmp_path)
-    text, error = call(t, "record", claim={"vendor": "V", "invoice_date": "2026-11-03", "amount": 1}, file=str(tmp_path / "x.jpg"))
+    text, error = call(t, "record", claim={"vendor": "V", "invoice_date": "2026-11-03", "amount": 1}, scope="in",
+                       file=str(tmp_path / "x.jpg"))
     assert error and "not one saved" in text
 
 
@@ -142,6 +144,6 @@ def test_outside_live_the_test_ledger_is_written_and_nothing_committed(tmp_path,
 def test_a_different_policy_needs_no_change_in_code(tmp_path):
     root = tenant(tmp_path, MONTHLY)
     t = turn_for(root, tmp_path)
-    assert "Each claim needs: reason" in call(t, "balance")[0]
-    assert claim(t, reason="stationery")[0] == "Recorded as claimed."
+    assert "any: recorded, with circumstance" in call(t, "balance")[0]
+    assert claim(t, scope="any", circumstance="stationery")[0] == "Recorded as claimed."
     assert t.posted[0][1] == "Claim from Ann: stationery"
