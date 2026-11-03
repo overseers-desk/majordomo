@@ -106,7 +106,8 @@ def converse(prompt: str, *, session: str | None, cwd: Path, system_prompt: str,
             mcp_servers={SERVER: create_sdk_mcp_server(SERVER, tools=tools)},
             allowed_tools=[*ALLOWED, *(f"mcp__{SERVER}__{t.name}" for t in tools)],
             disallowed_tools=DENIED, permission_mode="dontAsk",
-            hooks={"PreToolUse": [_confine(read_dirs)]}, max_turns=40, env=env)
+            hooks={"PreToolUse": [_confine(read_dirs)]}, max_turns=40, env=env,
+            max_buffer_size=8 * 1024 * 1024)  # the SDK reports a Read of a photo back whole; Claude Code caps such an image near 1500 x 2000
         found = session
         async for m in query(prompt=prompt, options=options):
             if isinstance(m, ResultMessage):
