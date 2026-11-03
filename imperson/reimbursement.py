@@ -30,6 +30,7 @@ class Tenant:
     week_starts: int                # 0 = Monday
     overdraft_limit: float
     allowances: dict[str, float]    # name -> weekly allowance
+    within_allowance: dict[str, str]  # name -> "accept" or "scrutinise", for an invoice the allowance covers
 
     @property
     def folder(self) -> Path:
@@ -44,7 +45,8 @@ class Tenant:
                    tz=ZoneInfo(tenant["timezone"]), task_space=own["task_space"],
                    week_starts=WEEKDAYS.index(own["week_starts"].lower()),
                    overdraft_limit=float(own["overdraft_limit"]),
-                   allowances={k: float(v) for k, v in own["allowances"].items()})
+                   allowances={k: float(v) for k, v in own["allowances"].items()},
+                   within_allowance=dict(own.get("within_allowance") or {}))
 
     def week_start(self, when: datetime) -> datetime:
         """The start of the allowance week holding ``when``, on the tenant's clock."""
@@ -129,13 +131,17 @@ def tools(turn) -> list:
 
     @tool("allowance_left",
           "The sender's weekly reimbursement allowance, what they have spent this week and what is left, "
-          "with the week's start date and the overdraft limit. Call it when the person asks what they can claim, "
-          "or before telling them how an invoice sits against their allowance.", {"type": "object", "properties": {}})
+          "with the week's start date, the overdraft limit, and whether an invoice within the allowance is accepted "
+          "by default or scrutinised. Call it before judging an invoice, and when the person asks what they can claim.",
+          {"type": "object", "properties": {}})
     async def allowance_left(args):
         allowance, spent, left = standing()
+        policy = tenant.within_allowance.get(person, tenant.within_allowance.get(turn.sender, "scrutinise"))
+        within = ("accepted by default: record it when it can be a business expense, without asking them to justify it"
+                  if policy == "accept" else "scrutinised: be satisfied it is a business expense before recording it")
         return reply(f"{person}: weekly allowance {money(allowance)}, spent this week {money(spent)}, "
                      f"left {money(left)}. The week started {since.date().isoformat()}. "
-                     f"Overdraft limit {money(tenant.overdraft_limit)}.")
+                     f"Overdraft limit {money(tenant.overdraft_limit)}. An invoice within the allowance is {within}.")
 
     @tool("find_duplicate",
           "The earlier reimbursed invoice that an invoice duplicates (same date, and the same vendor or the "

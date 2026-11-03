@@ -142,6 +142,13 @@ def test_allowance_left_counts_this_weeks_spending(tenant, tmp_path):
     assert "Overdraft limit $20.00" in answer
 
 
+def test_within_the_allowance_is_scrutinised_unless_the_settings_accept_by_default(tenant, tmp_path):
+    assert "is scrutinised" in text(call(make_turn(tenant, tmp_path), "allowance_left"))
+    settings = tenant / ".imperson" / "reimbursement" / "settings.yaml"
+    settings.write_text(settings.read_text() + "within_allowance: {Ann: accept}\n")
+    assert "accepted by default" in text(call(make_turn(tenant, tmp_path), "allowance_left"))
+
+
 def test_a_sender_outside_the_team_has_none_unless_allowed_by_chat_id(tenant, tmp_path):
     turn = make_turn(tenant, tmp_path, sender=STRANGER)
     assert "weekly allowance $0.00" in text(call(turn, "allowance_left"))

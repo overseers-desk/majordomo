@@ -72,7 +72,7 @@ Speak only when someone asks about the weather or what is on, and say nothing ot
 
 These sit in the tenant repository:
 
-- `.imperson/reimbursement/settings.yaml` holds `task_space` (where a payment task goes), `week_starts` (a weekday name), `overdraft_limit`, and `allowances`, a weekly amount per person named as in `.reviewagent/team.yaml`, or keyed by their Chat id (`users/<id>`) when team.yaml does not list them.
+- `.imperson/reimbursement/settings.yaml` holds `task_space` (where a payment task goes), `week_starts` (a weekday name), `overdraft_limit`, and `allowances`, a weekly amount per person named as in `.reviewagent/team.yaml`, or keyed by their Chat id (`users/<id>`) when team.yaml does not list them. `within_allowance` sets, per person keyed the same way, whether an invoice the allowance covers is accepted by default when it can be a business expense (`accept`) or scrutinised (`scrutinise`, the default).
 - `.imperson/reimbursement/rubric.md` says what counts as a business purchase.
 - `.imperson/reimbursement/ledger.tsv` is written by the reimbursement skill, one line per invoice. In live mode each line is committed in the tenant clone. It is not pushed.
 
