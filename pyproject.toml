@@ -14,6 +14,8 @@ dependencies = [
     "google-api-python-client>=2",
     "google-auth-oauthlib>=1",
     "google-auth>=2",
+    "claude-agent-sdk>=0.2.167",
+    "pyyaml>=6",
 ]
 
 [project.optional-dependencies]
@@ -29,9 +31,13 @@ dev = [
 
 [project.scripts]
 majordomo = "majordomo.cli:app"
+imperson = "imperson.agent:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+imperson = ["skills/*/SKILL.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

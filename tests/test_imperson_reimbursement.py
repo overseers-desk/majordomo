@@ -7,7 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import reimbursement
+import _shim  # noqa: F401
+from imperson import reimbursement
 
 ANN, BO, STRANGER = "users/ANN", "users/BO", "users/X"
 NOW = datetime(2026, 11, 4, 2, 0, tzinfo=timezone.utc)      # Wednesday 12:00 in Brisbane

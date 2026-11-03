@@ -24,7 +24,7 @@ from typing import Any
 import majordomo
 from majordomo import dates
 
-import reimbursement
+from . import reimbursement
 
 HERE = Path(__file__).resolve().parent
 CONFIG = Path("~/.config/majordomo/imperson.toml")
@@ -183,7 +183,7 @@ class Account:
         link = ws / ".claude" / "skills"
         if not link.exists():
             link.parent.mkdir(parents=True, exist_ok=True)
-            link.symlink_to(HERE / ".claude" / "skills")
+            link.symlink_to(HERE / "skills")
         return ws
 
     def handle(self, space: str, row: dict, files: list[Path]) -> None:

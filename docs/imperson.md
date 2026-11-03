@@ -10,13 +10,15 @@ An account either answers every message, or answers only when a rule written by 
 
 ## Install
 
-Run this from a checkout of majordomo's `imperson` branch, for example `~/code/majordomo-imperson`:
+imperson is the package `src/imperson/` on majordomo's `imperson` branch, beside `src/majordomo/`. Install the checkout once, for example `~/code/majordomo-imperson`:
 
 ```bash
-cd ~/code/majordomo-imperson/imperson
+cd ~/code/majordomo-imperson
 python3 -m venv venv
-venv/bin/pip install -e .. -e .
+venv/bin/pip install -e .
 ```
+
+This gives the venv both the `majordomo` and the `imperson` commands.
 
 Claude Code must be signed in for the user who runs it (`claude` once, then `/login`), because the Agent SDK runs through it.
 
@@ -83,14 +85,14 @@ People's Chat ids and the timezone are read from `.reviewagent/team.yaml` and `.
 One run reads every account's direct messages that are new since its last run, hands each message to its conversation's session, and exits:
 
 ```bash
-venv/bin/python -m imperson                 # or: --account admin, --config <file>
+~/code/majordomo-imperson/venv/bin/imperson          # or: --account admin, --config <file>
 ```
 
 To run it every minute, add this line to your own crontab (`crontab -e`). Set `PATH` so that it includes the folder where `claude` is installed:
 
 ```
 PATH=/home/<you>/.local/bin:/usr/local/bin:/usr/bin:/bin
-* * * * * mkdir -p ~/.local/state/majordomo-imperson && flock -n ~/.local/state/majordomo-imperson/run.lock ~/code/majordomo-imperson/imperson/venv/bin/python -m imperson >> ~/.local/state/majordomo-imperson/log 2>&1
+* * * * * mkdir -p ~/.local/state/majordomo-imperson && flock -n ~/.local/state/majordomo-imperson/run.lock ~/code/majordomo-imperson/venv/bin/imperson >> ~/.local/state/majordomo-imperson/log 2>&1
 ```
 
 `flock -n` lets one run finish before the next starts, so a message is never answered twice. To stop the agent, remove the line with `crontab -e`.

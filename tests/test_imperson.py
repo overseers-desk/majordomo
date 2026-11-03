@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-import imperson
+import _shim  # noqa: F401
+from imperson import agent as imperson
 
 ME, ANN, BO = "users/ME", "users/ANN", "users/BO"
 NOW = datetime(2026, 11, 4, 2, 0, tzinfo=timezone.utc)
