@@ -90,6 +90,14 @@ def test_the_policy_chooses_each_outcome_and_its_task(tmp_path):
     assert len(t.gits) == 6
 
 
+def test_carried_over_limit_accumulates_from_its_start(tmp_path):
+    root = tenant(tmp_path, {**WEEKLY, "people": {**WEEKLY["people"], "Ann": {"group": "allowance", "limit": 100,
+                                                                              "carry_over_from": "2026-10-20"}}})
+    claim(turn_for(root, tmp_path, now=datetime(2026, 10, 21, 2, 0, tzinfo=timezone.utc)), amount=30)
+    t = turn_for(root, tmp_path, message="spaces/D/messages/2")
+    assert "Limit 300.00 from 2026-10-19 (carried over), used 30.00, left 270.00" in call(t, "balance")[0]
+
+
 def test_balance_counts_only_spent_outcomes_in_this_period(tmp_path):
     root = tenant(tmp_path, WEEKLY)
     claim(turn_for(root, tmp_path, now=datetime(2026, 11, 1, 2, 0, tzinfo=timezone.utc)), amount=90)

@@ -39,6 +39,13 @@ def period_start(period: dict, now: datetime, tz: ZoneInfo) -> datetime:
     return datetime(day.year, day.month, day.day, tzinfo=tz)
 
 
+def periods_between(period: dict, first: datetime, last: datetime) -> int:
+    """How many periods run from the one starting at ``first`` to the one starting at ``last``, both counted."""
+    if period.get("every") == "month":
+        return (last.year - first.year) * 12 + last.month - first.month + 1
+    return (last.date() - first.date()).days // 7 + 1
+
+
 def tools(turn, skill: str) -> list:
     folder = turn.tenant / ".imperson" / skill
     policy = yaml.safe_load((folder / "policy.yaml").read_text())
@@ -52,7 +59,13 @@ def tools(turn, skill: str) -> list:
     terms = people.get(person) or people.get(turn.sender) or people["default"]
     limit, group = terms.get("limit"), terms["group"]
     scopes = policy["scopes"]
-    since = period_start(policy["period"], turn.now, ZoneInfo(policy["timezone"]))
+    tz = ZoneInfo(policy["timezone"])
+    current = period_start(policy["period"], turn.now, tz)
+    carried = terms.get("carry_over_from")   # unused limit rolls over from the period holding this date
+    since = (period_start(policy["period"], datetime.fromisoformat(str(carried)).replace(tzinfo=tz), tz)
+             if carried else current)
+    if limit is not None:
+        limit = limit * periods_between(policy["period"], since, current)
     outcomes = policy["outcomes"]
     live = folder / policy["ledger"]
     test = turn.state / f"{skill}-ledger-test.tsv"
@@ -106,15 +119,16 @@ def tools(turn, skill: str) -> list:
         return f"{scope}: recorded" + (f", with {', '.join(needs)}" if needs else "")
 
     @tool(f"{skill}_balance", "The writer's group under the business's policy, what each scope means for it, and, for a "
-          "group with a limit, what they have used this period and what is left.",
+          "group with a limit, what they have used and what is left, unused limit carried over where the policy says so.",
           {"type": "object", "properties": {}})
     async def balance(args):
         head = f"{person} is in the group {group}. " + "; ".join(describe(s) for s in scopes) + "."
         if limit is None:
             return answer(head)
         used = spent()
-        return answer(f"{head} Limit {money(limit)} this period (from {since.date().isoformat()}), "
-                      f"used {money(used)}, left {money(limit - used)}.")
+        return answer(f"{head} Limit {money(limit)} from {since.date().isoformat()}"
+                      + (" (carried over)" if carried else " (this period)")
+                      + f", used {money(used)}, left {money(limit - used)}.")
 
     @tool(f"{skill}_find_match", "Earlier claims from other messages that the business's policy counts as the same claim.",
           {"type": "object", "properties": {"claim": schema}, "required": ["claim"]})
