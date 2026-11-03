@@ -1,3 +1,17 @@
+majordomo (0.5.0) unstable; urgency=medium
+
+  * Space rows carry last_active: the Chat API's lastActiveTime, or the
+    newest mirrored message on the cache path, withheld at or past a
+    WORLD_AS_OF bound, so a poller reads only the conversations that moved.
+  * attachments is an exported name and takes the sieve's block list from
+    the configuration it is handed, as send does.
+  * Message rows carry thread_name (spaces/<space>/threads/<thread>) and
+    task_event, true exactly for the Google Tasks posts the decoder reads.
+  * thread_link turns a thread's name into its web address, and
+    majordomo.dates.utc reads a datetime or ISO text as aware UTC.
+
+ -- Weiwu Zhang <a@colourful.land>  Tue, 03 Nov 2026 13:28:49 +1000
+
 majordomo (0.4.2) unstable; urgency=medium
 
   * Sign-in prints no secret. Under the MCP server, the consent flow's log
