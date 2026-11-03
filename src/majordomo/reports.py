@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, sieve
+from . import config, db, decoder, sieve
 from .errors import MajordomoError
 
 TASK_LIMIT = 1000
@@ -274,6 +274,9 @@ def messages(
         """,
         params + [limit],
     )
+    for r in rows:
+        r["thread_name"] = decoder.thread_name_of(r["name"])
+        r["task_event"] = decoder.is_task_event(r)
     return sieve.filter_rows(blocked, rows)
 
 

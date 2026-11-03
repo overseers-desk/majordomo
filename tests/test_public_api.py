@@ -189,7 +189,7 @@ def _cfg(**kw) -> dict:
 # --- the names ------------------------------------------------------------------
 
 def test_the_public_names():
-    assert set(majordomo.__all__) == {"load_config", "make_reader", "tasks", "messages", "send", "attachments",
+    assert set(majordomo.__all__) == {"load_config", "make_reader", "tasks", "messages", "send", "attachments", "thread_link",
                                       "drain_notes", "MajordomoError", "ScopeError", "NotFound"}
     assert all(hasattr(majordomo, name) for name in majordomo.__all__)
     assert callable(majordomo.dates.resolve)

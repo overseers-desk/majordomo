@@ -35,9 +35,22 @@ def space_of_message(message_name: str | None) -> str | None:
     return m.group(1) if m else None
 
 
+def thread_name_of(name: str) -> str:
+    """The thread a message belongs to, ``spaces/X/threads/T``, from the
+    message's name or the thread's own: the part before the first "." names
+    the thread, and a spaces/X/messages/T key maps to spaces/X/threads/T."""
+    return name.split(".")[0].replace("/messages/", "/threads/")
+
+
 def is_task_creation(msg: dict | None) -> bool:
     text = (msg or {}).get("text") or ""
     return VIA in text and text.startswith("Created a task")
+
+
+def is_task_event(msg: dict | None) -> bool:
+    """Whether this message is one of the Tasks integration's posts this
+    decoder reads: a creation, a status event or a holder event."""
+    return is_task_creation(msg) or lifecycle_of(msg) is not None or assignee_change_of(msg) is not None
 
 
 def lifecycle_of(msg: dict | None) -> str | None:

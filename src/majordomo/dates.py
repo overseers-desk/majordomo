@@ -33,6 +33,19 @@ def as_utc(value):
     return value.replace(tzinfo=timezone.utc) if isinstance(value, datetime) and value.tzinfo is None else value
 
 
+def utc(value: datetime | str | None) -> datetime | None:
+    """An aware UTC datetime from a datetime, a naive one read as UTC, or from
+    ISO-8601 text; None for None or empty text."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            raise MajordomoError(f"majordomo: not an ISO-8601 time: {value!r}") from None
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
 def _parse(value: str | None) -> datetime | None:
     if not value:
         return None

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import functools
 import os
+import re
 from datetime import datetime
 
 from . import config, decoder, readers, roster, sieve
@@ -361,15 +362,21 @@ def chat_credentials(cfg: dict, credentials=None):
     return get_credentials(cfg)
 
 
-def _thread_target(thread: str) -> tuple[str, str]:
-    """Resolve a reply target to (space, thread resource name).
+_THREAD = re.compile(r"^spaces/([A-Za-z0-9_-]+)/threads/([A-Za-z0-9_-]+)$")
 
-    Accepts what ``messages --thread`` accepts, a thread or any message name in
-    it: the part before the first "." names the thread, and a
-    spaces/X/messages/T key maps to the thread spaces/X/threads/T.
-    """
-    key = thread.split(".")[0]
-    return "/".join(key.split("/")[:2]), key.replace("/messages/", "/threads/")
+
+def thread_link(thread_name: str | None) -> str | None:
+    """The web address of a Chat thread, ``https://chat.google.com/room/<space>/<thread>``,
+    from its name ``spaces/<space>/threads/<thread>``; None for any other value."""
+    found = _THREAD.match(thread_name or "")
+    return f"https://chat.google.com/room/{found[1]}/{found[2]}" if found else None
+
+
+def _thread_target(thread: str) -> tuple[str, str]:
+    """Resolve a reply target to (space, thread resource name); accepts what
+    ``messages --thread`` accepts, a thread or any message name in it."""
+    name = decoder.thread_name_of(thread)
+    return "/".join(name.split("/")[:2]), name
 
 
 def _dm_space(service, blocked: list[str], to: str) -> dict:
@@ -795,7 +802,9 @@ class NocacheReader:
                 row = {"name": m.get("name"), "space_name": sp, "space_display": self._space_display(sp),
                        "sender_name": (m.get("sender") or {}).get("name"),
                        "sender_type": (m.get("sender") or {}).get("type"),
-                       "create_time": _parse_dt(m.get("createTime")), "text": m.get("text")}
+                       "create_time": _parse_dt(m.get("createTime")), "text": m.get("text"),
+                       "thread_name": (m.get("thread") or {}).get("name") or decoder.thread_name_of(m.get("name") or ""),
+                       "task_event": decoder.is_task_event(m)}
                 if self.bound is not None:
                     # Neither store keeps pre-edit bodies: a message edited after
                     # the bound carries its post-edit text. Mark it rather than
