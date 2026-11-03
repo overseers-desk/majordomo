@@ -232,7 +232,7 @@ class Account:
                       "date; read them again before relying on them:\n" + "\n".join(changed) + "\n\n" + prompt)
         sessions[space] = self.talk(prompt, session=sessions.get(space), cwd=self.workspace(),
                                     system_prompt=self.system_prompt(), skills=self.skills, tools=tools,
-                                    read_dirs=[self.state / "work", self.tenant / ".imperson"], env=self.env)
+                                    read_dirs=[self.state / "work", self.tenant], env=self.env)
         self.saved["read"][space] = rules
         self.saved["handled"].setdefault(space, []).append(row["name"])
         self.saved["handled"][space] = self.saved["handled"][space][-500:]
