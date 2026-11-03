@@ -76,8 +76,8 @@ Speak only when someone asks about the weather or what is on, and say nothing ot
 
 These sit in the tenant repository:
 
-- `.imperson/reimbursement/settings.yaml` holds `task_space` (where a payment task goes), `week_starts` (a weekday name), `overdraft_limit`, and `allowances`, a weekly amount per person named as in `.reviewagent/team.yaml`, or keyed by their Chat id (`users/<id>`) when team.yaml does not list them. `within_allowance` sets, per person keyed the same way, whether an invoice the allowance covers is accepted by default when the rubric counts it as a business expense (`accept`) or scrutinised (`scrutinise`, the default).
-- `.imperson/reimbursement/rubric.md` says what counts as a business purchase.
+- `.imperson/reimbursement/settings.yaml` holds `task_space` (where a payment task goes), `week_starts` (a weekday name), `overdraft_limit`, and `allowances`, a weekly amount per person named as in `.reviewagent/team.yaml`, or keyed by their Chat id (`users/<id>`) when team.yaml does not list them. A person with an allowance is not expected to give a reason for a justifiable expense, and their payment task says whether it is within the allowance, within the overdraft or above it. Anyone not listed is expected to give a reason, which their payment task states.
+- `.imperson/reimbursement/rubric.md` says, in its Justifiable and Not justifiable sections, which expenses are justifiable as business expenses for this business.
 - `.imperson/reimbursement/ledger.tsv` is written by the reimbursement skill, one line per invoice. In live mode each line is committed in the tenant clone. It is not pushed.
 
 People's Chat ids and the timezone are read from `.reviewagent/team.yaml` and `.reviewagent/settings.yaml`, which the tenant repository keeps for reviewagent.

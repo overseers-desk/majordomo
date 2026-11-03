@@ -64,7 +64,7 @@ def live_ledger(tenant):
 
 def test_the_four_tools_are_named(tenant, tmp_path):
     names = [t.name for t in reimbursement.tools(make_turn(tenant, tmp_path))]
-    assert names == ["allowance_left", "find_duplicate", "record_reimbursement", "record_not_reimbursed"]
+    assert names == ["allowance_left", "find_duplicate", "record_reimbursement", "record_not_justifiable"]
 
 
 def test_within_the_allowance_records_tasks_and_commits(tenant, tmp_path):
@@ -113,8 +113,8 @@ def test_the_same_invoice_of_a_message_is_refused_twice(tenant, tmp_path):
     invoice(turn)
     again = invoice(turn)
     assert again["is_error"] and "already recorded" in text(again)
-    call(turn, "record_not_reimbursed", vendor="Cafe", invoice_date="2026-11-03", amount=12, reason="a meal")
-    assert call(turn, "record_not_reimbursed", vendor="Cafe", invoice_date="2026-11-03", amount=12, reason="x")["is_error"]
+    call(turn, "record_not_justifiable", vendor="Cafe", invoice_date="2026-11-03", amount=12, reason="a meal")
+    assert call(turn, "record_not_justifiable", vendor="Cafe", invoice_date="2026-11-03", amount=12, reason="x")["is_error"]
     assert len(turn.posted) == 1 and len(ledger_lines(live_ledger(tenant))) == 2
 
 
@@ -122,11 +122,11 @@ def test_one_photo_with_several_invoices_records_each_against_what_is_left(tenan
     turn = make_turn(tenant, tmp_path)
     first = invoice(turn, vendor="Bunnings", amount=60)
     second = invoice(turn, vendor="Bunnings", amount=50)          # same shop, same day, another receipt
-    declined = call(turn, "record_not_reimbursed", vendor="Pure Brew", invoice_date="2026-11-03", amount=18,
+    declined = call(turn, "record_not_justifiable", vendor="Pure Brew", invoice_date="2026-11-03", amount=18,
                     reason="prepared food")
     assert "Outcome: within" in text(first) and "Outcome: overdrawn" in text(second)
     assert not declined.get("is_error")
-    assert [r["outcome"] for r in ledger_lines(live_ledger(tenant))] == ["within", "overdrawn", "rejected"]
+    assert [r["outcome"] for r in ledger_lines(live_ledger(tenant))] == ["within", "overdrawn", "not-justifiable"]
     assert len(turn.posted) == 2
 
 
@@ -162,16 +162,20 @@ def test_allowance_left_counts_this_weeks_spending(tenant, tmp_path):
     assert "Overdraft limit $20.00" in answer
 
 
-def test_within_the_allowance_is_scrutinised_unless_the_settings_accept_by_default(tenant, tmp_path):
-    assert "is scrutinised" in text(call(make_turn(tenant, tmp_path), "allowance_left"))
-    settings = tenant / ".imperson" / "reimbursement" / "settings.yaml"
-    settings.write_text(settings.read_text() + "within_allowance: {Ann: accept}\n")
-    assert "accepted by default" in text(call(make_turn(tenant, tmp_path), "allowance_left"))
-
-
-def test_a_sender_outside_the_team_has_none_unless_allowed_by_chat_id(tenant, tmp_path):
+def test_a_person_without_an_allowance_is_expected_to_give_a_reason(tenant, tmp_path):
     turn = make_turn(tenant, tmp_path, sender=STRANGER)
-    assert "weekly allowance $0.00" in text(call(turn, "allowance_left"))
+    assert "a reason is expected" in text(call(turn, "allowance_left"))
+    assert invoice(turn)["is_error"] and turn.posted == []
+    done = invoice(turn, reason="cleaning supplies for the café")
+    assert not done.get("is_error")
+    (space, task, files), = turn.posted
+    assert "Reason given: cleaning supplies for the café" in task
+    assert [r["outcome"] for r in ledger_lines(live_ledger(tenant))] == ["reason-given"]
+
+
+def test_an_allowance_may_be_keyed_by_chat_id(tenant, tmp_path):
+    turn = make_turn(tenant, tmp_path, sender=STRANGER)
+    assert "no allowance" in text(call(turn, "allowance_left"))
     settings = tenant / ".imperson" / "reimbursement" / "settings.yaml"
     settings.write_text(settings.read_text().replace("allowances: {", f"allowances: {{{STRANGER}: 50, "))
     assert "weekly allowance $50.00" in text(call(make_turn(tenant, tmp_path, sender=STRANGER), "allowance_left"))
@@ -186,11 +190,11 @@ def test_off_writes_the_test_ledger_and_runs_no_git(tenant, tmp_path):
     assert "already recorded" in text(invoice(again))
 
 
-def test_record_not_reimbursed_records_and_posts_nothing(tenant, tmp_path):
+def test_record_not_justifiable_records_and_posts_nothing(tenant, tmp_path):
     turn = make_turn(tenant, tmp_path)
-    result = call(turn, "record_not_reimbursed", vendor=None, reason="a screenshot")
+    result = call(turn, "record_not_justifiable", vendor=None, reason="a screenshot")
     assert "is_error" not in result and turn.posted == []
     (row,) = ledger_lines(live_ledger(tenant))
-    assert row["outcome"] == "rejected" and row["message"] == turn.message and row["employee"] == "Ann"
+    assert row["outcome"] == "not-justifiable" and row["message"] == turn.message and row["employee"] == "Ann"
     assert len(turn.gits) == 2
-    assert call(make_turn(tenant, tmp_path), "record_not_reimbursed", vendor=None, reason="again")["is_error"]
+    assert call(make_turn(tenant, tmp_path), "record_not_justifiable", vendor=None, reason="again")["is_error"]

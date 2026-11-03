@@ -29,8 +29,7 @@ class Tenant:
     task_space: str
     week_starts: int                # 0 = Monday
     overdraft_limit: float
-    allowances: dict[str, float]    # name -> weekly allowance
-    within_allowance: dict[str, str]  # name -> "accept" or "scrutinise", for an invoice the allowance covers
+    allowances: dict[str, float]    # name or Chat id -> weekly allowance; anyone else is expected to give a reason
 
     @property
     def folder(self) -> Path:
@@ -45,8 +44,7 @@ class Tenant:
                    tz=ZoneInfo(tenant["timezone"]), task_space=own["task_space"],
                    week_starts=WEEKDAYS.index(own["week_starts"].lower()),
                    overdraft_limit=float(own["overdraft_limit"]),
-                   allowances={k: float(v) for k, v in own["allowances"].items()},
-                   within_allowance=dict(own.get("within_allowance") or {}))
+                   allowances={k: float(v) for k, v in (own.get("allowances") or {}).items()})
 
     def week_start(self, when: datetime) -> datetime:
         """The start of the allowance week holding ``when``, on the tenant's clock."""
@@ -71,7 +69,7 @@ class Ledger:
         """A line from another message with the same invoice date, and the same vendor or amount; the invoices
         of one message are distinct even when they share a shop and a day."""
         for r in self.rows:
-            if r["outcome"] != "rejected" and r["message"] != message and r["invoice_date"] == invoice_date and (
+            if r["outcome"] != "not-justifiable" and r["message"] != message and r["invoice_date"] == invoice_date and (
                     r["vendor"].strip().lower() == vendor.strip().lower() or float(r["amount"]) == amount):
                 return r
         return None
@@ -112,10 +110,11 @@ def tools(turn) -> list:
     person = tenant.people.get(turn.sender) or turn.sender   # the team's name for them, else their Chat id
     since = tenant.week_start(turn.now)
 
-    def standing() -> tuple[float, float, float]:
-        allowance = tenant.allowances.get(person, tenant.allowances.get(turn.sender, 0.0))
+    allowance = tenant.allowances.get(person, tenant.allowances.get(turn.sender))
+
+    def standing() -> tuple[float, float]:
         spent = ledger.spent(person, since)
-        return allowance, spent, allowance - spent
+        return spent, allowance - spent
 
     def record(row: dict) -> None:
         ledger.add(row)
@@ -132,19 +131,17 @@ def tools(turn) -> list:
                 "message": turn.message, "outcome": outcome}
 
     @tool("allowance_left",
-          "The sender's weekly reimbursement allowance, what they have spent this week and what is left, "
-          "with the week's start date, the overdraft limit, and whether an invoice within the allowance is accepted "
-          "by default or scrutinised. Call it before judging an invoice, and when the person asks what they can claim.",
+          "Whether the sender has a weekly allowance, and if so what they have spent this week and what is left, with "
+          "the week's start date and the overdraft limit. A person with an allowance is not expected to give a reason "
+          "for a justifiable expense; a person without one is. Call it before handling an invoice.",
           {"type": "object", "properties": {}})
     async def allowance_left(args):
-        allowance, spent, left = standing()
-        policy = tenant.within_allowance.get(person, tenant.within_allowance.get(turn.sender, "scrutinise"))
-        within = ("accepted by default: record it when the invoice itself shows a business expense under the rubric, without asking them to "
-                  "explain it, and decline it when it does not"
-                  if policy == "accept" else "scrutinised: be satisfied it is a business expense before recording it")
+        if allowance is None:
+            return reply(f"{person} has no allowance: a reason is expected for each expense, and the payment task states it.")
+        spent, left = standing()
         return reply(f"{person}: weekly allowance {money(allowance)}, spent this week {money(spent)}, "
                      f"left {money(left)}. The week started {since.date().isoformat()}. "
-                     f"Overdraft limit {money(tenant.overdraft_limit)}. An invoice within the allowance is {within}.")
+                     f"Overdraft limit {money(tenant.overdraft_limit)}. No reason is expected for a justifiable expense.")
 
     @tool("find_duplicate",
           "The earlier reimbursed invoice that an invoice duplicates (same date, and the same vendor or the "
@@ -161,12 +158,14 @@ def tools(turn) -> list:
                      f"handled {earlier['handled_at']}.")
 
     @tool("record_reimbursement",
-          "Record one qualifying invoice from this message, calling it once for each when the message holds several: works out whether it is within the allowance, overdrawn "
-          "or over the limit, writes the ledger and posts a payment task, with the invoice attached, to the business's task space. Call it after "
-          "judging the invoice qualifies. It returns the outcome and the allowance left, for you to tell the person.",
+          "Record one justifiable expense from this message, once for each when the message holds several, and post a "
+          "task for a person to reimburse it, with the invoice attached, to the business's task space. For a person with "
+          "an allowance the task states whether it is within the allowance, within the overdraft or above it; for a "
+          "person without one, pass the reason they gave, which the task states.",
           {"type": "object", "properties": {"vendor": {"type": "string"}, "invoice_date": {"type": "string", "description": "YYYY-MM-DD"},
                                             "amount": {"type": "number"}, "currency": {"type": "string"},
-                                            "file": {"type": "string", "description": "Path of the invoice, one of this message's files"}},
+                                            "file": {"type": "string", "description": "Path of the invoice, one of this message's files"},
+                                            "reason": {"type": "string", "description": "What the person said it was for"}},
            "required": ["vendor", "invoice_date", "amount", "currency", "file"]})
     async def record_reimbursement(args):
         vendor, invoice_date, amount = args["vendor"], args["invoice_date"], float(args["amount"])
@@ -179,11 +178,16 @@ def tools(turn) -> list:
         if earlier:
             return reply(f"Refused: a duplicate of an earlier line: {earlier['employee']}, {earlier['vendor']}, "
                          f"{earlier['invoice_date']}, {money(float(earlier['amount']))}.", True)
-        left = standing()[2] - amount
+        head = f"Reimburse {person}: {vendor}, {invoice_date}, {money(amount)} {args['currency']}"
+        if allowance is None:
+            if not args.get("reason"):
+                return reply(f"{person} has no allowance, so a reason is expected: ask them what it was for.", True)
+            record(row_for(vendor, invoice_date, amount, "reason-given"))
+            turn.post(tenant.task_space, f"{head}. Reason given: {args['reason']}", [str(file)])
+            return reply("Recorded, and a task to reimburse it, stating the reason, has been posted.")
+        left = standing()[1] - amount
         outcome = "within" if left >= 0 else "overdrawn" if left >= -tenant.overdraft_limit else "over-limit"
         record(row_for(vendor, invoice_date, amount, outcome))
-        name = person
-        head = f"Reimburse {name}: {vendor}, {invoice_date}, {money(amount)} {args['currency']}"
         if outcome == "within":
             task = f"{head}. Within the week's allowance."
         elif outcome == "overdrawn":
@@ -194,18 +198,18 @@ def tools(turn) -> list:
         return reply(f"Outcome: {outcome}. Allowance left after this invoice: {money(left)}."
                      + (" The payment task asks the task space to decide." if outcome == "over-limit" else ""))
 
-    @tool("record_not_reimbursed",
-          "Record that one invoice of this message is not reimbursed because it does not qualify, so it is not handled "
-          "twice; call it once for each declined invoice when the message holds several. Posts nothing.",
+    @tool("record_not_justifiable",
+          "Record that one invoice of this message is not a justifiable business expense under the rubric, so it is "
+          "not handled twice; once for each such invoice when the message holds several. Posts nothing.",
           {"type": "object", "properties": {"vendor": {"type": ["string", "null"]},
                                             "invoice_date": {"type": ["string", "null"], "description": "YYYY-MM-DD"},
                                             "amount": {"type": ["number", "null"]}, "reason": {"type": "string"}},
            "required": ["reason"]})
-    async def record_not_reimbursed(args):
+    async def record_not_justifiable(args):
         vendor, invoice_date, amount = args.get("vendor") or "", args.get("invoice_date") or "", float(args.get("amount") or 0)
         if ledger.has(turn.message, vendor, invoice_date, amount):
             return reply("This invoice of this message is already recorded.", True)
-        record(row_for(vendor, invoice_date, amount, "rejected"))
-        return reply("Recorded as not reimbursed.")
+        record(row_for(vendor, invoice_date, amount, "not-justifiable"))
+        return reply("Recorded as not justifiable.")
 
-    return [allowance_left, find_duplicate, record_reimbursement, record_not_reimbursed]
+    return [allowance_left, find_duplicate, record_reimbursement, record_not_justifiable]
