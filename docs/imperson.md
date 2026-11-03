@@ -5,7 +5,7 @@ imperson answers Google Chat direct messages as an account. It signs in to Chat 
 - **weather**: someone asks about the weather.
 - **events**: someone asks what is on nearby.
 
-A business adds its own in its repository's `.imperson/skills/<name>/SKILL.md`, and one of the same name takes the place of imperson's. A business's process, such as how it reimburses staff, is its own, so its skill lives there. The reimbursement skill is one such skill. It works with functions imperson provides for that process: reading the allowance, finding an earlier claim of the same invoice, recording a reimbursement with its payment task, and recording an invoice that is not justifiable.
+A business adds its own in its repository's `.imperson/skills/<name>/SKILL.md`, and one of the same name takes the place of imperson's. A business's process, such as how it reimburses staff, is its own, so its skill lives there. The reimbursement skill is one such skill. A skill whose folder in `.imperson/` holds a `policy.yaml` gets three general tools named after it, such as `reimbursement_balance`, `reimbursement_find_match` and `reimbursement_record`. The tools apply that policy and hold none of their own.
 
 An account either answers every message, or answers only when a rule written by its owner says to. In the second case the agent still reads every message, so it keeps the conversation's context.
 
@@ -77,11 +77,22 @@ Speak only when someone asks about the weather or what is on, and say nothing ot
 
 These sit in the tenant repository:
 
-- `.imperson/reimbursement/settings.yaml` holds `task_space` (where a payment task goes), `week_starts` (a weekday name), `overdraft_limit`, and `allowances`, a weekly amount per person named as in `.reviewagent/team.yaml`, or keyed by their Chat id (`users/<id>`) when team.yaml does not list them. A person with an allowance is not expected to give a reason for a justifiable expense, and their payment task says whether it is within the allowance, within the overdraft or above it. Anyone not listed is expected to give a reason, which their payment task states.
+- `.imperson/skills/reimbursement/SKILL.md` is the process, in prose.
 - `.imperson/reimbursement/rubric.md` says, in its Justifiable and Not justifiable sections, which expenses are justifiable as business expenses for this business.
-- `.imperson/reimbursement/ledger.tsv` is written by the reimbursement skill, one line per invoice. In live mode each line is committed in the tenant clone. It is not pushed.
-
-People's Chat ids and the timezone are read from `.reviewagent/team.yaml` and `.reviewagent/settings.yaml`, which the tenant repository keeps for reviewagent.
+- `.imperson/reimbursement/policy.yaml` is what the general tools apply. Its keys:
+  - `task_space`, where tasks are posted, and `timezone`.
+  - `team`, a file mapping names to Chat ids, which `people` then uses.
+  - `period`: `{every: week, starts: Monday}` or `{every: month}`.
+  - `ledger`: the ledger's file name in this folder.
+  - `claim.fields`, the claim's fields and their kinds (`text`, `date`, `number`), and `claim.amount`, the field summed against a limit.
+  - `same_claim`: the fields that must all be equal (`all`), and those of which one must be (`any`), for two claims from different messages to count as the same.
+  - `people`: per name or Chat id, a `limit` for the period, or `requires`, the fields such a person gives with each claim. `default` covers anyone not listed.
+  - `outcomes`, checked in order:
+    - Each has a `name`, the group it is `for` (`limit` or `no-limit`), and an optional `min_left`, which the amount left after the claim must reach.
+    - `spent: true` counts the outcome against the limit.
+    - `named: true` lets the agent choose the outcome itself. `match: false` keeps the outcome out of `same_claim`.
+    - `task` is the wording posted with the file, filled from the claim's fields and `{person}`, `{left}` and `{over}`. A `null` task posts nothing.
+- The ledger is written by the tools, one line per claim. In live mode each line is committed in the tenant clone. It is not pushed.
 
 ## Running
 

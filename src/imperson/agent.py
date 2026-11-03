@@ -25,13 +25,12 @@ from typing import Any
 import majordomo
 from majordomo import dates
 
-from . import reimbursement
+from . import ledger
 
 HERE = Path(__file__).resolve().parent
 CONFIG = Path("~/.config/majordomo/imperson.toml")
 STATE = Path("~/.local/state/majordomo-imperson")
 SERVER = "imperson"
-SKILL_TOOLS = {"reimbursement": reimbursement.tools}
 ALLOWED = ["Read", "Glob", "Grep", "WebSearch", "WebFetch"]
 DENIED = ["Bash", "Write", "Edit", "NotebookEdit", "Task"]
 SEND_MODES = ("off", "test", "live")
@@ -217,7 +216,8 @@ class Account:
         tools = [reply_tool(lambda text, fs: self.gate(to=sender, text=text, files=fs))]
         for skill in self.skills:
             try:
-                tools += SKILL_TOOLS.get(skill, lambda t: [])(turn)
+                if (self.tenant / ".imperson" / skill / "policy.yaml").exists():
+                    tools += ledger.tools(turn, skill)
             except Exception as exc:  # a skill whose files are missing leaves the conversation itself running
                 print(f"imperson: {self.name}: the {skill} skill's tools are unavailable: {exc}", file=sys.stderr)
         when = dates.utc(row.get("create_time"))

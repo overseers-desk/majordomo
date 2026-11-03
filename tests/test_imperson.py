@@ -214,21 +214,20 @@ def test_the_send_gate(tmp_path, mode):
 def test_a_skill_with_missing_files_leaves_the_conversation_running(tmp_path):
     talk = Talk()
     acct, chat = account(tmp_path, [("spaces/D1", "spaces/D1/messages/1", ANN, "Hi", False)], talk,
-                         skills=["reimbursement"])
+                         skills=["spend"])
     acct.run()
     assert talk.turns[0]["tools"] == ["reply"] and len(chat.sent) == 1
 
 
-def test_skills_bring_their_tools(tmp_path):
+def test_a_skill_with_a_policy_brings_the_general_tools_named_for_it(tmp_path):
+    import yaml
+    from test_imperson_ledger import WEEKLY
     tenant = tmp_path / "tenant"
-    (tenant / ".reviewagent").mkdir(parents=True)
-    (tenant / ".imperson" / "reimbursement").mkdir(parents=True)
-    (tenant / ".reviewagent" / "team.yaml").write_text(f"people:\n  Ann: {ANN}\n")
-    (tenant / ".reviewagent" / "settings.yaml").write_text("timezone: Australia/Brisbane\n")
-    (tenant / ".imperson" / "reimbursement" / "settings.yaml").write_text(
-        "task_space: spaces/T\nweek_starts: Monday\noverdraft_limit: 0\nallowances: {}\n")
+    (tenant / ".imperson" / "spend").mkdir(parents=True)
+    (tenant / "team.yaml").write_text(f"people:\n  Ann: {ANN}\n")
+    (tenant / ".imperson" / "spend" / "policy.yaml").write_text(yaml.safe_dump(WEEKLY))
     talk = Talk()
     acct, _ = account(tmp_path, [("spaces/D1", "spaces/D1/messages/1", ANN, "Hi", False)], talk,
-                      skills=["reimbursement", "weather", "events"])
+                      skills=["spend", "weather", "events"])
     acct.run()
-    assert {"reply", "allowance_left", "record_reimbursement"} <= set(talk.turns[0]["tools"])
+    assert set(talk.turns[0]["tools"]) == {"reply", "spend_balance", "spend_find_match", "spend_record"}
