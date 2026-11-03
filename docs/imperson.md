@@ -20,7 +20,7 @@ venv/bin/pip install -e .
 
 This gives the venv both the `majordomo` and the `imperson` commands.
 
-Claude Code must be signed in for the user who runs it (`claude` once, then `/login`), because the Agent SDK runs through it.
+The conversations run through Claude Code, each account in its own configuration folder, so the plugins, hooks and instructions of the person who runs imperson stay out of them. That folder holds no login, so imperson signs in with a long-lived token: run `claude setup-token` once and save the token it prints in `~/.config/majordomo/claude-token`, or in the file `claude_token_file` names at the top of `imperson.toml`.
 
 ## Each account's Chat login
 

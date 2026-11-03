@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import subprocess
 import sys
@@ -92,8 +93,10 @@ def _confine(dirs: list[Path]):
 
 
 def converse(prompt: str, *, session: str | None, cwd: Path, system_prompt: str, skills: list[str],
-             tools: list, read_dirs: list[Path]) -> str | None:
-    """One turn of a conversation through the Agent SDK; the session's id, to resume it at the next message."""
+             tools: list, read_dirs: list[Path], env: dict[str, str]) -> str | None:
+    """One turn of a conversation through the Agent SDK; the session's id, to resume it at the next message.
+    ``env`` gives Claude Code its own configuration folder, so the plugins, hooks and instructions of whoever
+    runs imperson stay out of the conversation."""
     from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, create_sdk_mcp_server, query
 
     async def turn() -> str | None:
@@ -103,7 +106,7 @@ def converse(prompt: str, *, session: str | None, cwd: Path, system_prompt: str,
             mcp_servers={SERVER: create_sdk_mcp_server(SERVER, tools=tools)},
             allowed_tools=[*ALLOWED, *(f"mcp__{SERVER}__{t.name}" for t in tools)],
             disallowed_tools=DENIED, permission_mode="dontAsk",
-            hooks={"PreToolUse": [_confine(read_dirs)]}, max_turns=40)
+            hooks={"PreToolUse": [_confine(read_dirs)]}, max_turns=40, env=env)
         found = session
         async for m in query(prompt=prompt, options=options):
             if isinstance(m, ResultMessage):
@@ -130,8 +133,8 @@ def whoami(cfg: dict) -> str:
 
 
 class Account:
-    def __init__(self, name: str, table: dict, *, chat=majordomo, talk=converse, git=_git, me=whoami,
-                 now: datetime | None = None, state_root: Path = STATE):
+    def __init__(self, name: str, table: dict, *, claude_token: str = "", chat=majordomo, talk=converse,
+                 git=_git, me=whoami, now: datetime | None = None, state_root: Path = STATE):
         self.name, self.table, self.chat, self.talk, self.git = name, table, chat, talk, git
         self.send = table.get("send", "off")
         if self.send not in SEND_MODES:
@@ -146,10 +149,12 @@ class Account:
         self.tenant = Path(table["tenant"]).expanduser()
         self.skills = list(table.get("skills", []))
         self.state = state_root.expanduser() / name
+        self.env = {"CLAUDE_CONFIG_DIR": str(self.state / "claude"), "CLAUDE_CODE_OAUTH_TOKEN": claude_token}
         self.now = now or datetime.now(timezone.utc)
         self.out: list[str] = []
         saved = self.state / "state.json"
         self.saved = json.loads(saved.read_text()) if saved.exists() else {"mark": None, "handled": {}, "sessions": {}}
+        self.saved.setdefault("read", {})
 
     def save(self) -> None:
         self.state.mkdir(parents=True, exist_ok=True)
@@ -190,6 +195,12 @@ class Account:
             link.symlink_to(skills)
         return ws
 
+    def rules(self) -> dict[str, str]:
+        """A digest of each file the skills work from, the ledgers aside, to tell a conversation what changed."""
+        roots = [HERE / "skills" / s for s in self.skills] + [self.tenant / ".imperson"]
+        return {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for root in roots if root.is_dir()
+                for p in sorted(root.rglob("*")) if p.is_file() and p.suffix != ".tsv"}
+
     def handle(self, space: str, row: dict, files: list[Path]) -> None:
         sender = row["sender_name"]
         turn = Turn(tenant=self.tenant, state=self.state, now=self.now, send=self.send, sender=sender,
@@ -205,10 +216,16 @@ class Account:
         prompt = (f"From {row.get('sender_display') or sender} ({sender}), {when.isoformat() if when else ''}:\n"
                   f"{row.get('text') or '(no text)'}"
                   + "".join(f"\nFile saved from this message: {p}" for p in files))
-        sessions = self.saved["sessions"]
+        sessions, rules = self.saved["sessions"], self.rules()
+        seen = self.saved["read"].get(space, {})
+        changed = [f for f, digest in rules.items() if seen.get(f) != digest]
+        if sessions.get(space) and changed:
+            prompt = ("These files changed since this conversation last read them, so what it read before is out of "
+                      "date; read them again before relying on them:\n" + "\n".join(changed) + "\n\n" + prompt)
         sessions[space] = self.talk(prompt, session=sessions.get(space), cwd=self.workspace(),
                                     system_prompt=self.system_prompt(), skills=self.skills, tools=tools,
-                                    read_dirs=[self.state / "work", self.tenant / ".imperson"])
+                                    read_dirs=[self.state / "work", self.tenant / ".imperson"], env=self.env)
+        self.saved["read"][space] = rules
         self.saved["handled"].setdefault(space, []).append(row["name"])
         self.saved["handled"][space] = self.saved["handled"][space][-500:]
         self.save()
@@ -256,12 +273,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--account", help="answer as this account alone")
     args = parser.parse_args(argv)
     with open(Path(args.config).expanduser(), "rb") as fh:
-        accounts = tomllib.load(fh).get("account", {})
+        settings = tomllib.load(fh)
+    accounts = settings.get("account", {})
+    token_file = Path(settings.get("claude_token_file", "~/.config/majordomo/claude-token")).expanduser()
+    if not token_file.exists():
+        raise SystemExit(f"imperson: no Claude token at {token_file}; make one with `claude setup-token` and save it there")
+    token = token_file.read_text().strip()
     for name, table in accounts.items():
         if args.account and name != args.account:
             continue
         try:
-            for line in Account(name, table).run():
+            for line in Account(name, table, claude_token=token).run():
                 print(line)
         except Exception as exc:  # one account's failure leaves the others to run
             print(f"imperson: {name}: {exc}", file=sys.stderr)

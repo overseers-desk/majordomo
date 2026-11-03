@@ -56,7 +56,7 @@ class Talk:
         self.turns = []
         self.answer = answer
 
-    def __call__(self, prompt, *, session, cwd, system_prompt, skills, tools, read_dirs):
+    def __call__(self, prompt, *, session, cwd, system_prompt, skills, tools, read_dirs, env):
         self.turns.append({"prompt": prompt, "session": session, "system": system_prompt,
                            "tools": [t.name for t in tools]})
         text = self.answer(prompt)
@@ -146,6 +146,28 @@ def test_a_skills_link_left_by_a_moved_checkout_is_replaced(tmp_path):
     link.symlink_to(tmp_path / "gone")
     acct.workspace()
     assert link.readlink() == imperson.HERE / "skills"
+
+
+def test_a_resumed_conversation_is_told_which_rule_files_changed(tmp_path):
+    posts = [("spaces/D1", "spaces/D1/messages/1", ANN, "receipt", False)]
+    talk = Talk()
+    acct, chat = account(tmp_path, posts, talk)
+    rubric = acct.tenant / ".imperson" / "reimbursement" / "rubric.md"
+    rubric.parent.mkdir(parents=True)
+    rubric.write_text("Supplies qualify.")
+    acct.run()
+    rubric.write_text("Supplies qualify. Prepared food does not.")
+    posts.append(("spaces/D1", "spaces/D1/messages/2", ANN, "same receipt again", False))
+    chat.last_active = later = NOW + timedelta(minutes=5)
+    imperson.Account("admin", acct.table, chat=chat, talk=talk, git=lambda a: None, me=lambda cfg: ME, now=later,
+                     state_root=tmp_path / "state").run()
+    assert "changed since this conversation last read them" not in talk.turns[0]["prompt"]
+    assert str(rubric) in talk.turns[1]["prompt"].split("\n\n")[0]
+
+
+def test_claude_code_runs_in_the_account_s_own_configuration_folder(tmp_path):
+    acct, _ = account(tmp_path, [], Talk())
+    assert acct.env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "state" / "admin" / "claude")
 
 
 def test_own_messages_are_not_handed_to_the_session(tmp_path):
