@@ -57,7 +57,7 @@ def _read(row: dict) -> dict:
 
 class Books:
     def __init__(self, settings: dict, prefix: str):
-        self.settings, self.p, self.conn, self.ready = dict(settings), prefix, None, False
+        self.settings, self.p, self.conn, self.ready, self.packet = dict(settings), prefix, None, False, 0
 
     def _connect(self):
         import pymysql.cursors
@@ -73,6 +73,9 @@ class Books:
         self.conn = pymysql.connect(host=s["MYSQL_HOST"], port=int(s.get("MYSQL_PORT", 3306)), user=s["MYSQL_USER"],
                                     password=s["MYSQL_PASSWORD"], database=s["MYSQL_DATABASE"],
                                     charset="utf8mb4", cursorclass=pymysql.cursors.DictCursor, autocommit=False)
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT @@max_allowed_packet AS packet")
+            self.packet = int(cur.fetchone()["packet"])
         return self.conn
 
     @contextmanager
@@ -113,19 +116,26 @@ class Books:
     def add_upload(self, *, attachment: str, account: str, message: str, sender: str, name: str,
                    media_type: str | None, received_at: datetime, content: bytes | None, error: str | None) -> dict:
         """The upload's row, written once per attachment; a later arrival with content fills in a file the first
-        could not fetch. ``identical_to`` is the earliest other upload of the same file, or None."""
+        could not fetch. A file larger than the server takes in one statement is kept as an upload without its file,
+        as one not fetched is. ``identical_to`` is the earliest other upload of the same file, or None."""
         with self._tx() as cur:
             file_id = None
             if content is not None:
                 digest = hashlib.sha256(content).hexdigest()
-                cur.execute(f"INSERT INTO {self.p}files (sha256, media_type, size, content) VALUES (%s, %s, %s, %s) "
-                            "ON DUPLICATE KEY UPDATE id = id",
-                            (digest, (media_type or "application/octet-stream")[:127], len(content), content))
-                cur.execute(f"SELECT id FROM {self.p}files WHERE sha256 = %s", (digest,))
-                file_id = cur.fetchone()["id"]
+                statement = cur.mogrify(f"INSERT INTO {self.p}files (sha256, media_type, size, content) VALUES "
+                                        "(%s, %s, %s, %s) ON DUPLICATE KEY UPDATE id = id",
+                                        (digest, (media_type or "application/octet-stream")[:127], len(content), content))
+                if len(statement) > self.packet - 1024:   # the driver may send bytes as hex, twice their size; 1024 covers the packet's framing
+                    content, error = None, (f"the file of {len(content):,} bytes, sent as {len(statement):,}, exceeds "
+                                            f"the server's limit of {self.packet:,}")
+                else:
+                    cur.execute(statement)
+                    cur.execute(f"SELECT id FROM {self.p}files WHERE sha256 = %s", (digest,))
+                    file_id = cur.fetchone()["id"]
             cur.execute(f"INSERT INTO {self.p}uploads (attachment, file_id, error, account, message, sender, name, media_type, "
                         "received_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE "
-                        "error = IF(VALUES(file_id) IS NULL, error, NULL), file_id = COALESCE(file_id, VALUES(file_id))",
+                        "error = IF(VALUES(file_id) IS NULL, IF(file_id IS NULL, VALUES(error), error), NULL), "
+                        "file_id = COALESCE(file_id, VALUES(file_id))",
                         (attachment, file_id, None if content is not None else (error or "not fetched")[:255], account,
                          message, sender, (name or "")[:255], media_type and media_type[:127], _stored(received_at)))
             cur.execute(f"SELECT * FROM {self.p}uploads WHERE attachment = %s", (attachment,))
@@ -136,7 +146,9 @@ class Books:
         return {**_read(row), "identical_to": _read(same) if same else None}
 
     def uploads(self, ids: list[int]) -> list[dict]:
-        return self._q(f"SELECT * FROM {self.p}uploads WHERE id IN ({_marks(ids)}) ORDER BY id", ids) if ids else []
+        """The uploads by id, each with its file's ``sha256``: None for one whose file the books do not hold."""
+        return self._q(f"SELECT u.*, f.sha256 FROM {self.p}uploads u LEFT JOIN {self.p}files f ON f.id = u.file_id "
+                       f"WHERE u.id IN ({_marks(ids)}) ORDER BY u.id", ids) if ids else []
 
     def content(self, upload_id: int) -> bytes | None:
         found = self._q(f"SELECT f.content FROM {self.p}uploads u JOIN {self.p}files f ON f.id = u.file_id "
@@ -152,8 +164,8 @@ class Books:
         return " AND ".join(clauses), values
 
     def claims(self, skill: str, *, person: str | None = None, since: datetime | None = None,
-               message: str | None = None) -> list[dict]:
-        where, values = self._where(skill, "handled_at", person=person, since=since, message=message)
+               message: str | None = None, claim_id: int | None = None) -> list[dict]:
+        where, values = self._where(skill, "handled_at", id=claim_id, person=person, since=since, message=message)
         rows = self._q(f"SELECT c.*, (SELECT GROUP_CONCAT(CAST(upload_id AS CHAR) ORDER BY upload_id) FROM "
                        f"{self.p}claim_uploads WHERE claim_id = c.id) AS uploads FROM {self.p}claims c WHERE {where} "
                        "ORDER BY id", values)
@@ -171,16 +183,18 @@ class Books:
                             [(claim, u) for u in dict.fromkeys(uploads)])
         return claim
 
-    def set_outcome(self, claim_id: int, outcome: str) -> None:
-        self._q(f"UPDATE {self.p}claims SET outcome = %s WHERE id = %s", (outcome, claim_id))
-
     def add_order(self, *, skill: str, account: str, given_by: str, message: str, given_at: datetime, kind: str,
-                  person: str | None, claim_id: int | None, amount: float | None, delta: float | None, words: str) -> int:
+                  person: str | None, claim_id: int | None, amount: float | None, delta: float | None, words: str,
+                  outcome: str | None = None) -> int:
+        """The order's row; an order deciding a claim gives the claim its ``outcome`` in the same transaction."""
         with self._tx() as cur:
             cur.execute(f"INSERT INTO {self.p}orders (skill, account, given_by, message, given_at, kind, person, claim_id, "
                         "amount, delta, words) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         (skill, account, given_by, message, _stored(given_at), kind, person, claim_id, amount, delta, words))
-            return cur.lastrowid
+            number = cur.lastrowid
+            if outcome is not None:
+                cur.execute(f"UPDATE {self.p}claims SET outcome = %s WHERE id = %s", (outcome, claim_id))
+        return number
 
     def orders(self, skill: str, *, person: str | None = None, since: datetime | None = None) -> list[dict]:
         where, values = self._where(skill, "given_at", person=person, since=since)

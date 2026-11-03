@@ -122,6 +122,14 @@ def test_each_file_reaches_the_conversation_as_an_upload_in_the_books(tmp_path, 
     assert len(chat.sent) == 3
 
 
+def test_a_file_too_large_for_the_books_reaches_the_conversation_as_one_not_fetched(tmp_path, books, monkeypatch):
+    monkeypatch.setattr(books, "packet", 0)
+    talk = Talk()
+    account(tmp_path, [("spaces/D1", "spaces/D1/messages/1", ANN, "receipt", True)], talk)[0].run()
+    assert talk.turns[0]["prompt"].splitlines()[2].startswith("A file in this message could not be fetched: invoice.jpg "
+                                                              "(the file of 3 bytes, sent as ")
+
+
 def test_a_message_whose_files_cannot_reach_the_books_waits_for_the_next_run(tmp_path, books, monkeypatch):
     monkeypatch.setattr(books, "add_upload", lambda **kw: (_ for _ in ()).throw(RuntimeError("server has gone away")))
     talk = Talk()
@@ -289,4 +297,5 @@ def test_a_skill_with_a_policy_brings_the_general_tools_named_for_it(tmp_path):
     acct, _ = account(tmp_path, [("spaces/D1", "spaces/D1/messages/1", ANN, "Hi", False)], talk,
                       skills=["spend", "weather", "events"])
     acct.run()
-    assert set(talk.turns[0]["tools"]) == {"reply", "spend_balance", "spend_find_match", "spend_record"}
+    assert set(talk.turns[0]["tools"]) == {"reply", "spend_balance", "spend_find_match", "spend_record", "spend_order",
+                                           "spend_report"}

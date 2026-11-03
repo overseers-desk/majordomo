@@ -12,17 +12,18 @@ import yaml
 
 from imperson import ledger
 
-ANN, BO = "users/ANN", "users/BO"
+ANN, BO, SAM = "users/ANN", "users/BO", "users/SAM"
 NOW = datetime(2026, 11, 4, 2, 0, tzinfo=timezone.utc)      # Wednesday 12:00 in Brisbane
 MONDAY = datetime(2026, 11, 2, 0, 0, tzinfo=timezone.utc)   # Monday 10:00 in Brisbane
 
 WEEKLY = {
-    "task_space": "spaces/T", "timezone": "Australia/Brisbane", "team": "team.yaml",
+    "task_space": "spaces/T", "timezone": "Australia/Brisbane", "team": "team.yaml", "authority": ["Ann"],
     "period": {"every": "week", "starts": "Monday"},
     "claim": {"fields": {"vendor": "text", "invoice_date": "date", "amount": "number", "circumstance": "text"},
               "amount": "amount"},
     "same_claim": {"all": ["invoice_date"], "any": ["vendor", "amount"]},
-    "people": {"Ann": {"group": "allowance", "limit": 100}, "default": {"group": "by-approval"}},
+    "people": {"Ann": {"group": "allowance", "limit": 100}, SAM: {"group": "allowance", "limit": 50, "name": "Sam Example"},
+               "default": {"group": "by-approval"}},
     "scopes": {"in": {"allowance": "record", "by-approval": "record"},
                "circumstantial": {"allowance": "refuse", "by-approval": {"record": True, "requires": ["circumstance"]}},
                "out": {"allowance": "refuse", "by-approval": "refuse"}},
@@ -33,8 +34,10 @@ WEEKLY = {
         {"name": "for-approval", "for": "by-approval", "task": "Approve {person} {amount} ({scope}): {circumstance}"},
         {"name": "refused", "refused": True, "task": None},
         {"name": "duplicate", "duplicate": True, "task": "Check {person} {amount}: the same as claim #{duplicate_of}."},
-        {"name": "approved", "approved": True, "spent": True, "task": None},
+        {"name": "approved", "approved": True, "spent": True, "task": "Pay {person} {amount}, approved by {given_by}."},
     ],
+    "orders": {"approve": "Claim #{claim} of {person} approved by {given_by}, was {earlier}: {words}",
+               "refuse": "Claim #{claim} of {person} refused by {given_by}, was {earlier}: {words}"},
 }
 MONTHLY = {**WEEKLY, "period": {"every": "month"}, "people": {"default": {"group": "everyone"}},
            "scopes": {"any": {"everyone": {"record": True, "requires": ["circumstance"]}}},
@@ -46,7 +49,7 @@ def tenant(tmp_path, policy):
     root = tmp_path / "tenant"
     (root / ".imperson" / "spend").mkdir(parents=True, exist_ok=True)
     (root / "team.yaml").write_text(f"people:\n  Ann: {ANN}\n  Bo: {BO}\n")
-    (root / ".imperson" / "spend" / "policy.yaml").write_text(yaml.safe_dump(policy))
+    (root / ".imperson" / "spend" / "policy.yaml").write_text(yaml.safe_dump(policy, sort_keys=False))
     return root
 
 
@@ -58,10 +61,10 @@ def turn_for(books, root, tmp_path, *, message="spaces/D/messages/1", sender=ANN
 
 
 def photo(t, content=b"jpg", n=1, error=None):
-    """A file of the turn's message, saved and written to the books as the run does."""
+    """A file of the turn's message, saved where the run saves it, a second invoice.jpg as invoice-2.jpg, and written to the books."""
     path = None
     if content is not None:
-        path = t.state / "work" / f"{t.message.replace('/', '_')}-{n}.jpg"
+        path = t.state / "work" / t.message.replace("/", "_") / ("invoice.jpg" if n == 1 else f"invoice-{n}.jpg")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
     u = t.books.add_upload(attachment=f"{t.message}/attachments/{n}", account="admin", message=t.message,
@@ -141,6 +144,8 @@ def test_same_claim_rules(tmp_path, books):
     claim(t, amount=10)
     text, error = claim(t, vendor="BUNNINGS PTY", amount=10)          # this message read again, the vendor read anew
     assert not error and text.startswith("Already recorded as claim #1 (") and len(books.claims("spend")) == 1
+    again = call(t, "record", claim={"vendor": "Bunnings", "invoice_date": "2026-11-03", "amount": 10}, scope="in")
+    assert again[0].startswith("Already recorded as claim #1 (") and len(books.claims("spend")) == 1   # retried without uploads
     assert claim(t, amount=20)[0].startswith("Recorded as within, claim #2")   # same shop and day, another receipt in one photo
     assert claim(t, amount=10, uploads=[photo(t, b"other", n=2)["id"]])[0].startswith("Recorded as within, claim #3")
     other = turn_for(books, root, tmp_path, message="spaces/D/messages/2")
@@ -189,25 +194,140 @@ def test_a_file_that_could_not_be_fetched_is_filled_in_when_it_is(tmp_path, book
     t = turn_for(books, tenant(tmp_path, WEEKLY), tmp_path)
     failed = photo(t, None, error="majordomo: invoice.jpg: HTTP 500")
     assert (failed["file_id"], failed["error"], books.content(failed["id"])) == (None, "majordomo: invoice.jpg: HTTP 500", None)
+    assert photo(t, None, error="majordomo: invoice.jpg: HTTP 503")["error"] == "majordomo: invoice.jpg: HTTP 503"
     filled = photo(t)
     assert filled["id"] == failed["id"] and filled["error"] is None and books.content(filled["id"]) == b"jpg"
+    assert photo(t, None, error="majordomo: invoice.jpg: HTTP 500")["error"] is None and books.content(filled["id"]) == b"jpg"
 
 
-def test_a_set_left_order_moves_the_balance_by_its_delta(tmp_path, books):
+def test_set_left_makes_what_is_left_the_figure_ordered_and_a_reset_makes_it_the_limit(tmp_path, books):
+    root = tenant(tmp_path, WEEKLY)
+    sam = turn_for(books, root, tmp_path, sender=SAM, message="spaces/S/messages/1")
+    claim(sam, amount=30)
+    ann = turn_for(books, root, tmp_path, message="spaces/D/messages/2")
+    call(turn_for(books, root, tmp_path, now=datetime(2026, 11, 1, tzinfo=timezone.utc)), "order", kind="set_left",
+         person="Sam", amount=500, words="last week's")
+    assert call(ann, "order", kind="set_left", person="Sam", amount="45", words="Sam has 45 left")[0] == (
+        "Sam Example now has 45.00 left, where they had 20.00; order #2.")
+    assert "Sam Example is in the group allowance" in call(sam, "balance")[0] and "left 45.00" in call(sam, "balance")[0]
+    call(ann, "order", kind="set_left", person="sam example", amount=5, words="make it 5")
+    assert "used 30.00, left 5.00" in call(ann, "balance", person="users/SAM")[0]
+    assert claim(sam, vendor="Coles", amount=20)[0] == "Recorded as overdrawn, claim #2. Left this period: -15.00."
+    assert call(ann, "order", kind="set_left", person="SAM", words="reset Sam's allowance")[0].startswith(
+        "Sam Example now has 50.00 left, where they had -15.00")
+    assert [(o["given_by"], o["amount"], o["delta"]) for o in books.orders("spend", person=SAM, since=MONDAY)] == [
+        (ANN, 45.0, 25.0), (ANN, 5.0, -40.0), (ANN, 50.0, 65.0)]
+    assert "left 50.00" in call(sam, "balance")[0]
+
+
+def test_orders_and_questions_about_others_from_someone_without_authority_are_refused(tmp_path, books):
+    root = tenant(tmp_path, WEEKLY)
+    claim(turn_for(books, root, tmp_path, sender=BO, message="spaces/E/messages/1"), scope="out")
+    bo = turn_for(books, root, tmp_path, sender=BO, message="spaces/E/messages/2")
+    for args in ({"kind": "set_left", "person": "Bo", "amount": 500}, {"kind": "approve", "claim_id": 1}):
+        text, error = call(bo, "order", words="pay me", **args)
+        assert error and text.startswith("Bo (users/BO) has no authority under the spend policy")
+    assert call(bo, "balance", person="Ann")[1]
+    assert books.orders("spend") == [] and books.claims("spend")[0]["outcome"] == "refused" and bo.posted == []
+
+
+def test_a_name_that_fits_more_than_one_person_names_none(tmp_path, books):
+    root = tenant(tmp_path, {**WEEKLY, "people": {**WEEKLY["people"], "users/SAM2": {"group": "allowance", "limit": 10,
+                                                                                    "name": "Sam Other"}}})
+    ann = turn_for(books, root, tmp_path)
+    text, error = call(ann, "order", kind="set_left", person="sam", amount=1, words="Sam has 1 left")
+    assert error and text.startswith("sam could be Sam Example (users/SAM), Sam Other (users/SAM2): ask the writer")
+    assert call(ann, "order", kind="set_left", person="Sam Other", amount=1, words="1 left")[0].startswith("Sam Other now")
+    assert call(ann, "balance", person="Zed")[1] and len(books.orders("spend")) == 1
+
+
+def test_approving_a_refused_claim_posts_its_task_with_its_file_and_spends_it(tmp_path, books):
+    root = tenant(tmp_path, WEEKLY)
+    sam = turn_for(books, root, tmp_path, sender=SAM, message="spaces/S/messages/1")
+    claim(sam, vendor="Cafe", scope="circumstantial")                  # refused for the allowance group
+    sent = sam.uploads[0]["path"]
+    sent.unlink()                                                      # the run's copy is gone, as on another host
+    ann = turn_for(books, root, tmp_path, message="spaces/D/messages/2")
+    assert call(ann, "order", kind="approve", claim_id="#1", words="pay Sam's cafe")[0] == (
+        "Claim #1 of Sam Example is now approved, where it was refused; order #1. Sam Example has 10.00 left.")
+    assert [(o["kind"], o["person"], o["claim_id"], o["given_by"], o["message"], o["words"]) for o in books.orders("spend")] == [
+        ("approve", SAM, 1, ANN, "spaces/D/messages/2", "pay Sam's cafe")]
+    assert ann.posted == [("spaces/T", "Pay Sam Example 40.00, approved by Ann.", [str(sent)])] and sent.read_bytes() == b"jpg"
+    text, error = call(ann, "order", kind="approve", claim_id=1, words="pay it again")
+    assert error and "already approved" in text and len(books.orders("spend")) == 1 and len(ann.posted) == 1
+
+
+def test_an_order_on_a_claim_whose_task_is_out_posts_the_orders_wording_instead(tmp_path, books):
+    root = tenant(tmp_path, WEEKLY)
+    claim(turn_for(books, root, tmp_path), amount=60)                                          # within: "Pay Ann" is out
+    claim(turn_for(books, root, tmp_path, sender=BO, message="spaces/E/messages/2"), vendor="Paper", amount=8)  # for-approval
+    ann = turn_for(books, root, tmp_path, message="spaces/D/messages/3")
+    assert call(ann, "order", kind="refuse", claim_id=1, words="not that one")[0] == (
+        "Claim #1 of Ann is now refused, where it was within; order #1. Ann has 100.00 left.")
+    call(ann, "order", kind="approve", claim_id=2, words="fine, pay Bo")
+    assert ann.posted == [("spaces/T", "Claim #1 of Ann refused by Ann, was within: not that one", []),
+                          ("spaces/T", "Claim #2 of Bo approved by Ann, was for-approval: fine, pay Bo", [])]
+    bare = turn_for(books, tenant(tmp_path, {**WEEKLY, "orders": {}}), tmp_path, message="spaces/D/messages/4")
+    text, error = call(bare, "order", kind="refuse", claim_id=2, words="no, not Bo's")
+    assert error and "no orders.refuse wording" in text and len(books.orders("spend")) == 2 and bare.posted == []
+    assert [r["outcome"] for r in books.claims("spend")] == ["refused", "approved"]
+
+
+def test_an_approval_of_a_duplicate_is_refused_and_names_the_claim_it_repeats(tmp_path, books):
     root = tenant(tmp_path, WEEKLY)
     claim(turn_for(books, root, tmp_path), amount=60)
-    t = turn_for(books, root, tmp_path, message="spaces/D/messages/2")
+    claim(turn_for(books, root, tmp_path, sender=BO, message="spaces/E/messages/2"), amount=60)   # the same invoice again
+    text, error = call(turn_for(books, root, tmp_path, message="spaces/D/messages/3"), "order", kind="approve",
+                       claim_id=2, words="pay Bo")
+    assert error and text == "Claim #2 is recorded as a duplicate of #1; the order concerns #1. Nothing was written."
+    assert books.orders("spend") == [] and [r["outcome"] for r in books.claims("spend")] == ["within", "duplicate"]
 
-    def order(left, delta, at=NOW):
-        books.add_order(skill="spend", account="admin", given_by=BO, message="spaces/T/messages/5", given_at=at,
-                        kind="set_left", person=ANN, claim_id=None, amount=left, delta=delta, words=f"Ann has {left} left")
-    order(500, 460, at=datetime(2026, 11, 1, tzinfo=timezone.utc))      # last week's
-    order(70, 70 - 40)                                                  # above the 40 left
-    assert "used 60.00, left 70.00" in call(t, "balance")[0]
-    order(25, 25 - 70)                                                  # below the 70 then left
-    assert "used 60.00, left 25.00" in call(t, "balance")[0]
-    assert claim(t, vendor="Coles", amount=20)[0] == "Recorded as within, claim #2. Left this period: 5.00."
-    assert [o["delta"] for o in books.orders("spend", person=ANN, since=MONDAY)] == [30.0, -45.0]
+
+def test_a_wording_naming_a_value_the_tools_do_not_give_writes_nothing(tmp_path, books):
+    outcomes = [{**o, "task": "Pay {person} {amount} by {due}."} if o["name"] == "within" else o for o in WEEKLY["outcomes"]]
+    root = tenant(tmp_path, {**WEEKLY, "outcomes": outcomes, "orders": {"refuse": "Refused: {reason}"}})
+    ann = turn_for(books, root, tmp_path)
+    text, error = claim(ann, amount=10)
+    assert error and text.startswith("The spend policy's outcomes.within.task names {due}; it may name {vendor}, ")
+    assert books.claims("spend") == [] and ann.posted == []
+    claim(turn_for(books, root, tmp_path, sender=BO, message="spaces/E/messages/2"), vendor="Paper", amount=8)
+    text, error = call(ann, "order", kind="refuse", claim_id=1, words="no")
+    assert error and text.startswith("The spend policy's orders.refuse names {reason};") and "{earlier}" in text
+    assert books.orders("spend") == [] and books.claims("spend")[0]["outcome"] == "for-approval" and ann.posted == []
+
+
+def test_a_report_shows_everyone_to_a_person_with_authority_and_their_own_to_anyone_else(tmp_path, books):
+    root = tenant(tmp_path, WEEKLY)
+    claim(turn_for(books, root, tmp_path), amount=60)
+    bo = turn_for(books, root, tmp_path, sender=BO, message="spaces/E/messages/2")
+    claim(bo, vendor="Paper", amount=8)
+    ann = turn_for(books, root, tmp_path, message="spaces/D/messages/3")
+    ann.account = "owner"                               # another account of the business reads the same books
+    call(ann, "order", kind="refuse", claim_id=2, words="no paper")
+    assert call(ann, "report")[0] == (
+        "Everyone's claims, newest first:\n#2 Bo 2026-11-04 Paper 2026-11-03 8.00 refused\n"
+        "#1 Ann 2026-11-04 Bunnings 2026-11-03 60.00 within\nEveryone's orders, newest first:\n#1 Ann refuse Bo claim #2: no paper")
+    assert call(bo, "report", person="Ann")[0] == ("Bo's claims, newest first:\n#2 Bo 2026-11-04 Paper 2026-11-03 8.00 refused"
+                                                   "\nBo's orders, newest first:\n#1 Ann refuse Bo claim #2: no paper")
+    assert call(ann, "report", person="Ann", since="2026-11-05")[0].count("none") == 2
+
+
+def test_a_file_named_like_another_in_its_message_is_posted_as_its_own(tmp_path, books):
+    root = tenant(tmp_path, WEEKLY)
+    bo = turn_for(books, root, tmp_path, sender=BO, message="spaces/E/messages/1")
+    photo(bo), photo(bo, b"two", n=2)                   # both invoice.jpg; the second saved beside the first
+    later = turn_for(books, root, tmp_path, sender=BO, message="spaces/E/messages/2")
+    claim(later, uploads=[2])
+    assert Path(later.posted[0][2][0]).read_bytes() == b"two"
+
+
+def test_a_file_larger_than_the_server_takes_is_an_upload_without_its_file(tmp_path, books, monkeypatch):
+    t = turn_for(books, tenant(tmp_path, WEEKLY), tmp_path)
+    assert books.packet >= 1024                         # as the server reported it
+    monkeypatch.setattr(books, "packet", 4096)
+    big = photo(t, b"x" * 5000)
+    assert (big["file_id"], books.content(big["id"])) == (None, None) and big["error"].startswith("the file of 5,000 bytes")
+    assert big["error"].endswith("exceeds the server's limit of 4,096") and photo(t, b"small", n=2)["file_id"] is not None
 
 
 def test_a_different_policy_needs_no_change_in_code(tmp_path, books):

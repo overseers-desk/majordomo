@@ -256,8 +256,8 @@ class Account:
                                   media_type=a.get("content_type"),
                                   received_at=dates.utc(row.get("create_time")) or self.now,
                                   content=Path(path).read_bytes() if path else None, error=None if path else a.get("error"))
-        return {"id": u["id"], "path": path, "name": u["name"], "media_type": u["media_type"],
-                "error": a.get("error") or u["error"], "identical_to": u["identical_to"]}
+        return {"id": u["id"], "path": path if u["file_id"] is not None else None, "name": u["name"],
+                "media_type": u["media_type"], "error": a.get("error") or u["error"], "identical_to": u["identical_to"]}
 
     def handle(self, space: str, row: dict, uploads: list[dict]) -> None:
         sender = row["sender_name"]
