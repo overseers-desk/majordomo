@@ -275,10 +275,9 @@ def main(argv: list[str] | None = None) -> None:
     with open(Path(args.config).expanduser(), "rb") as fh:
         settings = tomllib.load(fh)
     accounts = settings.get("account", {})
-    token_file = Path(settings.get("claude_token_file", "~/.config/majordomo/claude-token")).expanduser()
-    if not token_file.exists():
-        raise SystemExit(f"imperson: no Claude token at {token_file}; make one with `claude setup-token` and save it there")
-    token = token_file.read_text().strip()
+    token = settings.get("claude_token")
+    if not token:
+        raise SystemExit(f"imperson: {args.config} has no claude_token; make one with `claude setup-token`")
     for name, table in accounts.items():
         if args.account and name != args.account:
             continue

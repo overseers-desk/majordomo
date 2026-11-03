@@ -20,7 +20,7 @@ venv/bin/pip install -e .
 
 This gives the venv both the `majordomo` and the `imperson` commands.
 
-The conversations run through Claude Code, each account in its own configuration folder, so the plugins, hooks and instructions of the person who runs imperson stay out of them. That folder holds no login, so imperson signs in with a long-lived token: run `claude setup-token` once and save the token it prints in `~/.config/majordomo/claude-token`, or in the file `claude_token_file` names at the top of `imperson.toml`.
+The conversations run through Claude Code, each account in its own configuration folder, so the plugins, hooks and instructions of the person who runs imperson stay out of them. That folder holds no login, so imperson signs in with a long-lived token: run `claude setup-token` once and put the token it prints as `claude_token` at the top of `imperson.toml`. The file then holds a secret, so keep it readable by you alone (`chmod 600`).
 
 ## Each account's Chat login
 
@@ -40,9 +40,11 @@ rm -r /tmp/login
 
 ## Configuration: `~/.config/majordomo/imperson.toml`
 
-The file has one table per account:
+The file holds the Claude token and one table per account:
 
 ```toml
+claude_token = "…"                          # from `claude setup-token`; keep this file chmod 600
+
 [account.admin]
 address = "admin@example.com"
 keys = "~/.config/majordomo/admin"          # its token.json and client_secret.json
