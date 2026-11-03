@@ -45,7 +45,7 @@ People's Chat ids are read from `.reviewagent/team.yaml`, and the timezone from 
 venv/bin/python -m reimburse --config reimbursement.toml
 ```
 
-A run reads the direct messages active since the last run. It takes each new message carrying an image or a PDF from a person the team names. Each invoice comes out as one of these:
+A run reads the direct messages active since the last run. It takes each new message carrying an image or a PDF from a person the team names. A file that is not an invoice or receipt, such as a screenshot, gets no reply and is recorded as `not-an-invoice`. Each invoice comes out as one of these:
 
 - **rejected**: it does not qualify. The reply gives the rubric's reason and a hint.
 - **duplicate**: an invoice with the same date, and the same vendor or the same amount, was already reimbursed. The reply names it.

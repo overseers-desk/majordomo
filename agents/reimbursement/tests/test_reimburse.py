@@ -48,7 +48,7 @@ class FakeChat:
 
 
 def judged(vendor="Bunnings", date="2026-11-03", amount=40.0, qualified=True):
-    return {"vendor": vendor, "invoice_date": date, "amount": amount, "currency": "AUD",
+    return {"is_invoice": True, "vendor": vendor, "invoice_date": date, "amount": amount, "currency": "AUD",
             "qualified": qualified, "reason": "Supplies for the stables.", "hint": None if qualified else "Fuel and feed qualify."}
 
 
@@ -95,6 +95,13 @@ def test_a_rejected_invoice_gets_the_hint_and_no_task(tenant, tmp_path):
     (reply,) = chat.sent
     assert "does not qualify" in reply["text"] and "Fuel and feed qualify." in reply["text"]
     assert [r["outcome"] for r in ledger(tenant)] == ["rejected"]
+
+
+def test_a_file_that_is_no_invoice_is_recorded_and_left_unanswered(tenant, tmp_path):
+    chat, _, _ = run(tenant, tmp_path, [("spaces/D1", "spaces/D1/messages/1", ANN, "image/png", "")],
+                     [{**judged(), "is_invoice": False}])
+    assert chat.sent == []
+    assert [r["outcome"] for r in ledger(tenant)] == ["not-an-invoice"]
 
 
 def test_overdraft_within_the_limit_then_beyond_it(tenant, tmp_path):

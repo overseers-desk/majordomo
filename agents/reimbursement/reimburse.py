@@ -115,7 +115,7 @@ def judge_with_claude(invoice: Path, text: str | None, rubric: Path) -> dict:
     if not found:
         raise ValueError(f"no JSON object in the judgement: {result[:200]!r}")
     answer = json.loads(found[0])
-    missing = {"vendor", "invoice_date", "amount", "currency", "qualified", "reason", "hint"} - answer.keys()
+    missing = {"is_invoice", "vendor", "invoice_date", "amount", "currency", "qualified", "reason", "hint"} - answer.keys()
     if missing:
         raise ValueError(f"the judgement lacks {sorted(missing)}")
     return answer
@@ -123,6 +123,8 @@ def judge_with_claude(invoice: Path, text: str | None, rubric: Path) -> dict:
 
 def decide(invoice: dict, employee: str, tenant: Tenant, ledger: Ledger, now: datetime) -> tuple[str, dict | None, float]:
     """The outcome for one judged invoice, the earlier line it duplicates, and the week's allowance left after it."""
+    if not invoice["is_invoice"]:
+        return "not-an-invoice", None, 0.0
     if not invoice["qualified"]:
         return "rejected", None, 0.0
     earlier = ledger.duplicate_of(invoice)
@@ -233,7 +235,8 @@ class Run:
             self.failed = True
             return
         outcome, earlier, left = decide(invoice, employee, self.tenant, self.ledger, self.now)
-        self.say(to=sender, text=reply_text(outcome, invoice, earlier, left))
+        if outcome != "not-an-invoice":
+            self.say(to=sender, text=reply_text(outcome, invoice, earlier, left))
         if outcome in ("within", "overdrawn", "over-limit"):
             self.say(space=self.tenant.task_space, text=task_text(outcome, employee, invoice, left), files=[path])
         self.record({"handled_at": self.now.isoformat(timespec="seconds"), "employee": employee,
