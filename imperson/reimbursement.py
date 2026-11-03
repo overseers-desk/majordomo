@@ -1,7 +1,7 @@
 """The reimbursement skill's tools: the figures behind an employee's invoice, served in-process.
 
 The model reads the invoice and judges it against the tenant's rubric; these tools
-hold the allowance, the ledger and the task to Accounts, so the numbers never come
+hold the allowance, the ledger and the payment task, so the numbers never come
 from the model.
 """
 
@@ -67,7 +67,7 @@ class Ledger:
     def duplicate_of(self, invoice_date: str, vendor: str, amount: float) -> dict | None:
         """An earlier paid line with the same invoice date, and the same vendor or amount."""
         for r in self.rows:
-            if r["outcome"] in PAID and r["invoice_date"] == invoice_date and (
+            if r["outcome"] != "rejected" and r["invoice_date"] == invoice_date and (
                     r["vendor"].strip().lower() == vendor.strip().lower() or float(r["amount"]) == amount):
                 return r
         return None
@@ -155,7 +155,7 @@ def tools(turn) -> list:
 
     @tool("record_reimbursement",
           "Record a qualifying invoice from this message: works out whether it is within the allowance, overdrawn "
-          "or over the limit, writes the ledger and tasks Accounts with the invoice attached. Call it once, after "
+          "or over the limit, writes the ledger and posts a payment task, with the invoice attached, to the business's task space. Call it once, after "
           "judging the invoice qualifies. It returns the outcome and the allowance left, for you to tell the person.",
           {"type": "object", "properties": {"vendor": {"type": "string"}, "invoice_date": {"type": "string", "description": "YYYY-MM-DD"},
                                             "amount": {"type": "number"}, "currency": {"type": "string"},
@@ -185,7 +185,7 @@ def tools(turn) -> list:
             task = f"{head}. Not reimbursed yet: beyond the week's allowance and overdraft by {money(-left)}. Decide whether to pay."
         turn.post(tenant.task_space, task, [str(file)])
         return reply(f"Outcome: {outcome}. Allowance left after this invoice: {money(left)}."
-                     + (" It has gone to Accounts to decide." if outcome == "over-limit" else ""))
+                     + (" The payment task asks the task space to decide." if outcome == "over-limit" else ""))
 
     @tool("record_not_reimbursed",
           "Record that this message's file is not reimbursed (not an invoice, or it does not qualify), so the message "

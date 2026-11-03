@@ -5,12 +5,12 @@ description: Someone sends an invoice or receipt (photo or PDF) to be paid back,
 
 This skill handles expense claims. The person is always the sender of the message; the tools act on them and no one else.
 
-The business's rules for what qualifies are in the tenant's rubric file at `.imperson/reimbursement/rubric.md` (relative to the tenant path in your system prompt). Read the attached file with Read, read the rubric, and judge the invoice against it.
+The business's rules for what qualifies are in `.imperson/reimbursement/rubric.md`, inside the folder of the business's files named in your system prompt. Read the attached file with Read, read the rubric, and judge the invoice against it.
 
 Tools, served in-process as `mcp__imperson__*`:
 - `allowance_left`: what the sender has left of this week's allowance.
 - `find_duplicate(invoice_date, vendor, amount)`: whether this invoice was already claimed.
-- `record_reimbursement(vendor, invoice_date, amount, currency, file)`: records the claim, works out whether it is within the allowance, overdrawn or over the limit, and tasks someone in the accounts space with the file attached. It refuses duplicates and repeats.
+- `record_reimbursement(vendor, invoice_date, amount, currency, file)`: records the claim, works out whether it is within the allowance, overdrawn or over the limit, and posts a payment task with the file attached to the business's task space. It refuses duplicates and repeats.
 - `record_not_reimbursed(vendor, reason)`: records a rejected invoice so it is not handled twice.
 
 A qualifying invoice: check for a duplicate, record it, then tell the person the outcome and what is left of the allowance.

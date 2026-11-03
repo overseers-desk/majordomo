@@ -86,10 +86,10 @@ def test_overdrawn_within_the_limit(tenant, tmp_path):
     assert "Overdraws the week's allowance by $10.00" in turn.posted[0][1]
 
 
-def test_over_the_limit_goes_to_accounts_to_decide(tenant, tmp_path):
+def test_over_the_limit_leaves_the_payment_to_the_task_space(tenant, tmp_path):
     turn = make_turn(tenant, tmp_path)
     result = invoice(turn, amount=125)
-    assert "over-limit" in text(result) and "Accounts" in text(result)
+    assert "over-limit" in text(result) and "task space to decide" in text(result)
     assert "Not reimbursed yet" in turn.posted[0][1] and "$25.00" in turn.posted[0][1]
     assert [r["outcome"] for r in ledger_lines(live_ledger(tenant))] == ["over-limit"]
     other = make_turn(tenant, tmp_path, message="spaces/D1/messages/2")

@@ -74,7 +74,6 @@ def reply_tool(say: Callable[[str, list[str]], None]):
 
 
 def _confine(dirs: list[Path]):
-    """A PreToolUse hook refusing a Read, Glob or Grep outside these folders."""
     from claude_agent_sdk import HookMatcher
 
     roots = [d.resolve() for d in dirs]

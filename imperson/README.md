@@ -2,7 +2,7 @@
 
 imperson answers Google Chat direct messages as an account. It signs in to Chat as that account, through majordomo and the account's own login. Each conversation has its own Claude Agent SDK session, resumed every time the person writes again, so the agent remembers what was said. Its abilities are skills. Claude picks one from what the person writes:
 
-- **reimbursement**: someone sends an invoice or receipt and is paid back within a weekly allowance. A person in the accounts space is tasked with the payment.
+- **reimbursement**: someone sends an invoice or receipt and is paid back within a weekly allowance. A payment task goes to the space the business names for it.
 - **weather**: someone asks about the weather.
 - **events**: someone asks what is on nearby.
 
