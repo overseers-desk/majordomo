@@ -13,11 +13,10 @@ import argparse
 import asyncio
 import hashlib
 import json
-import subprocess
 import sys
 import tomllib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -25,11 +24,13 @@ from typing import Any
 import majordomo
 from majordomo import dates
 
-from . import ledger
+from . import ledger, tenant
+from .books import Books
 
 HERE = Path(__file__).resolve().parent
 CONFIG = Path("~/.config/majordomo/imperson.toml")
 STATE = Path("~/.local/state/majordomo-imperson")
+CACHE = Path("~/.cache/majordomo-imperson")
 SERVER = "imperson"
 ALLOWED = ["Read", "Glob", "Grep", "WebSearch", "WebFetch"]
 DENIED = ["Bash", "Write", "Edit", "NotebookEdit", "Task"]
@@ -42,13 +43,43 @@ class Turn:
     tenant: Path
     state: Path
     now: datetime
-    send: str
     sender: str
     message: str
     space: str
-    files: list[Path]
+    uploads: list[dict]          # this message's files in the books: id, path (None when not fetched), name, ...
     post: Callable[[str, str, list[str]], None]
-    git: Callable[[list[str]], None]
+    books: Books
+    account: str
+
+
+@dataclass
+class Tenant:
+    """A business, shared by the accounts that work for it: its repository, the cache of the files imperson reads
+    from it, and its books' settings."""
+    name: str
+    repo: str
+    token: str
+    files: Path
+    branch: str | None = None
+    db: dict = field(default_factory=dict)
+    fetch: Callable[..., list[str]] = tenant.refresh
+    fresh: bool = False
+
+    def refresh(self) -> None:
+        """Bring the cache up to the repository, once a run; a failed fetch leaves the cache as it stands, and stops
+        the account only when there is no cache to work from."""
+        if self.fresh:
+            return
+        try:
+            changed = self.fetch(self.repo, self.token, self.files, branch=self.branch)
+        except Exception as exc:
+            if not (self.files / tenant.STATE).exists():
+                raise RuntimeError(f"the tenant {self.name}'s files could not be fetched and none are cached: {exc}") from exc
+            print(f"imperson: tenant {self.name}: working from the cached files, as the refresh failed: {exc}", file=sys.stderr)
+        else:
+            if changed:
+                print(f"imperson: tenant {self.name}: {len(changed)} file(s) refreshed from {self.repo}", file=sys.stderr)
+        self.fresh = True
 
 
 def _text(text: str, error: bool = False) -> dict:
@@ -117,8 +148,14 @@ def converse(prompt: str, *, session: str | None, cwd: Path, system_prompt: str,
     return asyncio.run(turn())
 
 
-def _git(args: list[str]) -> None:
-    subprocess.run(["git", *args], check=True)
+def _line(u: dict) -> str:
+    """How the conversation is told of one upload of its message."""
+    if u["path"] is None:
+        return f"A file in this message could not be fetched: {u['name']} ({u['error']}) (upload {u['id']})"
+    same = u.get("identical_to")
+    also = (f"; the same file as upload {same['id']}, received {same['received_at'].isoformat()} in message "
+            f"{same['message']}" if same else "")
+    return f"File saved from this message: {u['path']} (upload {u['id']}, {u['media_type']}{also})"
 
 
 def whoami(cfg: dict) -> str:
@@ -133,20 +170,23 @@ def whoami(cfg: dict) -> str:
 
 
 class Account:
-    def __init__(self, name: str, table: dict, *, claude_token: str = "", chat=majordomo, talk=converse,
-                 git=_git, me=whoami, now: datetime | None = None, state_root: Path = STATE):
-        self.name, self.table, self.chat, self.talk, self.git = name, table, chat, talk, git
+    def __init__(self, name: str, table: dict, *, tenants: dict[str, Tenant], books=Books, claude_token: str = "",
+                 chat=majordomo, talk=converse, me=whoami, now: datetime | None = None, state_root: Path = STATE):
+        self.name, self.table, self.chat, self.talk = name, table, chat, talk
         self.send = table.get("send", "off")
         if self.send not in SEND_MODES:
             raise SystemExit(f"[account.{name}] send must be one of {', '.join(SEND_MODES)}")
         self.test_to = table.get("test_correspondent")
         if self.send == "test" and not self.test_to:
             raise SystemExit(f"[account.{name}] send = \"test\" needs test_correspondent")
+        if table.get("tenant") not in tenants:
+            raise SystemExit(f"[account.{name}] tenant = {table.get('tenant')!r}, but there is no [tenant.{table.get('tenant')}]")
+        self.tenant = tenants[table["tenant"]]
+        self.books = books(self.tenant.db, "imperson_" if self.send == "live" else "imperson_test_")
         keys = Path(table["keys"]).expanduser()
         self.cfg = chat.load_config({"api": {"token_file": str(keys / "token.json"),
                                              "client_file": str(keys / "client_secret.json")}})
         self.me = me(self.cfg)
-        self.tenant = Path(table["tenant"]).expanduser()
         self.skills = list(table.get("skills", []))
         self.state = state_root.expanduser() / name
         self.env = {"CLAUDE_CONFIG_DIR": str(self.state / "claude"), "CLAUDE_CODE_OAUTH_TOKEN": claude_token}
@@ -182,7 +222,7 @@ class Account:
                 "between messages, so for each message a skill applies to, invoke the skill and read its files again "
                 "rather than relying on an earlier turn. A question about the weather or about "
                 f"what is on nearby, with no place named, is about {self.table.get('location', 'the business')}. "
-                f"The business's files are in {self.tenant}. Today is {self.now.date().isoformat()}.")
+                f"The business's files are in {self.tenant.files}. Today is {self.now.date().isoformat()}.")
 
     def workspace(self) -> Path:
         """The session's working folder: it links imperson's skills and the business's own, in the business's
@@ -192,7 +232,7 @@ class Account:
         if folder.is_symlink():
             folder.unlink()
         folder.mkdir(parents=True, exist_ok=True)
-        skills = {p.name: p for root in (HERE / "skills", self.tenant / ".imperson" / "skills") if root.is_dir()
+        skills = {p.name: p for root in (HERE / "skills", self.tenant.files / ".imperson" / "skills") if root.is_dir()
                   for p in sorted(root.iterdir()) if p.is_dir()}
         for link in folder.iterdir():
             if link.is_symlink() and skills.get(link.name) != link.readlink():
@@ -203,27 +243,37 @@ class Account:
         return ws
 
     def rules(self) -> dict[str, str]:
-        """A digest of each file the skills work from, the ledgers aside, to tell a conversation what changed."""
-        roots = [HERE / "skills" / s for s in self.skills] + [self.tenant / ".imperson"]
+        """A digest of each file the skills work from, to tell a conversation what changed."""
+        roots = [HERE / "skills" / s for s in self.skills] + [self.tenant.files / ".imperson"]
         return {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for root in roots if root.is_dir()
-                for p in sorted(root.rglob("*")) if p.is_file() and p.suffix != ".tsv"}
+                for p in sorted(root.rglob("*")) if p.is_file()}
 
-    def handle(self, space: str, row: dict, files: list[Path]) -> None:
+    def upload(self, row: dict, a: dict) -> dict:
+        """One file of a message, written to the books; what the conversation is told of it."""
+        path = a.get("path")
+        u = self.books.add_upload(attachment=a["attachment_name"], account=self.name, message=row["name"],
+                                  sender=a.get("sender_name") or row["sender_name"], name=a.get("content_name") or "",
+                                  media_type=a.get("content_type"),
+                                  received_at=dates.utc(row.get("create_time")) or self.now,
+                                  content=Path(path).read_bytes() if path else None, error=None if path else a.get("error"))
+        return {"id": u["id"], "path": path, "name": u["name"], "media_type": u["media_type"],
+                "error": a.get("error") or u["error"], "identical_to": u["identical_to"]}
+
+    def handle(self, space: str, row: dict, uploads: list[dict]) -> None:
         sender = row["sender_name"]
-        turn = Turn(tenant=self.tenant, state=self.state, now=self.now, send=self.send, sender=sender,
-                    message=row["name"], space=space, files=files,
-                    post=lambda sp, text, fs: self.gate(space=sp, text=text, files=fs), git=self.git)
+        turn = Turn(tenant=self.tenant.files, state=self.state, now=self.now, sender=sender, message=row["name"],
+                    space=space, uploads=uploads, post=lambda sp, text, fs: self.gate(space=sp, text=text, files=fs),
+                    books=self.books, account=self.name)
         tools = [reply_tool(lambda text, fs: self.gate(to=sender, text=text, files=fs))]
         for skill in self.skills:
             try:
-                if (self.tenant / ".imperson" / skill / "policy.yaml").exists():
+                if (self.tenant.files / ".imperson" / skill / "policy.yaml").exists():
                     tools += ledger.tools(turn, skill)
             except Exception as exc:  # a skill whose files are missing leaves the conversation itself running
                 print(f"imperson: {self.name}: the {skill} skill's tools are unavailable: {exc}", file=sys.stderr)
         when = dates.utc(row.get("create_time"))
         prompt = (f"From {row.get('sender_display') or sender} ({sender}), {when.isoformat() if when else ''}:\n"
-                  f"{row.get('text') or '(no text)'}"
-                  + "".join(f"\nFile saved from this message: {p}" for p in files))
+                  f"{row.get('text') or '(no text)'}" + "".join(f"\n{_line(u)}" for u in uploads))
         sessions, rules = self.saved["sessions"], self.rules()
         seen = self.saved["read"].get(space, {})
         changed = [f for f, digest in rules.items() if seen.get(f) != digest]
@@ -232,7 +282,7 @@ class Account:
                       "date; read them again before relying on them:\n" + "\n".join(changed) + "\n\n" + prompt)
         sessions[space] = self.talk(prompt, session=sessions.get(space), cwd=self.workspace(),
                                     system_prompt=self.system_prompt(), skills=self.skills, tools=tools,
-                                    read_dirs=[self.state / "work", self.tenant], env=self.env)
+                                    read_dirs=[self.state / "work", self.tenant.files], env=self.env)
         self.saved["read"][space] = rules
         self.saved["handled"].setdefault(space, []).append(row["name"])
         self.saved["handled"][space] = self.saved["handled"][space][-500:]
@@ -253,18 +303,20 @@ class Account:
                     and (self.send != "test" or r.get("sender_name") == self.test_to)]
             if not rows:
                 continue
+            self.tenant.refresh()
+            self.books.ensure_schema()
             with_files = {a["message_name"] for a in self.chat.attachments(self.cfg, space=space, start=since,
                                                                              cache_dir=cache)}
             for row in sorted(rows, key=lambda r: dates.utc(r.get("create_time")) or self.now):
-                files: list[Path] = []
+                uploads: list[dict] = []
                 try:
                     if row["name"] in with_files:
                         dest = self.state / "work" / row["name"].replace("/", "_")
                         dest.mkdir(parents=True, exist_ok=True)
                         saved = self.chat.attachments(self.cfg, message=row["name"], download_to=str(dest),
                                                       cache_dir=cache)
-                        files = [Path(a["path"]) for a in saved if a.get("path")]
-                    self.handle(space, row, files)
+                        uploads = [self.upload(row, a) for a in saved]
+                    self.handle(space, row, uploads)
                 except Exception as exc:  # the mark stays, so the next run reads this message and the ones after it again
                     print(f"imperson: {self.name}: {row['name']}: {exc}", file=sys.stderr)
                     failed = True
@@ -286,11 +338,17 @@ def main(argv: list[str] | None = None) -> None:
     token = settings.get("claude_token")
     if not token:
         raise SystemExit(f"imperson: {args.config} has no claude_token; make one with `claude setup-token`")
+    tenants = {}
+    for name, t in settings.get("tenant", {}).items():
+        if missing := [k for k in ("repo", "github_token") if not t.get(k)]:
+            raise SystemExit(f"imperson: [tenant.{name}] needs {' and '.join(missing)}")
+        tenants[name] = Tenant(name, t["repo"], t["github_token"], CACHE.expanduser() / "tenant" / name,
+                               branch=t.get("branch"), db=dict(t.get("db", {})))
     for name, table in accounts.items():
         if args.account and name != args.account:
             continue
         try:
-            for line in Account(name, table, claude_token=token).run():
+            for line in Account(name, table, tenants=tenants, claude_token=token).run():
                 print(line)
         except Exception as exc:  # one account's failure leaves the others to run
             print(f"imperson: {name}: {exc}", file=sys.stderr)
