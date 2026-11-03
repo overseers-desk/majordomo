@@ -119,6 +119,24 @@ def test_the_account_is_the_token_s_own_person_and_names_only_its_key_folder(tmp
                                 "client_file": str(tmp_path / "keys" / "client_secret.json")}}
 
 
+def test_no_config_toml_is_ever_opened(tmp_path, monkeypatch):
+    import builtins
+    import majordomo
+
+    real_open = builtins.open
+
+    def guarded(file, *a, **kw):
+        assert not str(file).endswith("config.toml"), f"opened {file}"
+        return real_open(file, *a, **kw)
+    monkeypatch.setattr(builtins, "open", guarded)
+    monkeypatch.setattr(majordomo.config, "config_toml", lambda: pytest.fail("looked for majordomo's config.toml"))
+    chat = FakeChat([("spaces/D1", "spaces/D1/messages/1", ANN, "Hi", False)])
+    chat.load_config = majordomo.load_config
+    acct, _ = account(tmp_path, [], Talk(), chat=chat)
+    acct.run()
+    assert acct.cfg["api"]["token_file"].endswith("token.json")
+
+
 def test_own_messages_are_not_handed_to_the_session(tmp_path):
     talk = Talk()
     acct, chat = account(tmp_path, [("spaces/D1", "spaces/D1/messages/1", ME, "sent earlier", False)], talk)
