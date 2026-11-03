@@ -46,7 +46,7 @@ class Turn:
     sender: str
     message: str
     space: str
-    uploads: list[dict]          # this message's files in the books: id, path (None when not fetched), name, ...
+    uploads: list[dict]          # one per file of this message, as Account.upload returns it
     post: Callable[[str, str, list[str]], None]
     books: Books
     account: str
@@ -54,8 +54,7 @@ class Turn:
 
 @dataclass
 class Tenant:
-    """A business, shared by the accounts that work for it: its repository, the cache of the files imperson reads
-    from it, and its books' settings."""
+    """A business, shared by the accounts that work for it."""
     name: str
     repo: str
     token: str

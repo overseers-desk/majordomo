@@ -19,7 +19,7 @@ from claude_agent_sdk import tool
 
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 FLAGS = ("refused", "duplicate", "approved")   # an outcome with one of these is chosen by that flag alone, never by the amount left
-SHOWN = 50   # the claims, and the orders, a report lists: enough for a month, short enough to read in a reply
+SHOWN = 50   # the claims, and the orders, a report lists: a reply's worth
 
 
 class Refusal(Exception):
@@ -129,8 +129,9 @@ def tools(turn, skill: str) -> list:
                 and (not alike.get("any") or any(same(r["fields"], claim, k) for k in alike["any"]))]
 
     def recorded(claim: dict, ids: list[int]) -> dict | None:
-        """This message's claim of the same item: the vendor's name may drift between runs, so it is the policy's
-        `all` fields and the amount that must agree, on a file in common or where either names none."""
+        """This message's claim of the same item: a name the model reads off a photo may be spelled differently
+        between runs, so it is the policy's `all` fields and the amount that must agree, on a file in common or
+        where either names none."""
         return next((r for r in books.claims(skill, message=turn.message)
                      if all(same(r["fields"], claim, k) for k in [*alike.get("all", []), summed])
                      and (set(r["uploads"]) & set(ids) or not r["uploads"] or not ids)), None)

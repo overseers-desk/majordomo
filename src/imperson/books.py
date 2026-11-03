@@ -125,7 +125,7 @@ class Books:
         """The upload's row, written once per attachment; a later arrival with content fills in a file the first
         could not fetch. A file larger than the server takes in one statement is kept as an upload without its file,
         as one not fetched is. ``identical_to`` is the earliest other upload of the same file in the same space, or
-        None: one person is never told what another sent."""
+        None: the run reads direct messages only, so a space is one person's, and nobody is told what another sent."""
         with self._tx() as cur:
             file_id = None
             if content is not None:

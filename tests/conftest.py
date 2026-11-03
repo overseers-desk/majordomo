@@ -41,7 +41,7 @@ def mysql():
     password = uuid.uuid4().hex
     try:
         container = _docker("run", "-d", "--rm", "--tmpfs", "/var/lib/mysql", "-e", f"MARIADB_ROOT_PASSWORD={password}",
-                            "-e", "MARIADB_DATABASE=imperson_test", "-p", "127.0.0.1:0:3306", IMAGE)   # in memory: 3s, not 25s
+                            "-e", "MARIADB_DATABASE=imperson_test", "-p", "127.0.0.1:0:3306", IMAGE)   # a data directory in memory starts in seconds
     except (OSError, subprocess.CalledProcessError) as exc:
         container, why = None, getattr(exc, "stderr", None) or exc
     if container is None:
