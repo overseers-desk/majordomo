@@ -94,9 +94,9 @@ def spaces(conn, blocked: list[str], *, minimal_messages: int = 1,
     """Spaces with at least `minimal_messages` mirrored messages (default 1, so
     Google's auto-created empty meeting groups drop out; 0 shows them).
 
-    Under WORLD_AS_OF the message and task count subqueries are bounded, which
-    also makes the minimal_messages filter drop spaces whose first message
-    postdates the cutoff, the proxy for "did not yet visibly exist". Space
+    Under WORLD_AS_OF the message-count, task-count and last_active subqueries
+    are bounded, which also makes the minimal_messages filter drop spaces whose
+    first message postdates the cutoff, the proxy for "did not yet visibly exist". Space
     metadata (display name, type) is current-state and flagged, not rewound.
     """
     _floor_check(conn, bound=bound)

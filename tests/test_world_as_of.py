@@ -183,8 +183,9 @@ def test_spaces_subqueries_gain_the_bound(monkeypatch):
     calls = _capture_queries(monkeypatch)
     reports.spaces(None, [], minimal_messages=1, bound=BOUND_UTC)
     sql, params = _sql_with(calls, "FROM googlechat_spaces")
-    # Both count subqueries are bounded; so is the minimal_messages predicate,
-    # which drops spaces whose first message postdates the cutoff.
+    # The message-count, task-count and last_active subqueries are bounded; so is
+    # the minimal_messages predicate, which drops spaces whose first message
+    # postdates the cutoff.
     assert sql.count("m.create_time < %s") == 3
     assert sql.count("t.created_at < %s") == 1
     assert params == [BOUND_UTC, BOUND_UTC, BOUND_UTC, BOUND_UTC, 1]
